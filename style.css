@@ -1,0 +1,671 @@
+/* 
+   NOVAPACK MODERN DESIGN SYSTEM 
+   Palette: Deep Black, Electric Orange, Pure White
+*/
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+    /* Brand Colors */
+    --brand-primary: #FF6600;
+    --brand-primary-glow: rgba(255, 102, 0, 0.4);
+    --brand-secondary: #0D0D0D;
+    --brand-dark: #000000;
+    --brand-accent: #FF8533;
+
+    /* Surface Colors */
+    --bg-main: #0F1113;
+    --surface-glass: rgba(255, 255, 255, 0.03);
+    --surface-card: rgba(26, 28, 30, 0.8);
+    --surface-hover: rgba(255, 255, 255, 0.08);
+    --surface-active: rgba(255, 102, 0, 0.1);
+
+    /* Text Colors */
+    --text-main: #FFFFFF;
+    --text-dim: #A0A5AD;
+    --text-muted: #6C727A;
+    --text-orange: #FF6600;
+
+    /* UI Elements */
+    --border-glass: rgba(255, 255, 255, 0.1);
+    --border-orange: rgba(255, 102, 0, 0.3);
+
+    /* Shadows */
+    --shadow-neon: 0 0 20px var(--brand-primary-glow);
+    --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.5);
+
+    /* Radii */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-full: 9999px;
+
+    /* Fonts */
+    --font-heading: 'Outfit', sans-serif;
+    --font-body: 'Inter', sans-serif;
+}
+
+/* Base Styles */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--brand-primary) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+*::-webkit-scrollbar-thumb {
+    background: var(--brand-primary);
+    border-radius: 10px;
+    border: 3px solid #0F1113;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--brand-accent);
+}
+
+body {
+    font-family: var(--font-body);
+    font-weight: 400;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+}
+
+/* Modern Header / Toolbar */
+.toolbar {
+    background: rgba(13, 13, 13, 0.85);
+    backdrop-filter: blur(15px);
+    border-bottom: 1px solid var(--border-glass);
+    padding: 0.2rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.toolbar h2 {
+    font-family: 'Xenotron', sans-serif;
+    font-weight: 400;
+    letter-spacing: 2px;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    color: var(--brand-primary);
+    text-shadow: 0 0 15px var(--brand-primary-glow);
+}
+
+.logo-arrow {
+    color: #FF3B30;
+    margin-left: 5px;
+    font-family: sans-serif;
+    font-weight: 900;
+    font-size: 0.8em;
+    vertical-align: middle;
+    filter: drop-shadow(0 0 5px rgba(255, 59, 48, 0.5));
+}
+
+/* Layout Containers */
+.dashboard-container {
+    display: flex;
+    height: calc(100vh - 52px);
+    overflow: hidden;
+}
+
+/* Sidebar Styling */
+.ticket-sidebar {
+    width: 320px;
+    background: rgba(13, 13, 13, 0.5);
+    backdrop-filter: blur(5px);
+    border-right: 1px solid var(--border-glass);
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 1.5rem;
+    background: transparent;
+    border-bottom: 1px solid var(--border-glass);
+}
+
+.ticket-list-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--brand-primary) transparent;
+}
+
+/* Custom scrollbar for the list */
+.ticket-list-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+
+.ticket-list-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255, 102, 0, 0.3);
+    border-radius: 10px;
+}
+
+.ticket-list-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--brand-primary);
+}
+
+/* Editor Area - Dashboard Right Side */
+.ticket-editor {
+    flex: 1;
+    padding: 2rem;
+    background: radial-gradient(circle at top right, rgba(255, 102, 0, 0.05), transparent), var(--bg-main);
+    overflow-y: auto;
+}
+
+/* Card Styling */
+.card {
+    background: var(--surface-card);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-soft);
+}
+
+.editor-card {
+    max-width: 900px;
+}
+
+/* Form Styles */
+select option {
+    background-color: #1A1A1A;
+    color: white;
+    padding: 10px;
+}
+
+#company-selector option {
+    background: #0D0D0D;
+    color: #FF6600;
+    font-weight: 400;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(1) hue-rotate(180deg) brightness(1.5);
+    cursor: pointer;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.95rem;
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    transition: all 0.3s ease;
+    font-family: var(--font-body);
+    font-weight: 500;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--brand-primary);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 4px var(--brand-primary-glow);
+}
+
+.form-control:disabled,
+.form-control[readonly] {
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-dim);
+    cursor: default;
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.2rem;
+    font-family: var(--font-heading);
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-radius: var(--radius-md);
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-size: 0.85rem;
+}
+
+.btn-primary {
+    background: var(--brand-primary);
+    color: white;
+    box-shadow: 0 4px 15px rgba(255, 102, 0, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    background: var(--brand-accent);
+    box-shadow: 0 6px 20px rgba(255, 102, 0, 0.5);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+    border: 1px solid var(--border-glass);
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border-glass);
+    color: var(--text-dim);
+}
+
+.btn-outline:hover {
+    border-color: var(--brand-primary);
+    color: var(--brand-primary);
+    background: var(--surface-active);
+}
+
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+}
+
+/* Ticket List Item */
+.ticket-list-item {
+    background: var(--surface-glass);
+    border: 1px solid var(--border-glass);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.ticket-list-item:hover {
+    background: var(--surface-hover);
+    border-color: var(--brand-primary);
+    transform: translateX(5px);
+}
+
+.ticket-list-item.active {
+    background: var(--surface-active);
+    border-color: var(--brand-primary);
+    box-shadow: inset 4px 0 0 var(--brand-primary);
+}
+
+.ticket-list-item.not-printed {
+    border-right: 3px solid #FF3B30;
+}
+
+.ticket-list-item strong {
+    color: var(--brand-primary);
+    font-size: 1rem;
+    display: block;
+}
+
+.ticket-list-item span {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+/* Package List Area */
+#packages-list {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-glass);
+}
+
+/* Package Row in Form */
+.package-row {
+    display: grid;
+    grid-template-columns: 2fr 2fr auto;
+    gap: 8px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-glass);
+    align-items: center;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.status-badge.new {
+    background: #FF3B30;
+    color: white;
+}
+
+.status-badge.printed {
+    background: #4CD964;
+    color: black;
+}
+
+/* Toast Notifications */
+.notification-toast {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    left: auto;
+    background: var(--surface-card);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border-glass);
+    padding: 1rem 1.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-soft);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transform: translateX(120%);
+    transition: all 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    border-left: 4px solid var(--brand-primary);
+}
+
+.notification-toast.show {
+    transform: translateX(0);
+}
+
+.notification-toast.success {
+    border-left-color: #4CD964;
+}
+
+.notification-toast.error {
+    border-left-color: #FF3B30;
+}
+
+.notification-toast.info {
+    border-left-color: var(--brand-primary);
+}
+
+/* Suggestions Box for Autocomplete */
+#suggestions-box,
+#client-picker-results {
+    background: var(--brand-secondary);
+    border: 1px solid var(--brand-primary);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    overflow: hidden;
+}
+
+.suggestion-item {
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border-glass);
+    transition: background 0.2s;
+}
+
+.suggestion-item:hover {
+    background: var(--brand-primary);
+    color: white;
+}
+
+/* Hidden elements */
+.hidden {
+    display: none !important;
+}
+
+/* Responsive Grid for Report View */
+.view-section {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 65px);
+}
+
+/* Table styling for Reports View */
+#reports-view table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px;
+}
+
+#reports-view th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+#reports-view td {
+    padding: 1rem;
+    background: var(--surface-glass);
+    border-top: 1px solid var(--border-glass);
+    border-bottom: 1px solid var(--border-glass);
+}
+
+#reports-view td:first-child {
+    border-left: 1px solid var(--border-glass);
+    border-top-left-radius: var(--radius-md);
+    border-bottom-left-radius: var(--radius-md);
+}
+
+#reports-view td:last-child {
+    border-right: 1px solid var(--border-glass);
+    border-top-right-radius: var(--radius-md);
+    border-bottom-right-radius: var(--radius-md);
+}
+
+/* Specific button styles for sidebar */
+.sidebar-header button {
+    margin-bottom: 4px;
+    text-align: left;
+    justify-content: flex-start;
+}
+
+/* App Intro / Splash Screen */
+#app-intro {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.8s ease, visibility 0.8s;
+}
+
+#app-intro.fade-out {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.intro-logo {
+    font-family: 'Xenotron', sans-serif;
+    font-size: 4.5rem;
+    color: var(--brand-primary);
+    margin-bottom: 5px;
+    font-weight: 300;
+    /* Fine/Thin letters */
+    letter-spacing: 12px;
+    /* Stretched text */
+    animation: introScale 2s ease-out forwards;
+    text-shadow: 0 0 20px var(--brand-primary-glow);
+}
+
+.intro-welcome {
+    font-family: var(--font-heading);
+    font-weight: 200;
+    /* Extra thin */
+    font-size: 1.1rem;
+    color: #FFF;
+    text-transform: uppercase;
+    margin-top: 20px;
+    letter-spacing: 6px;
+    /* Stretched */
+    opacity: 0;
+    animation: fadeIn 1.2s ease-out 0.8s forwards;
+    /* Removed background/border for a cleaner stretched look */
+}
+
+.intro-subtext {
+    font-family: var(--font-heading);
+    font-weight: 200;
+    /* Extra thin */
+    font-size: 0.9rem;
+    letter-spacing: 8px;
+    /* Stretched */
+    color: var(--text-dim);
+    text-transform: uppercase;
+    opacity: 0;
+    margin-top: 10px;
+    animation: fadeIn 1.2s ease-out 0.4s forwards;
+}
+
+@keyframes introScale {
+    0% {
+        transform: scale(0.9);
+        opacity: 0;
+        letter-spacing: 15px;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+        letter-spacing: 2px;
+    }
+}
+
+@keyframes fadeIn {
+    to {
+        opacity: 1;
+    }
+}
+
+/* App Outro Screens */
+#app-outro {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease;
+}
+
+#app-outro:not(.hidden) {
+    opacity: 1;
+    visibility: visible;
+}
+
+#app-outro .intro-logo {
+    animation: introScale 1s ease-out forwards;
+}
+
+.outro-subtext {
+    font-family: var(--font-heading);
+    font-weight: 300;
+    font-size: 1rem;
+    letter-spacing: 4px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    opacity: 0;
+    animation: fadeIn 1s ease-out 0.3s forwards;
+}
+
+/* Print Overrides */
+#print-area {
+    display: none;
+}
+
+@media print {
+    body {
+        background: white !important;
+        color: black !important;
+    }
+
+    /* Allow brand colors in print */
+    h1,
+    h2,
+    h3,
+    h4,
+    div,
+    p,
+    span,
+    strong,
+    td,
+    th,
+    table {
+        text-shadow: none !important;
+    }
+
+    .toolbar,
+    .ticket-sidebar,
+    .ticket-editor,
+    .view-section,
+    .btn,
+    #suggestions-box,
+    #editor-actions {
+        display: none !important;
+    }
+
+    #print-area {
+        display: block !important;
+        visibility: visible !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background: white !important;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+    }
+
+    /* Restore table behavior for printed manifests */
+    #print-area table {
+        border-collapse: collapse !important;
+        border-spacing: 0 !important;
+    }
+
+    #print-area td,
+    #print-area th {
+        border: 1px solid #000 !important;
+        padding: 4px !important;
+    }
+}
+
+/* Glass effect for active view */
+.view-section {
+    background: radial-gradient(circle at center, rgba(255, 102, 0, 0.03), transparent), var(--bg-main);
+}

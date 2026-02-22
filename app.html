@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVAPACK - Cloud App</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <!-- QRCode.js -->
+    <script src="libs/qrcode.min.js"></script>
+</head>
+
+<body>
+    <!-- Overlay for Loading -->
+    <div id="loading-overlay"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-main); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div class="intro-logo" style="font-size:3rem;">NOVAPACK<span class="logo-arrow">➤</span></div>
+        <div style="margin-top:20px; color:var(--brand-primary); font-weight:bold;">SINCRONIZANDO CON LA NUBE...</div>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="view-section">
+        <header class="toolbar">
+            <div class="container toolbar-content"
+                style="max-width:100%; padding:0 20px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <div id="nav-home" style="display: flex; align-items: center; gap: 1rem; cursor: pointer;">
+                        <h2 class="logo" style="margin:0;">NOVAPACK<span class="logo-arrow">➤</span></h2>
+                        <div id="editor-actions" class="hidden" style="display:flex; gap:8px;">
+                            <button id="action-new" class="btn btn-sm btn-primary">+ NUEVO</button>
+                            <button id="action-print" class="btn btn-sm btn-outline">🖨️ IMPRIMIR</button>
+                            <button id="action-label" class="btn btn-sm btn-outline">🏷️ ETIQUETAS</button>
+                            <button id="action-sms-pickup" class="btn btn-sm btn-outline"
+                                style="border-color:var(--brand-primary); color:var(--brand-primary); display:none;">💬
+                                SMS</button>
+                            <button id="action-delete" class="btn btn-sm btn-outline"
+                                style="border-color:#FF3B30; color:#FF3B30;">🗑️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span id="user-display-name"
+                        style="color:var(--text-dim); font-size:0.8rem; margin-right:10px;"></span>
+                    <button id="nav-admin" class="btn btn-sm btn-primary hidden">🔧 ADMIN</button>
+                    <button id="nav-clients" class="btn btn-sm btn-secondary">👥 CLIENTES</button>
+                    <button id="nav-reports" class="btn btn-sm btn-secondary">📊 INFORMES</button>
+                    <button id="btn-logout" class="btn btn-sm btn-outline" style="border-color:#FF3B30; color:#FF3B30;"
+                        title="Salir">🚪 SALIR</button>
+
+                    <div
+                        style="background: rgba(255,255,255,0.05); padding: 3px 20px; border-radius: 6px; border: 1px solid var(--border-glass); display: flex; align-items: center; gap: 8px; margin-left:10px;">
+                        <select id="company-selector"
+                            style="background: transparent; border: none; color: white; font-weight: 700; cursor: pointer; outline: none; font-size: 0.75rem; text-transform: uppercase;">
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div id="dashboard-container" class="dashboard-container">
+            <div class="ticket-sidebar">
+                <div class="sidebar-header">
+                    <input type="text" id="ticket-search" class="form-control mb-4"
+                        placeholder="🔍 BUSCAR POR ALBARÁN O CLIENTE...">
+                    <input type="date" id="date-filter" class="form-control mb-4">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <button id="btn-print-morning" class="btn btn-sm btn-outline">☀️ ENVÍOS MAÑANA</button>
+                        <button id="btn-print-afternoon" class="btn btn-sm btn-outline">🌙 ENVÍOS TARDE</button>
+                        <button id="btn-print-labels-morning" class="btn btn-sm btn-primary">🏷️☀️ ETIQUETAS
+                            MAÑANA</button>
+                        <button id="btn-print-labels-afternoon" class="btn btn-sm btn-primary">🏷️🌙 ETIQUETAS
+                            TARDE</button>
+                    </div>
+                </div>
+                <div id="tickets-list" class="ticket-list-scroll" style="flex: 1; overflow-y: auto;">
+                </div>
+            </div>
+
+            <div class="ticket-editor">
+                <div class="card editor-card" style="margin: 0 auto;">
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid var(--border-glass); padding-bottom:15px;">
+                        <h2 id="editor-title" style="margin:0; font-size:1.5rem; color: var(--brand-primary);">NUEVO
+                            ALBARÁN</h2>
+                        <span id="editor-status"
+                            style="font-size:0.85rem; color:var(--text-dim); font-weight: 600;">BORRADOR</span>
+                    </div>
+
+                    <form id="create-ticket-form"
+                        style="display: grid; grid-template-columns: 1fr 320px; gap: 20px; height: 100%; align-content: start;">
+                        <div style="display: flex; flex-direction: column; gap: 20px;">
+                            <div
+                                style="background:rgba(255,255,255,0.03); padding:15px; border-radius:12px; border:1px solid var(--border-glass);">
+                                <label class="form-label" style="color:var(--brand-primary);">🔍 BÚSQUEDA RÁPIDA DE
+                                    CLIENTE</label>
+                                <div style="position:relative;">
+                                    <input type="text" id="client-picker" class="form-control" autocomplete="off"
+                                        placeholder="Escribe para buscar...">
+                                    <div id="client-picker-results" class="suggestions-dropdown hidden"></div>
+                                </div>
+                            </div>
+
+                            <div class="card"
+                                style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass);">
+                                <h3
+                                    style="font-size: 0.8rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; margin-bottom: 15px; color: var(--text-dim);">
+                                    📍 DESTINATARIO</h3>
+                                <div style="margin-bottom: 12px;">
+                                    <input type="text" id="ticket-receiver" class="form-control" required
+                                        autocomplete="off" placeholder="NOMBRE DEL CLIENTE"
+                                        style="font-weight:900; font-size:1.1rem; border-color:var(--brand-primary); color:white;">
+                                    <div id="suggestions-box" class="suggestions-dropdown hidden"></div>
+                                </div>
+                                <div
+                                    style="display: grid; grid-template-columns: 3fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                    <input type="text" id="ticket-address" class="form-control" required
+                                        placeholder="DIRECCIÓN">
+                                    <input type="text" id="ticket-number" class="form-control" placeholder="Nº">
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px;">
+                                    <select id="ticket-province" class="form-control" required>
+                                        <option value="">-- PROVINCIA --</option>
+                                    </select>
+                                    <input type="text" id="ticket-phone" class="form-control" placeholder="TELÉFONO">
+                                </div>
+                                <div style="margin-top: 15px;">
+                                    <label class="form-label"
+                                        style="display: flex; align-items: center; gap: 8px; text-transform:none; cursor:pointer;">
+                                        <input type="checkbox" id="save-destination-check" checked> GUARDAR EN AGENDA
+                                        NUBE
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="card"
+                                style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); flex: 1; display: flex; flex-direction: column;">
+                                <div
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                    <h3
+                                        style="font-size: 0.8rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; color: var(--text-dim);">
+                                        📦 BULTOS / MERCANCÍA</h3>
+                                    <button type="button" id="btn-add-package" class="btn btn-sm btn-primary">+
+                                        AÑADIR</button>
+                                </div>
+                                <div id="packages-list"
+                                    style="flex:1; min-height: 120px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border-glass);">
+                                </div>
+                                <div style="text-align:right; font-size:1.1rem; margin-top:10px; font-weight: 800;">
+                                    TOTALES: <span id="display-total-packages"
+                                        style="color:var(--brand-primary);">0</span>
+                                    <input type="hidden" id="ticket-packages-count" value="0">
+                                    <input type="hidden" id="ticket-weight-total" value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            style="display: flex; flex-direction: column; gap: 20px; position: sticky; top: 0; height: fit-content;">
+                            <div
+                                style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; border: 1px solid var(--border-glass);">
+                                <h3 style="font-size:0.75rem; margin-bottom:8px; color:var(--text-dim);">REMITENTE NUBE
+                                </h3>
+                                <input type="text" id="ticket-sender" class="form-control" readonly>
+                                <input type="text" id="ticket-sender-address" class="form-control" readonly>
+                                <input type="text" id="ticket-sender-phone" class="form-control" readonly>
+                            </div>
+
+                            <div
+                                style="background: rgba(255,102,0,0.05); padding: 12px; border-radius: 12px; border: 1px solid var(--brand-primary);">
+                                <label class="form-label" style="color:var(--brand-primary); font-weight: 700;">⏰ TURNO
+                                    *</label>
+                                <select id="ticket-time-slot" class="form-control" required>
+                                    <option value="MAÑANA">☀️ MAÑANA</option>
+                                    <option value="TARDE">🌙 TARDE</option>
+                                </select>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div class="card" style="padding:10px; background: transparent;">
+                                    <label class="form-label">💰 PORTES</label>
+                                    <select id="ticket-shipping-type" class="form-control">
+                                        <option value="Pagados">PAGADOS</option>
+                                        <option value="Debidos">DEBIDOS</option>
+                                    </select>
+                                </div>
+                                <div class="card" style="padding:10px; background: transparent;">
+                                    <label class="form-label">💸 REEMB.</label>
+                                    <input type="number" id="ticket-cod" class="form-control" step="0.01"
+                                        placeholder="0.00 €">
+                                </div>
+                            </div>
+
+                            <div class="card" style="padding:10px; background: transparent;">
+                                <label class="form-label">📝 OBSERVACIONES</label>
+                                <textarea id="ticket-notes" class="form-control" style="min-height: 80px;"
+                                    placeholder="Instrucciones de entrega..."></textarea>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary"
+                                style="width: 100%; padding: 20px; font-size: 1.25rem; font-weight: 900;">💾 GUARDAR
+                                NUBE</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clients View -->
+    <div id="clients-view" class="view-section hidden">
+        <header class="toolbar">
+            <div class="container toolbar-content"
+                style="max-width:100%; padding:0 20px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <h2 class="logo" style="margin:0; cursor:pointer;" onclick="location.reload()">NOVAPACK<span
+                            class="logo-arrow">➤</span></h2>
+                    <h3 style="margin:0; color:var(--brand-primary);">AGENDA DE CLIENTES NUBE</h3>
+                </div>
+                <div>
+                    <button id="btn-close-clients" class="btn btn-sm btn-outline">VOLVER AL PANEL</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="container"
+            style="display:grid; grid-template-columns: 350px 1fr; gap:30px; padding:30px; height: calc(100vh - 80px); box-sizing: border-box;">
+            <div class="card" style="display:flex; flex-direction:column; overflow:hidden;">
+                <input type="text" id="client-view-search" class="form-control mb-4" placeholder="🔍 BUSCAR CLIENTE...">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <label style="font-size:0.75rem; color:#888;"><input type="checkbox" id="client-select-all">
+                        SELECCIONAR TODO</label>
+                    <button id="btn-delete-selected-clients" class="btn btn-xs btn-danger"
+                        style="display:none;"></button>
+                </div>
+                <div id="clients-view-list"
+                    style="flex:1; overflow-y:auto; border:1px solid var(--border-glass); border-radius:12px;"></div>
+            </div>
+
+            <div class="card" style="overflow-y:auto;">
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-glass); padding-bottom:15px; margin-bottom:20px;">
+                    <h2 style="margin:0;">DETALLES DEL CLIENTE</h2>
+                    <div style="display:flex; gap:10px;">
+                        <button id="btn-client-new" class="btn btn-sm btn-outline">+ NUEVO</button>
+                        <button id="btn-client-delete" class="btn btn-sm btn-danger">🗑️ ELIMINAR</button>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap:30px;">
+                    <div>
+                        <input type="hidden" id="client-edit-id">
+                        <div class="form-group">
+                            <label>NOMBRE DEL CLIENTE</label>
+                            <input type="text" id="client-edit-name" class="form-control"
+                                style="font-weight:900; font-size:1.1rem; border-color:var(--brand-primary);">
+                        </div>
+                        <div class="form-group">
+                            <label>TELÉFONO PRINCIPAL</label>
+                            <input type="text" id="client-edit-phone" class="form-control">
+                        </div>
+                        <button id="btn-client-save" class="btn btn-primary" style="width:100%; margin-top:20px;">💾
+                            GUARDAR CAMBIOS</button>
+                    </div>
+
+                    <div>
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                            <h3 style="margin:0; font-size:1rem;">DIRECCIONES REGISTRADAS</h3>
+                            <button id="btn-add-address-row" class="btn btn-xs btn-outline">+ AÑADIR DIRECCIÓN</button>
+                        </div>
+                        <div id="client-edit-addresses-container"
+                            style="display:flex; flex-direction:column; gap:15px;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports View -->
+    <div id="reports-view" class="view-section hidden">
+        <header class="toolbar">
+            <div class="container toolbar-content"
+                style="max-width:100%; padding:0 20px; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <h2 class="logo" style="margin:0; cursor:pointer;" onclick="location.reload()">NOVAPACK<span
+                            class="logo-arrow">➤</span></h2>
+                    <h3 style="margin:0; color:var(--brand-primary);">INFORMES Y ESTADÍSTICAS NUBE</h3>
+                </div>
+                <div>
+                    <button id="btn-close-reports" class="btn btn-sm btn-outline">VOLVER AL PANEL</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="container" style="padding:30px;">
+            <div class="card mb-6" style="display:flex; gap:20px; align-items:flex-end;">
+                <div style="flex:2;">
+                    <label class="form-label">🔍 CLIENTE O ALBARÁN</label>
+                    <input type="text" id="report-client" class="form-control" placeholder="Todos los clientes...">
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label">📅 DESDE</label>
+                    <input type="date" id="report-date-start" class="form-control">
+                </div>
+                <div style="flex:1;">
+                    <label class="form-label">📅 HASTA</label>
+                    <input type="date" id="report-date-end" class="form-control">
+                </div>
+                <button id="btn-run-report" class="btn btn-primary" style="padding:14px 30px;">⚡ GENERAR</button>
+                <button id="btn-export-csv" class="btn btn-outline" style="padding:14px 20px;">📁 EXPORTAR CSV</button>
+            </div>
+
+            <div class="card">
+                <div
+                    style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom:2px solid var(--border-glass); padding-bottom:10px;">
+                    <h3 style="margin:0;">RESULTADOS: <span id="report-total-count"
+                            style="color:var(--brand-primary);">0</span> ENVÍOS</h3>
+                </div>
+                <div style="max-height: calc(100vh - 350px); overflow-y:auto;">
+                    <table style="width:100%; border-collapse: collapse;">
+                        <thead style="position:sticky; top:0; background:var(--surface); z-index:10;">
+                            <tr>
+                                <th style="text-align:left; padding:12px; border-bottom:2px solid #333;">ID</th>
+                                <th style="text-align:left; padding:12px; border-bottom:2px solid #333;">FECHA</th>
+                                <th style="text-align:left; padding:12px; border-bottom:2px solid #333;">DESTINATARIO
+                                </th>
+                                <th style="text-align:left; padding:12px; border-bottom:2px solid #333;">PROVINCIA</th>
+                                <th style="text-align:center; padding:12px; border-bottom:2px solid #333;">BULTOS</th>
+                                <th style="text-align:center; padding:12px; border-bottom:2px solid #333;">PESO</th>
+                                <th style="text-align:center; padding:12px; border-bottom:2px solid #333;">PORTES</th>
+                                <th style="text-align:center; padding:12px; border-bottom:2px solid #333;">ESTADO</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-results"></tbody>
+                    </table>
+                    <div id="report-empty" style="text-align:center; padding:40px; color:#666;">No hay datos que
+                        coincidan con los filtros.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="print-area"></div>
+
+    <script src="firebase-config.js"></script>
+    <script src="firebase-app.js"></script>
+</body>
+
+</html>

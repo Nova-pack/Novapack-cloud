@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVAPACK - Admin Console</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        :root {
+            --brand-primary: #FF6600;
+            --bg-dark: #080808;
+            --surface: #121212;
+            --glass: rgba(255, 255, 255, 0.05);
+            --border-glass: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            color: white;
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: var(--surface);
+            border-right: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+        }
+
+        .logo {
+            font-size: 1.8rem;
+            font-weight: 900;
+            margin-bottom: 40px;
+        }
+
+        .nav-item {
+            padding: 12px 20px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #888;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-item.active {
+            background: var(--glass);
+            color: white;
+            border: 1px solid var(--border-glass);
+        }
+
+        .nav-item:hover:not(.active) {
+            color: white;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            padding: 60px;
+            overflow-y: auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2.2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border-glass);
+            border-radius: 24px;
+            padding: 40px;
+            margin-bottom: 30px;
+        }
+
+        .user-list {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0 10px;
+        }
+
+        .user-list th {
+            text-align: left;
+            color: #666;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            padding: 10px 20px;
+        }
+
+        .user-row {
+            background: var(--glass);
+            transition: transform 0.2s;
+        }
+
+        .user-row:hover {
+            transform: scale(1.01);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .user-row td {
+            padding: 18px 20px;
+        }
+
+        .user-row td:first-child {
+            border-radius: 12px 0 0 12px;
+        }
+
+        .user-row td:last-child {
+            border-radius: 0 12px 12px 0;
+            text-align: right;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: var(--brand-primary);
+            color: white;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-glass);
+            color: white;
+        }
+
+        .btn-danger {
+            background: rgba(255, 68, 68, 0.1);
+            color: #ff4444;
+            border: 1px solid rgba(255, 68, 68, 0.2);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal-content {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: 24px;
+            width: 100%;
+            max-width: 450px;
+            border: 1px solid var(--border-glass);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #888;
+            font-size: 0.8rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        .chip {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            background: rgba(0, 255, 127, 0.1);
+            color: #00ff7f;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="sidebar" id="sidebar">
+        <div class="logo">NOVAPACK<span style="color:var(--brand-primary)">➤</span></div>
+        <div class="nav-item active">👥 Usuarios</div>
+        <div class="nav-item">⚙️ Configuración</div>
+        <div style="flex:1"></div>
+        <div class="nav-item" id="btn-logout">🚪 Cerrar Sesión</div>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>Gestión de Clientes Cloud</h1>
+            <button class="btn btn-primary" id="btn-add-user">+ NUEVO CLIENTE</button>
+        </div>
+
+        <div class="card">
+            <table class="user-list">
+                <thead>
+                    <tr>
+                        <th>Cliente / Correo</th>
+                        <th>Estado</th>
+                        <th>Fecha Creación</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="user-table-body">
+                    <!-- Loaded via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div class="modal" id="add-user-modal">
+        <div class="modal-content">
+            <h2 style="margin-top:0">Añadir Nuevo Cliente</h2>
+            <form id="add-user-form">
+                <div class="form-group">
+                    <label>Nombre del Cliente</label>
+                    <input type="text" id="new-user-name" required placeholder="Ej: Talleres Gomez">
+                </div>
+                <div class="form-group">
+                    <label>Correo Electrónico (Acceso)</label>
+                    <input type="email" id="new-user-email" required placeholder="cliente@correo.com">
+                </div>
+                <div class="form-group">
+                    <label>Clave Temporal</label>
+                    <input type="password" id="new-user-password" required placeholder="••••••••">
+                </div>
+                <div style="display:flex; gap:10px; margin-top:30px;">
+                    <button type="button" class="btn btn-outline" style="flex:1" id="btn-close-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="flex:1">Crear Acceso</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script>
+        // Auth Protection
+        auth.onAuthStateChanged(async (user) => {
+            if (!user) {
+                window.location.href = 'index.html';
+                return;
+            }
+            try {
+                const adminDoc = await db.collection('config').doc('admin').get();
+                if (!adminDoc.exists || adminDoc.data().uid !== user.uid) {
+                    window.location.href = 'app.html';
+                }
+            } catch (e) {
+                console.error("Admin verification failed:", e);
+                window.location.href = 'app.html';
+            }
+        });
+
+        const userTableBody = document.getElementById('user-table-body');
+        const addUserModal = document.getElementById('add-user-modal');
+        const btnAddUser = document.getElementById('btn-add-user');
+        const btnCloseModal = document.getElementById('btn-close-modal');
+        const addUserForm = document.getElementById('add-user-form');
+        const btnLogout = document.getElementById('btn-logout');
+
+        // Load Users
+        async function loadUsers() {
+            try {
+                const snapshot = await db.collection('users').get();
+                userTableBody.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.role === 'admin') return;
+
+                    const row = document.createElement('tr');
+                    row.className = 'user-row';
+                    row.innerHTML = `
+                        <td>
+                            <div style="font-weight:700">${data.name || 'Sin Nombre'}</div>
+                            <div style="font-size:0.8rem; color:#888">${data.email}</div>
+                        </td>
+                        <td><span class="chip">Activo</span></td>
+                        <td style="color:#888">${data.createdAt ? new Date(data.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteUser('${doc.id}')">🗑️</button>
+                        </td>
+                    `;
+                    userTableBody.appendChild(row);
+                });
+            } catch (e) {
+                console.error("Error loading users:", e);
+            }
+        }
+
+        addUserForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('new-user-name').value;
+            const email = document.getElementById('new-user-email').value;
+
+            try {
+                const newUserRef = db.collection('users').doc();
+                await newUserRef.set({
+                    name,
+                    email,
+                    role: 'client',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                alert('Usuario registrado en Firestore. Recuerda crearlo también en la pestaña "Authentication" de Firebase.');
+
+                addUserModal.style.display = 'none';
+                addUserForm.reset();
+                loadUsers();
+            } catch (err) {
+                console.error(err);
+                alert('Error al guardar el usuario.');
+            }
+        });
+
+        window.deleteUser = async (id) => {
+            if (confirm('¿Eliminar acceso a este cliente?')) {
+                try {
+                    await db.collection('users').doc(id).delete();
+                    loadUsers();
+                } catch (e) {
+                    alert("Error al eliminar usuario.");
+                }
+            }
+        };
+
+        btnAddUser.onclick = () => addUserModal.style.display = 'flex';
+        btnCloseModal.onclick = () => addUserModal.style.display = 'none';
+        btnLogout.onclick = () => auth.signOut().then(() => window.location.href = 'index.html');
+
+        loadUsers();
+    </script>
+</body>
+
+</html>

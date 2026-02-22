@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVAPACK - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        :root {
+            --brand-primary: #FF6600;
+            --brand-secondary: #0D0D0D;
+            --bg-dark: #080808;
+            --glass: rgba(255, 255, 255, 0.05);
+            --border-glass: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-dark);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #080808 100%);
+        }
+
+        .login-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: 24px;
+            border: 1px solid var(--border-glass);
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 900;
+            text-align: center;
+            margin-bottom: 8px;
+            letter-spacing: -1px;
+        }
+
+        .logo-arrow {
+            color: var(--brand-primary);
+        }
+
+        .subtext {
+            text-align: center;
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            color: #aaa;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+            background: rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            background: var(--brand-primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 102, 0, 0.4);
+        }
+
+        #error-msg {
+            color: #ff4444;
+            text-align: center;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            min-height: 1.2rem;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .loader-dots {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--brand-primary);
+            border-radius: 50%;
+            margin: 0 4px;
+            animation: bounce 0.6s infinite alternate;
+        }
+
+        .loader-dots:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loader-dots:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+            to {
+                transform: translateY(-8px);
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="logo">NOVAPACK<span class="logo-arrow">➤</span></div>
+        <div class="subtext">Cloud Management</div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Username / Email</label>
+                <input type="email" id="email" placeholder="admin@novapack.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Clave de Acceso</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn">INICIAR SESIÓN</button>
+            <div id="error-msg"></div>
+            <div class="loader" id="loader">
+                <div class="loader-dots"></div>
+                <div class="loader-dots"></div>
+                <div class="loader-dots"></div>
+            </div>
+        </form>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script>
+        const form = document.getElementById('login-form');
+        const errorMsg = document.getElementById('error-msg');
+        const loader = document.getElementById('loader');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            errorMsg.innerText = '';
+            loader.style.display = 'block';
+
+            try {
+                console.log("Intentando iniciar sesión para:", email);
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                const user = userCredential.user;
+                console.log("Login exitoso, verificando rango...");
+
+                // Redirección directa tras login (evita esperar al onAuthStateChanged)
+                try {
+                    const adminDoc = await db.collection('config').doc('admin').get();
+                    if (adminDoc.exists && adminDoc.data().uid === user.uid) {
+                        window.location.href = 'admin.html';
+                    } else {
+                        window.location.href = 'app.html';
+                    }
+                } catch (dbError) {
+                    console.error("Firestore Error (Config):", dbError);
+                    // Si falla Firestore, vamos a app.html por defecto
+                    window.location.href = 'app.html';
+                }
+            } catch (error) {
+                console.error("Firebase Login Error:", error);
+                if (error.code === 'auth/configuration-not-found') {
+                    errorMsg.innerText = 'Error: Problema de configuración en Firebase.';
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMsg.innerText = 'Error: El método Email/Password no está habilitado en Firebase.';
+                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMsg.innerText = 'Email o contraseña incorrectos.';
+                } else {
+                    errorMsg.innerText = 'Error: ' + error.message;
+                }
+            } finally {
+                loader.style.display = 'none';
+            }
+        });
+
+        // Verificación de sesión persistente
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                console.log("Sesión detectada, redirigiendo...");
+                try {
+                    const adminDoc = await db.collection('config').doc('admin').get();
+                    const isAdmin = adminDoc.exists && adminDoc.data().uid === user.uid;
+                    console.log("¿Es Admin?", isAdmin);
+
+                    if (isAdmin) {
+                        console.log("Redirigiendo a Panel Admin...");
+                        window.location.href = 'admin.html';
+                    } else {
+                        console.log("Redirigiendo a App Cliente...");
+                        window.location.href = 'app.html';
+                    }
+                } catch (e) {
+                    console.error("Error al verificar admin:", e);
+                    window.location.href = 'app.html';
+                }
+            }
+        });
+    </script>
+</body>
+
+</html>
