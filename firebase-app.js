@@ -89,6 +89,7 @@ async function loadCompanies() {
             prefix: 'NP',
             address: 'Dirección no configurada',
             phone: '',
+            startNum: 1,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
         const newDoc = await db.collection('users').doc(currentUser.uid).collection('companies').add(defaultComp);
@@ -104,6 +105,7 @@ async function loadCompanies() {
         }
     }
     renderCompanySelector();
+    renderCompanyList(); // Also update list if modal is open
 }
 
 function renderCompanySelector() {
@@ -124,6 +126,18 @@ document.getElementById('company-selector').onchange = (e) => {
     showLoading();
     Promise.all([loadProvinces(), resetEditor(), loadTickets()]).then(hideLoading);
 };
+
+// Company Modal Listeners
+document.getElementById('btn-manage-companies').onclick = () => {
+    document.getElementById('company-modal').classList.remove('hidden');
+    renderCompanyList();
+};
+document.getElementById('btn-close-company-modal').onclick = () => {
+    document.getElementById('company-modal').classList.add('hidden');
+    resetCompanyForm();
+};
+document.getElementById('company-form').onsubmit = handleCompanyFormSubmit;
+document.getElementById('btn-cancel-comp-edit').onclick = resetCompanyForm;
 
 // Batch Print Listeners
 document.getElementById('btn-print-morning').onclick = () => printShiftBatch('MAÑANA');
@@ -308,9 +322,10 @@ async function resetEditor() {
 async function getNextId() {
     const comp = companies.find(c => c.id === currentCompanyId);
     const prefix = (comp && comp.prefix) ? comp.prefix : "NP";
+    const startNum = (comp && comp.startNum) ? comp.startNum : 1;
 
-    const snapshot = await getCollection('tickets').orderBy('id', 'desc').limit(5).get();
-    let maxNum = 0;
+    const snapshot = await getCollection('tickets').orderBy('id', 'desc').limit(10).get();
+    let maxNum = startNum - 1;
     snapshot.forEach(doc => {
         const id = doc.id;
         const match = id.match(/\d+/);
@@ -321,6 +336,108 @@ async function getNextId() {
     });
     return prefix + (maxNum + 1).toString().padStart(2, '0');
 }
+
+// --- COMPANY MANAGEMENT LOGIC ---
+function renderCompanyList() {
+    const container = document.getElementById('company-list-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    companies.forEach(c => {
+        const item = document.createElement('div');
+        item.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:10px 15px; border-radius:10px; border:1px solid var(--border-glass);";
+        item.innerHTML = `
+            <div>
+                <div style="font-weight:bold; font-size:0.9rem;">${c.name}</div>
+                <div style="font-size:0.7rem; color:var(--text-dim);">${c.prefix || 'NP'} | ${c.address}</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-xs btn-outline" onclick="editCompanyUI('${c.id}')">✏️</button>
+                <button class="btn btn-xs btn-danger" onclick="deleteCompanyCloud('${c.id}')">🗑️</button>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+window.editCompanyUI = (id) => {
+    const c = companies.find(x => x.id === id);
+    if (!c) return;
+
+    document.getElementById('comp-edit-id').value = c.id;
+    document.getElementById('comp-name').value = c.name;
+    document.getElementById('comp-address').value = c.address;
+    document.getElementById('comp-phone').value = c.phone || '';
+    document.getElementById('comp-prefix').value = c.prefix || 'NP';
+    document.getElementById('comp-start-num').value = c.startNum || 1;
+
+    document.getElementById('company-form-title').textContent = "EDITAR EMPRESA";
+    document.getElementById('btn-cancel-comp-edit').classList.remove('hidden');
+};
+
+function resetCompanyForm() {
+    document.getElementById('company-form').reset();
+    document.getElementById('comp-edit-id').value = '';
+    document.getElementById('company-form-title').textContent = "AÑADIR NUEVA EMPRESA";
+    document.getElementById('btn-cancel-comp-edit').classList.add('hidden');
+}
+
+async function handleCompanyFormSubmit(e) {
+    e.preventDefault();
+    const id = document.getElementById('comp-edit-id').value;
+    const data = {
+        name: document.getElementById('comp-name').value.trim(),
+        address: document.getElementById('comp-address').value.trim(),
+        phone: document.getElementById('comp-phone').value.trim(),
+        prefix: (document.getElementById('comp-prefix').value.trim() || 'NP').toUpperCase(),
+        startNum: parseInt(document.getElementById('comp-start-num').value) || 1,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    showLoading();
+    try {
+        const col = db.collection('users').doc(currentUser.uid).collection('companies');
+        if (id) {
+            await col.doc(id).update(data);
+        } else {
+            data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            await col.add(data);
+        }
+        await loadCompanies();
+        resetCompanyForm();
+        alert("Empresa guardada con éxito.");
+    } catch (err) {
+        alert("Error: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+window.deleteCompanyCloud = async (id) => {
+    if (companies.length <= 1) {
+        alert("No puedes eliminar la única empresa.");
+        return;
+    }
+    const c = companies.find(x => x.id === id);
+    if (!confirm(`¿Eliminar la empresa "${c.name}" y TODOS sus datos asociados?`)) return;
+
+    showLoading();
+    try {
+        await db.collection('users').doc(currentUser.uid).collection('companies').doc(id).delete();
+        if (currentCompanyId === id) {
+            const next = companies.find(x => x.id !== id);
+            currentCompanyId = next.id;
+            localStorage.setItem('last_company_id', currentCompanyId);
+        }
+        await loadCompanies();
+        await resetEditor();
+        alert("Empresa eliminada.");
+    } catch (err) {
+        alert("Error al eliminar: " + err.message);
+    } finally {
+        hideLoading();
+    }
+};
 
 // --- PACKAGE MANAGEMENT ---
 async function addPackageRow(data = null) {
@@ -1013,6 +1130,116 @@ function generateManifestHTML(tickets) {
 // --- SHIFT BATCH PRINTING ---
 document.getElementById('btn-print-morning').onclick = () => printShiftBatch('MAÑANA');
 document.getElementById('btn-print-afternoon').onclick = () => printShiftBatch('TARDE');
+document.getElementById('btn-export-csv').onclick = handleExportCSV;
+document.getElementById('btn-import-json').onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.style.display = 'none';
+    input.onchange = (e) => handleImportJSON(e);
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input);
+};
+
+async function handleImportJSON(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+        try {
+            const raw = JSON.parse(ev.target.result);
+            let importedTickets = [];
+            let importedDestinations = [];
+
+            // Case A: Full Backup Object (contains keys like novapack_...)
+            if (typeof raw === 'object' && !Array.isArray(raw)) {
+                Object.keys(raw).forEach(key => {
+                    if (key.includes('_tickets')) {
+                        try { importedTickets = importedTickets.concat(JSON.parse(raw[key])); } catch (e) { }
+                    }
+                    if (key === 'novapack_destinations') {
+                        try { importedDestinations = JSON.parse(raw[key]); } catch (e) { }
+                    }
+                });
+            }
+            // Case B: Array (assume tickets for current company)
+            else if (Array.isArray(raw)) {
+                importedTickets = raw;
+            }
+
+            if (importedTickets.length === 0 && importedDestinations.length === 0) {
+                alert("No se encontraron albaranes o clientes válidos en el archivo.");
+                return;
+            }
+
+            if (!confirm(`Se han detectado ${importedTickets.length} albaranes y ${importedDestinations.length} clientes. ¿Deseas importarlos a la empresa actual (${companies.find(c => c.id === currentCompanyId).name})?`)) return;
+
+            showLoading();
+
+            // Import Tickets
+            if (importedTickets.length > 0) {
+                const ticketsCol = getCollection('tickets');
+                for (let i = 0; i < importedTickets.length; i += 50) { // Batch chunks
+                    const chunk = importedTickets.slice(i, i + 50);
+                    const batch = db.batch();
+                    chunk.forEach(t => {
+                        if (!t.id) return;
+                        // Map old date strings to ServerTimestamp or JS Date if needed, 
+                        // but here we keep strings for historical consistency if that's what we have
+                        if (t.createdAt && typeof t.createdAt === 'string') t.createdAt = new Date(t.createdAt);
+                        if (t.updatedAt && typeof t.updatedAt === 'string') t.updatedAt = new Date(t.updatedAt);
+
+                        batch.set(ticketsCol.doc(t.id), t);
+                    });
+                    await batch.commit();
+                }
+            }
+
+            // Import Destinations
+            if (importedDestinations.length > 0) {
+                const destCol = db.collection('users').doc(currentUser.uid).collection('destinations');
+                for (let i = 0; i < importedDestinations.length; i += 50) {
+                    const chunk = importedDestinations.slice(i, i + 50);
+                    const batch = db.batch();
+                    chunk.forEach(d => {
+                        if (!d.id) d.id = "cli_" + Date.now() + Math.random();
+                        batch.set(destCol.doc(d.id), d);
+                    });
+                    await batch.commit();
+                }
+            }
+
+            hideLoading();
+            alert("✅ Importación completada con éxito.");
+            location.reload();
+
+        } catch (err) {
+            hideLoading();
+            alert("Error al procesar el archivo: " + err.message);
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+}
+
+function handleExportCSV() {
+    if (currentReportData.length === 0) { alert("No hay datos para exportar."); return; }
+    let csv = "ID;FECHA;CLIENTE;ZONA;BULTOS;PESO;TIPO;PORTES;REEMBOLSO\n";
+    currentReportData.forEach(t => {
+        const d = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
+        const dStr = d.toLocaleDateString();
+        const pkgCount = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+        const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
+        csv += `${t.id};${dStr};${t.receiver};${t.province || ''};${pkgCount};${weight.toFixed(1)};${t.timeSlot || ''};${t.shippingType};${t.cod || ''}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `reporte_novapack_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+}
 
 async function printShiftBatch(slot) {
     const today = new Date().toISOString().split('T')[0];
