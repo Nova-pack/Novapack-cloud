@@ -214,32 +214,62 @@
 <body>
     <div class="sidebar" id="sidebar">
         <div class="logo">NOVAPACK<span style="color:var(--brand-primary)">➤</span></div>
-        <div class="nav-item active">👥 Usuarios</div>
-        <div class="nav-item">⚙️ Configuración</div>
+        <div class="nav-item active" id="nav-users">👥 Usuarios</div>
+        <div class="nav-item" id="nav-config">⚙️ Configuración</div>
         <div style="flex:1"></div>
         <div class="nav-item" id="btn-logout">🚪 Cerrar Sesión</div>
     </div>
 
     <div class="main-content">
-        <div class="header">
-            <h1>Gestión de Clientes Cloud</h1>
-            <button class="btn btn-primary" id="btn-add-user">+ NUEVO CLIENTE</button>
+        <!-- Usuarios View -->
+        <div id="view-users">
+            <div class="header">
+                <h1>Gestión de Clientes Cloud</h1>
+                <button class="btn btn-primary" id="btn-add-user">+ NUEVO CLIENTE</button>
+            </div>
+
+            <div class="card">
+                <table class="user-list">
+                    <thead>
+                        <tr>
+                            <th>Cliente / Correo</th>
+                            <th>Estado</th>
+                            <th>Fecha Creación</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-table-body">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
         </div>
 
-        <div class="card">
-            <table class="user-list">
-                <thead>
-                    <tr>
-                        <th>Cliente / Correo</th>
-                        <th>Estado</th>
-                        <th>Fecha Creación</th>
-                        <th>Acciones</th>
-                    </tr>
-                </thead>
-                <tbody id="user-table-body">
-                    <!-- Loaded via JS -->
-                </tbody>
-            </table>
+        <!-- Configuración View -->
+        <div id="view-config" style="display:none">
+            <div class="header">
+                <h1>Configuración del Sistema</h1>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
+                <div class="form-group">
+                    <label>ID del Proyecto Firebase</label>
+                    <div id="conf-project-id"
+                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Tu UID de Administrador (Actual)</label>
+                    <div id="conf-admin-uid"
+                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+                    </div>
+                </div>
+                <p style="color:#888; font-size:0.85rem; margin-top:20px;">
+                    ⚠️ La configuración avanzada de la base de datos se realiza directamente desde la consola de
+                    Firebase.
+                </p>
+            </div>
         </div>
     </div>
 
@@ -294,6 +324,33 @@
         const addUserForm = document.getElementById('add-user-form');
         const btnLogout = document.getElementById('btn-logout');
 
+        // Navigation elements
+        const navUsers = document.getElementById('nav-users');
+        const navConfig = document.getElementById('nav-config');
+        const viewUsers = document.getElementById('view-users');
+        const viewConfig = document.getElementById('view-config');
+
+        // Switching Views
+        navUsers.onclick = () => {
+            navUsers.classList.add('active');
+            navConfig.classList.remove('active');
+            viewUsers.style.display = 'block';
+            viewConfig.style.display = 'none';
+        };
+
+        navConfig.onclick = () => {
+            navConfig.classList.add('active');
+            navUsers.classList.remove('active');
+            viewUsers.style.display = 'none';
+            viewConfig.style.display = 'block';
+            loadConfigInfo();
+        };
+
+        function loadConfigInfo() {
+            document.getElementById('conf-admin-uid').textContent = auth.currentUser ? auth.currentUser.uid : 'Cargando...';
+            document.getElementById('conf-project-id').textContent = firebaseConfig.projectId;
+        }
+
         // Load Users
         async function loadUsers() {
             try {
@@ -337,7 +394,7 @@
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                alert('Usuario registrado en Firestore. Recuerda crearlo también en la pestaña "Authentication" de Firebase.');
+                alert('Usuario registrado en Firestore. Recuerda crearlo también en la pestaña "Authentication" de Firebase con este mismo correo.');
 
                 addUserModal.style.display = 'none';
                 addUserForm.reset();
