@@ -12,17 +12,26 @@ let editingClientId = null;
 let currentReportData = [];
 
 // Constants
-const DEFAULT_ZONES = [
-    "MALAGA", "GRANADA", "SEVILLA", "CORDOBA", "VELEZ-MALAGA",
-    "TORRE DEL MAR", "ALGARROBO", "NERJA", "TORROX COSTA", "LOJA",
-    "BANAMEJI", "LUCENA", "ANTEQUERA", "MOLLINA", "PUENTE GENIL",
-    "FUENTE DE PIEDRA", "ESTEPONA", "MARBELLA", "TORREMOLINOS",
-    "FUENGIROLA", "MIJAS", "BENALMADENA",
-    "ALCALA DE GUADAIRA", "CABRA", "F.VAQUEROS", "ARCHIDONA",
-    "ALBOLOTE", "N.ANDALAUCIA", "SAN PEDRO"
-];
-
 const DEFAULT_SIZES = "Pequeño, Mediano, Grande, Sobre, Palet, BATERIA 45AH, BATERIA 75AH, BATERIA 100AH, BATERIA CAMION, TAMBOR CAMION, CALIPER DE CAMION, CAJAS DE ACEITE O AGUA, GARRAFAS ADBLUE";
+
+// --- CUSTOM STORAGE (Firestore-backed Global Settings) ---
+async function getCustomData(key) {
+    try {
+        const doc = await db.collection('config').doc('settings').get();
+        return doc.exists ? doc.data()[key] : null;
+    } catch (e) {
+        console.warn("Error getting custom data:", e);
+        return null;
+    }
+}
+
+async function saveCustomData(key, value) {
+    try {
+        await db.collection('config').doc('settings').set({ [key]: value }, { merge: true });
+    } catch (e) {
+        console.error("Error saving custom data:", e);
+    }
+}
 
 // --- INITIALIZATION ---
 auth.onAuthStateChanged(async (user) => {
@@ -113,8 +122,14 @@ document.getElementById('company-selector').onchange = (e) => {
     currentCompanyId = e.target.value;
     localStorage.setItem('last_company_id', currentCompanyId);
     showLoading();
-    loadProvinces().then(() => resetEditor().then(hideLoading));
+    Promise.all([loadProvinces(), resetEditor(), loadTickets()]).then(hideLoading);
 };
+
+// Batch Print Listeners
+document.getElementById('btn-print-morning').onclick = () => printShiftBatch('MAÑANA');
+document.getElementById('btn-print-afternoon').onclick = () => printShiftBatch('TARDE');
+document.getElementById('btn-print-labels-morning').onclick = () => printLabelShiftBatch('MAÑANA');
+document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
 // --- NAVIGATION ---
 const views = ['dashboard-view', 'clients-view', 'reports-view'];
@@ -238,15 +253,17 @@ async function loadEditor(t) {
     const list = document.getElementById('packages-list');
     list.innerHTML = '';
     if (t.packagesList && t.packagesList.length > 0) {
-        t.packagesList.forEach(p => addPackageRow(p));
+        for (const p of t.packagesList) await addPackageRow(p);
     } else {
-        addPackageRow();
+        await addPackageRow();
     }
 
     // Actions
     document.getElementById('action-print').onclick = () => printTicket(t);
     document.getElementById('action-label').onclick = () => printLabel(t);
     document.getElementById('action-delete').onclick = () => deleteTicket(t.id);
+    document.getElementById('action-sms-pickup').onclick = () => sendPickupSMS(t);
+    document.getElementById('action-sms-pickup').style.display = 'inline-block';
 
     // UI Refresh
     loadTickets(document.getElementById('ticket-search').value);
@@ -256,6 +273,7 @@ async function resetEditor() {
     editingId = null;
     document.getElementById('create-ticket-form').reset();
     document.getElementById('editor-title').textContent = "Nuevo Albarán";
+    document.getElementById('action-sms-pickup').style.display = 'none';
 
     showLoading();
     const nextId = await getNextId();
@@ -269,7 +287,7 @@ async function resetEditor() {
 
     // Packages
     document.getElementById('packages-list').innerHTML = '';
-    addPackageRow();
+    await addPackageRow();
 
     // Default Sender
     const comp = companies.find(c => c.id === currentCompanyId);
@@ -305,13 +323,17 @@ async function getNextId() {
 }
 
 // --- PACKAGE MANAGEMENT ---
-function addPackageRow(data = null) {
+async function addPackageRow(data = null) {
     const list = document.getElementById('packages-list');
     const row = document.createElement('div');
     row.className = 'package-row';
     row.style = "display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 8px;";
 
-    let options = DEFAULT_SIZES.split(',').map(s => `<option value="${s.trim()}">${s.trim()}</option>`).join('');
+    // Generate options including custom ones
+    const customSizes = await getCustomData('custom_sizes') || [];
+    let optionsHtml = DEFAULT_SIZES.split(',').map(s => `<option value="${s.trim()}">${s.trim()}</option>`).join('');
+    customSizes.forEach(s => optionsHtml += `<option value="${s.trim()}">${s.trim()}</option>`);
+    optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
 
     row.innerHTML = `
         <div style="width: 70px;">
@@ -324,7 +346,7 @@ function addPackageRow(data = null) {
         </div>
         <div style="flex:1;">
             <label style="font-size:0.65rem; color:var(--text-dim);">TAMAÑO / TIPO</label>
-            <select class="pkg-size form-control">${options}</select>
+            <select class="pkg-size form-control">${optionsHtml}</select>
         </div>
         <button type="button" class="btn-remove-pkg" style="background:none; border:none; color:#FF3B30; font-size:1.5rem; cursor:pointer; padding-bottom:5px;">&times;</button>
     `;
@@ -340,14 +362,35 @@ function addPackageRow(data = null) {
     weightIn.oninput = updateContext;
     removeBtn.onclick = () => { row.remove(); updateContext(); };
 
-    // Auto-weight logic
-    sizeSel.onchange = () => {
+    // Create new size logic
+    sizeSel.onchange = async () => {
+        if (sizeSel.value === 'create_new_size') {
+            const newSize = prompt("Nombre del nuevo tamaño/tipo:");
+            if (newSize && newSize.trim()) {
+                const current = await getCustomData('custom_sizes') || [];
+                current.push(newSize.trim());
+                await saveCustomData('custom_sizes', [...new Set(current)]);
+
+                // Add to all selects in UI
+                document.querySelectorAll('.pkg-size').forEach(sel => {
+                    const opt = document.createElement('option');
+                    opt.value = newSize.trim();
+                    opt.textContent = newSize.trim();
+                    sel.add(opt, sel.options[sel.options.length - 1]);
+                });
+                sizeSel.value = newSize.trim();
+            } else {
+                sizeSel.value = "Mediano";
+            }
+        }
+
+        // Auto-weight logic
         const val = sizeSel.value;
         const weights = { 'BATERIA 45AH': 15, 'BATERIA 75AH': 25, 'BATERIA 100AH': 45, 'BATERIA CAMION': 60, 'TAMBOR CAMION': 50, 'GARRAFAS ADBLUE': 10 };
         if (weights[val]) {
             weightIn.value = weights[val];
-            updateContext();
         }
+        updateContext();
     };
 
     if (data) {
@@ -420,6 +463,9 @@ async function handleFormSubmit(e) {
             data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
             data.printed = false;
             await getCollection('tickets').doc(ticketId).set(data);
+
+            // Auto-SMS Alert on First Ticket of Shift
+            await checkAndSendAutoShiftSMS(data);
         }
 
         // Save Client to Agenda if checked
@@ -434,6 +480,34 @@ async function handleFormSubmit(e) {
         alert("Error al guardar: " + err.message);
     } finally {
         hideLoading();
+    }
+}
+
+async function checkAndSendAutoShiftSMS(ticket) {
+    const today = new Date().toISOString().split('T')[0];
+    const snap = await getCollection('tickets').get();
+    let count = 0;
+    snap.forEach(doc => {
+        const d = doc.data();
+        const dStr = (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)).toISOString().split('T')[0];
+        if (dStr === today && d.timeSlot === ticket.timeSlot) count++;
+    });
+
+    if (count === 1) { // It's the first one
+        const alertPhone = await getCustomData('pickup_alert_phone');
+        const smsGateway = await getCustomData('sms_gateway_url');
+
+        if (alertPhone && smsGateway) {
+            const now = new Date();
+            const timestamp = now.toLocaleDateString() + " " + now.toLocaleTimeString();
+            const msg = `NOVAPACK - AVISO RECOGIDA (${ticket.timeSlot}) ${timestamp}: Envío preparado en ${ticket.sender}.`;
+
+            const finalUrl = smsGateway
+                .replace(/\{TELEFONO\}/gi, alertPhone)
+                .replace(/\{MENSAJE\}/gi, encodeURIComponent(msg));
+
+            fetch(finalUrl, { mode: 'no-cors' }).catch(e => console.warn("SMS Auto-alert failed", e));
+        }
     }
 }
 
@@ -510,7 +584,7 @@ async function renderClientsList() {
 
 document.getElementById('client-view-search').oninput = renderClientsList;
 
-function loadClientToEdit(c) {
+async function loadClientToEdit(c) {
     editingClientId = c.id;
     document.getElementById('client-edit-id').value = c.id;
     document.getElementById('client-edit-name').value = c.name;
@@ -519,14 +593,14 @@ function loadClientToEdit(c) {
     const container = document.getElementById('client-edit-addresses-container');
     container.innerHTML = '';
     if (c.addresses && c.addresses.length > 0) {
-        c.addresses.forEach(a => addAddressRowToEditor(a));
+        for (const a of c.addresses) await addAddressRowToEditor(a);
     } else {
-        addAddressRowToEditor();
+        await addAddressRowToEditor();
     }
     renderClientsList();
 }
 
-function addAddressRowToEditor(data = null) {
+async function addAddressRowToEditor(data = null) {
     const container = document.getElementById('client-edit-addresses-container');
     const row = document.createElement('div');
     row.className = 'address-edit-row';
@@ -556,8 +630,13 @@ function addAddressRowToEditor(data = null) {
 
     // Fill provinces
     const provSel = row.querySelector('.edit-addr-prov');
+    const custom = await getCustomData('provinces') || [];
+    const deleted = await getCustomData('provinces_deleted') || [];
+    const DEFAULTS = ["MALAGA", "GRANADA", "SEVILLA", "CORDOBA", "VELEZ-MALAGA", "TORRE DEL MAR", "ALGARROBO", "NERJA", "TORROX COSTA", "LOJA", "ANTEQUERA", "ESTEPONA", "MARBELLA", "TORREMOLINOS", "FUENGIROLA", "MIJAS", "BENALMADENA"];
+    let allP = [...new Set([...DEFAULTS, ...custom])].filter(p => !deleted.includes(p)).sort();
+
     let html = '<option value="">-- Zona --</option>';
-    DEFAULT_ZONES.sort().forEach(z => html += `<option value="${z}">${z}</option>`);
+    allP.forEach(z => html += `<option value="${z}">${z}</option>`);
     provSel.innerHTML = html;
     if (data && data.province) provSel.value = data.province;
 
@@ -658,14 +737,34 @@ clientPickerInput.oninput = async () => {
 // --- PROVINCES ---
 async function loadProvinces() {
     const sel = document.getElementById('ticket-province');
-    sel.innerHTML = '<option value="">-- PROVINCIA --</option>';
-    DEFAULT_ZONES.sort().forEach(z => {
-        const opt = document.createElement('option');
-        opt.value = z;
-        opt.textContent = z;
-        sel.appendChild(opt);
-    });
+    const custom = await getCustomData('provinces') || [];
+    const deleted = await getCustomData('provinces_deleted') || [];
+
+    // Default zones
+    const DEFAULTS = ["MALAGA", "GRANADA", "SEVILLA", "CORDOBA", "VELEZ-MALAGA", "TORRE DEL MAR", "ALGARROBO", "NERJA", "TORROX COSTA", "LOJA", "ANTEQUERA", "ESTEPONA", "MARBELLA", "TORREMOLINOS", "FUENGIROLA", "MIJAS", "BENALMADENA"];
+
+    let all = [...new Set([...DEFAULTS, ...custom])].filter(p => !deleted.includes(p)).sort();
+
+    let html = '<option value="">-- PROVINCIA --</option>';
+    all.forEach(z => html += `<option value="${z}">${z}</option>`);
+    html += '<option value="create_new" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVA...</option>';
+    sel.innerHTML = html;
 }
+
+document.getElementById('ticket-province').onchange = async (e) => {
+    if (e.target.value === 'create_new') {
+        const name = prompt("Nombre de la nueva zona:");
+        if (name && name.trim()) {
+            const custom = await getCustomData('provinces') || [];
+            custom.push(name.trim().toUpperCase());
+            await saveCustomData('provinces', [...new Set(custom)]);
+            await loadProvinces();
+            e.target.value = name.trim().toUpperCase();
+        } else {
+            e.target.value = "";
+        }
+    }
+};
 
 // --- REPORTS ---
 async function runReport() {
@@ -722,12 +821,33 @@ async function runReport() {
 
 document.getElementById('btn-run-report').onclick = runReport;
 
+document.getElementById('btn-export-csv').onclick = () => {
+    if (currentReportData.length === 0) { alert("No hay datos para exportar."); return; }
+    let csv = "ID;FECHA;CLIENTE;ZONA;BULTOS;PESO;TIPO;NOTAS\n";
+    currentReportData.forEach(t => {
+        const d = (t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt)).toLocaleDateString();
+        const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+        const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
+        csv += `${t.id};${d};${t.receiver};${t.province || ''};${pkgs};${weight.toFixed(1)};${t.shippingType};${(t.notes || '').replace(/;/g, ',')}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `reporte_novapack_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 // --- PRINTING LOGIC ---
 function renderQRCodesInPrintArea() {
     const elements = document.querySelectorAll('#print-area .ticket-qr-code');
     elements.forEach(el => {
         const id = el.dataset.id;
-        new QRCode(el, { text: id, width: 80, height: 80, colorDark: "#000000", colorLight: "#ffffff" });
+        // In Cloud version, we encode a basic JSON with ID for scanning if possible
+        const data = { id: id, type: 'novapack_cloud' };
+        new QRCode(el, { text: JSON.stringify(data), width: 80, height: 80, colorDark: "#000000", colorLight: "#ffffff" });
     });
 }
 
@@ -813,19 +933,81 @@ function generateTicketHTML(t, footerLabel) {
 
 async function printTicket(t) {
     const area = document.getElementById('print-area');
-    area.innerHTML = generateTicketHTML(t, "Ejemplar para el Cliente") +
-        '<div style="border-top: 1px dashed #000; margin: 20px 0;"></div>' +
-        generateTicketHTML(t, "Ejemplar para Administración");
+    area.innerHTML = '';
+
+    // Copy for client
+    area.innerHTML += generateTicketHTML(t, "Ejemplar para el Cliente");
+    area.innerHTML += '<div style="border-top: 1px dashed #000; margin: 20px 0; page-break-after: always;"></div>';
+    // Copy for admin
+    area.innerHTML += generateTicketHTML(t, "Ejemplar para Administración");
+
+    if (confirm("¿Deseas imprimir también el Manifiesto para este albarán?")) {
+        area.innerHTML += '<div style="page-break-before: always;"></div>';
+        area.innerHTML += generateManifestHTML([t]);
+    }
 
     renderQRCodesInPrintArea();
-
-    // Mark as printed in background
-    getCollection('tickets').doc(t.id).update({ printed: true });
+    await getCollection('tickets').doc(t.id).update({ printed: true });
 
     setTimeout(() => {
         window.print();
         area.innerHTML = '';
     }, 500);
+}
+
+function generateManifestHTML(tickets) {
+    const dStr = new Date().toLocaleDateString();
+    let rows = '';
+    let totalB = 0; let totalW = 0;
+
+    tickets.forEach(t => {
+        const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+        const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
+        totalB += pkgs; totalW += weight;
+        rows += `
+            <tr>
+                <td style="border:1px solid #000; padding:5px; text-align:center;">${t.id}</td>
+                <td style="border:1px solid #000; padding:5px;">${t.receiver}</td>
+                <td style="border:1px solid #000; padding:5px;">${t.address}</td>
+                <td style="border:1px solid #000; padding:5px; text-align:center;">${pkgs}</td>
+                <td style="border:1px solid #000; padding:5px; text-align:center;">${weight.toFixed(1)}</td>
+                <td style="border:1px solid #000; padding:5px; text-align:center;">${t.shippingType === 'Pagados' ? 'P' : 'D'}</td>
+                <td style="border:1px solid #000; padding:5px; text-align:center; color:red;">${t.cod || ''}</td>
+            </tr>
+        `;
+    });
+
+    return `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <div style="display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:10px;">
+            <div><h2 style="margin:0; color:#FF6600;">MANIFIESTO DE SALIDA</h2></div>
+            <div style="text-align:right;"><strong>Fecha:</strong> ${dStr} | <strong>Total Envíos:</strong> ${tickets.length}</div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; margin-top:20px;">
+            <thead style="background:#f0f0f0;">
+                <tr>
+                    <th style="border:1px solid #000; padding:5px;">ID</th>
+                    <th style="border:1px solid #000; padding:5px;">DESTINATARIO</th>
+                    <th style="border:1px solid #000; padding:5px;">DIRECCIÓN</th>
+                    <th style="border:1px solid #000; padding:5px;">BULTOS</th>
+                    <th style="border:1px solid #000; padding:5px;">PESO</th>
+                    <th style="border:1px solid #000; padding:5px;">P/D</th>
+                    <th style="border:1px solid #000; padding:5px;">REEMB.</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+                <tr style="font-weight:bold; background:#eee;">
+                    <td colspan="3" style="border:1px solid #000; padding:5px; text-align:right;">TOTALES:</td>
+                    <td style="border:1px solid #000; padding:5px; text-align:center;">${totalB}</td>
+                    <td style="border:1px solid #000; padding:5px; text-align:center;">${totalW.toFixed(1)}</td>
+                    <td colspan="2" style="border:1px solid #000;"></td>
+                </tr>
+            </tfoot>
+        </table>
+        <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; float:right;">Firma Transportista</div>
+    </div>
+    `;
 }
 
 // --- SHIFT BATCH PRINTING ---
@@ -845,7 +1027,7 @@ async function printShiftBatch(slot) {
     hideLoading();
 
     if (tickets.length === 0) { alert(`No hay albaranes para el turno ${slot} hoy.`); return; }
-    if (!confirm(`¿Imprimir ${tickets.length} albaranes del turno ${slot}?`)) return;
+    if (!confirm(`¿Imprimir ${tickets.length} albaranes y Manifiesto?`)) return;
 
     const area = document.getElementById('print-area');
     area.innerHTML = '';
@@ -860,41 +1042,43 @@ async function printShiftBatch(slot) {
         getCollection('tickets').doc(t.id).update({ printed: true });
     });
 
+    area.innerHTML += generateManifestHTML(tickets);
+
     renderQRCodesInPrintArea();
     setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
 }
 
 // --- LABELS PRINTING ---
-document.getElementById('btn-print-labels-morning').onclick = () => printShiftLabels('MAÑANA');
-document.getElementById('btn-print-labels-afternoon').onclick = () => printShiftLabels('TARDE');
+document.getElementById('btn-print-labels-morning').onclick = () => printLabelShiftBatch('MAÑANA');
+document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
 function generateLabelHTML(t, index, total) {
-    const weight = t.packagesList ? (t.packagesList[0] ? t.packagesList[0].weight : 0) : 0;
+    const weight = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : 0;
     return `
-    <div style="width: 100mm; height: 140mm; border: 3px solid #000; padding: 10px; margin: 5px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif;">
+    <div class="label-item" style="width: 100mm; height: 138mm; border: 3px solid #000; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif;">
         <div style="display:flex; justify-content:space-between; border-bottom:3px solid #FF6600; padding-bottom:5px;">
             <div style="font-weight:900; font-size:1.5rem; color:#FF6600;">NOVAPACK</div>
             <div style="text-align:right; font-size:0.6rem;">REMITENTE:<br><strong>${t.sender}</strong></div>
         </div>
         <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
-            <div style="font-size:0.7rem; color:#888;">DESTINATARIO:</div>
-            <div style="font-size:1.8rem; font-weight:900; text-transform:uppercase;">${t.receiver}</div>
-            <div style="font-size:1rem; margin-top:10px;">${t.address}</div>
-            <div style="font-size:2rem; font-weight:900; color:#FF6600; margin-top:10px;">${t.province || ''}</div>
+            <div style="font-size:0.75rem; color:#666; width:100%; text-align:left;">DESTINATARIO:</div>
+            <div style="font-size:1.8rem; font-weight:900; text-transform:uppercase; margin:10px 0;">${t.receiver}</div>
+            <div style="font-size:1.1rem; line-height:1.2;">${t.address}</div>
+            <div style="font-size:2.25rem; font-weight:900; color:#FF6600; margin-top:10px;">${t.province || ''}</div>
             ${t.notes ? `<div style="font-size:0.8rem; font-weight:bold; margin-top:10px; border-top:1px dotted #ccc; padding-top:5px;">OBS: ${t.notes}</div>` : ''}
         </div>
-        <div style="position:absolute; bottom:60px; right:10px;" class="ticket-qr-code" data-id="${t.id}"></div>
-        <div style="display:flex; justify-content:space-between; border-top:3px solid #000; padding-top:5px; background:#f0f0f0;">
-            <div style="text-align:center; flex:1;">BULTO<br><strong>${index + 1} / ${total}</strong></div>
-            <div style="text-align:center; flex:2; border-left:1px solid #ccc; border-right:1px solid #ccc;">${t.id}</div>
+        <div style="position:absolute; bottom:70px; right:15px;" class="ticket-qr-code" data-id="${t.id}"></div>
+        <div style="display:flex; justify-content:space-between; border-top:3px solid #000; padding-top:5px; background:#eee; font-weight:bold;">
+            <div style="text-align:center; flex:1;">BULTO<br><span style="font-size:1.2rem;">${index + 1} / ${total}</span></div>
+            <div style="text-align:center; flex:2; border-left:1px solid #ccc; border-right:1px solid #ccc; font-size:1.1rem; display:flex; align-items:center; justify-content:center;">${t.id}</div>
             <div style="text-align:center; flex:1;">PESO<br><strong>${weight} kg</strong></div>
         </div>
-        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:80px; left:10px; border:2px solid red; color:red; font-weight:900; padding:5px; transform:rotate(-20deg);">REEMBOLSO: ${t.cod} €</div>` : ''}
+        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:100px; right:5px; border:3px solid black; background:white; color:black; font-weight:900; padding:5px; transform:rotate(15deg); text-align:center;">ATENCIÓN<br>REEMBOLSO<br><span style="font-size:1.2rem;">${t.cod} €</span></div>` : ''}
     </div>
     `;
 }
 
-async function printShiftLabels(slot) {
+async function printLabelShiftBatch(slot) {
     const today = new Date().toISOString().split('T')[0];
     showLoading();
     const snap = await getCollection('tickets').get();
@@ -910,25 +1094,13 @@ async function printShiftLabels(slot) {
     const area = document.getElementById('print-area');
     area.innerHTML = '';
 
-    // Grid alignment for A4 (4 labels per page)
-    let page = document.createElement('div');
-    page.style = "display:grid; grid-template-columns: 1fr 1fr; gap:5mm; page-break-after:always; width:210mm; height:297mm; padding:5mm; box-sizing:border-box;";
-
-    let count = 0;
+    let labelsHtml = [];
     tickets.forEach(t => {
         const totalPkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
-        for (let i = 0; i < totalPkgs; i++) {
-            page.innerHTML += generateLabelHTML(t, i, totalPkgs);
-            count++;
-            if (count % 4 === 0) {
-                area.appendChild(page);
-                page = document.createElement('div');
-                page.style = "display:grid; grid-template-columns: 1fr 1fr; gap:5mm; page-break-after:always; width:210mm; height:297mm; padding:5mm; box-sizing:border-box;";
-            }
-        }
+        for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
     });
 
-    if (count % 4 !== 0) area.appendChild(page);
+    renderLabelsInA4Grid(area, labelsHtml);
     renderQRCodesInPrintArea();
     setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
 }
@@ -937,18 +1109,50 @@ function printLabel(t) {
     const area = document.getElementById('print-area');
     area.innerHTML = '';
     const totalPkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+    let labelsHtml = [];
+    for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
 
-    let page = document.createElement('div');
-    page.style = "display:grid; grid-template-columns: 1fr 1fr; gap:5mm; page-break-after:always; width:210mm; height:297mm; padding:5mm; box-sizing:border-box;";
-
-    for (let i = 0; i < totalPkgs; i++) {
-        page.innerHTML += generateLabelHTML(t, i, totalPkgs);
-    }
-    area.appendChild(page);
+    renderLabelsInA4Grid(area, labelsHtml);
     renderQRCodesInPrintArea();
     setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
+}
+
+function renderLabelsInA4Grid(container, labelsHtml) {
+    let page = null;
+    labelsHtml.forEach((html, i) => {
+        if (i % 4 === 0) {
+            page = document.createElement('div');
+            page.style = "display:grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148mm 148mm; width:210mm; height:297mm; page-break-after:always; box-sizing:border-box; padding:5mm;";
+            container.appendChild(page);
+        }
+        const wrapper = document.createElement('div');
+        wrapper.style = "display:flex; justify-content:center; align-items:center;";
+        wrapper.innerHTML = html;
+        page.appendChild(wrapper);
+    });
+}
+
+async function sendPickupSMS(t) {
+    const smsGateway = await getCustomData('sms_gateway_url');
+    if (!smsGateway) { alert("Configura la pasarela SMS en el Panel de Administración."); return; }
+
+    const defaultMsg = `NOVAPACK - AVISO RECOGIDA: Hay envíos listos para ${t.receiver}.`;
+    const msg = prompt("Confirmar Mensaje:", defaultMsg);
+    if (!msg) return;
+
+    const phone = prompt("Confirmar Teléfono del Repartidor/Cliente:", t.phone || "");
+    if (!phone) return;
+
+    showLoading();
+    const finalUrl = smsGateway.replace(/\{TELEFONO\}/gi, phone).replace(/\{MENSAJE\}/gi, encodeURIComponent(msg));
+
+    fetch(finalUrl, { mode: 'no-cors' })
+        .then(() => alert("✅ Petición SMS enviada."))
+        .catch(e => alert("❌ Error SMS: " + e.message))
+        .finally(hideLoading);
 }
 
 // --- UTILS ---
 function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
 function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+function showNotification(msg) { alert(msg); }

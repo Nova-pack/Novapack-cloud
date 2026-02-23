@@ -245,30 +245,33 @@
             </div>
         </div>
 
-        <!-- Configuración View -->
-        <div id="view-config" style="display:none">
-            <div class="header">
-                <h1>Configuración del Sistema</h1>
+        <div class="card">
+            <h3 style="margin-top:0; color:var(--brand-primary)">Configuración de Comunicaciones</h3>
+            <div class="form-group">
+                <label>Pasarela SMS Gateway URL (Usar {TELEFONO} y {MENSAJE})</label>
+                <input type="text" id="conf-sms-gateway"
+                    placeholder="https://api.gateway.com/send?to={TELEFONO}&msg={MENSAJE}">
             </div>
+            <div class="form-group">
+                <label>Teléfono de Aviso de Recogida (Repartidor)</label>
+                <input type="text" id="conf-pickup-phone" placeholder="+34600000000">
+            </div>
+            <button class="btn btn-primary" id="btn-save-settings">💾 GUARDAR CONFIGURACIÓN</button>
+        </div>
 
-            <div class="card">
-                <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
-                <div class="form-group">
-                    <label>ID del Proyecto Firebase</label>
-                    <div id="conf-project-id"
-                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
-                    </div>
+        <div class="card" style="margin-top:30px; opacity:0.8;">
+            <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
+            <div class="form-group">
+                <label>ID del Proyecto Firebase</label>
+                <div id="conf-project-id"
+                    style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
                 </div>
-                <div class="form-group">
-                    <label>Tu UID de Administrador (Actual)</label>
-                    <div id="conf-admin-uid"
-                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
-                    </div>
+            </div>
+            <div class="form-group">
+                <label>Tu UID de Administrador (Actual)</label>
+                <div id="conf-admin-uid"
+                    style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
                 </div>
-                <p style="color:#888; font-size:0.85rem; margin-top:20px;">
-                    ⚠️ La configuración avanzada de la base de datos se realiza directamente desde la consola de
-                    Firebase.
-                </p>
             </div>
         </div>
     </div>
@@ -331,25 +334,51 @@
         const viewConfig = document.getElementById('view-config');
 
         // Switching Views
-        navUsers.onclick = () => {
-            navUsers.classList.add('active');
-            navConfig.classList.remove('active');
-            viewUsers.style.display = 'block';
-            viewConfig.style.display = 'none';
+        const showView = (viewId) => {
+            console.log("Cambiando a vista:", viewId);
+            viewUsers.style.display = viewId === 'users' ? 'block' : 'none';
+            viewConfig.style.display = viewId === 'config' ? 'block' : 'none';
+
+            navUsers.classList.toggle('active', viewId === 'users');
+            navConfig.classList.toggle('active', viewId === 'config');
+
+            if (viewId === 'config') loadConfigInfo();
         };
 
-        navConfig.onclick = () => {
-            navConfig.classList.add('active');
-            navUsers.classList.remove('active');
-            viewUsers.style.display = 'none';
-            viewConfig.style.display = 'block';
-            loadConfigInfo();
-        };
+        navUsers.addEventListener('click', () => showView('users'));
+        navConfig.addEventListener('click', () => showView('config'));
 
-        function loadConfigInfo() {
+        async function loadConfigInfo() {
             document.getElementById('conf-admin-uid').textContent = auth.currentUser ? auth.currentUser.uid : 'Cargando...';
             document.getElementById('conf-project-id').textContent = firebaseConfig.projectId;
+
+            try {
+                const settingsDoc = await db.collection('config').doc('settings').get();
+                if (settingsDoc.exists) {
+                    const data = settingsDoc.data();
+                    document.getElementById('conf-sms-gateway').value = data.sms_gateway_url || '';
+                    document.getElementById('conf-pickup-phone').value = data.pickup_alert_phone || '';
+                }
+            } catch (e) {
+                console.error("Error loading settings:", e);
+            }
         }
+
+        document.getElementById('btn-save-settings').onclick = async () => {
+            const sms_gateway_url = document.getElementById('conf-sms-gateway').value;
+            const pickup_alert_phone = document.getElementById('conf-pickup-phone').value;
+
+            try {
+                await db.collection('config').doc('settings').set({
+                    sms_gateway_url,
+                    pickup_alert_phone
+                }, { merge: true });
+                alert("Configuración guardada correctamente.");
+            } catch (e) {
+                console.error("Error saving settings:", e);
+                alert("Error al guardar la configuración.");
+            }
+        };
 
         // Load Users
         async function loadUsers() {
