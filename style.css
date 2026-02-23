@@ -138,7 +138,7 @@ body {
 /* Editor Area */
 .ticket-editor {
     flex: 1;
-    padding: 1rem;
+    padding: 0.5rem;
     background: var(--bg-main);
     overflow-y: auto;
 }
@@ -148,12 +148,12 @@ body {
     background: var(--surface-card);
     border: 1px solid var(--border-glass);
     border-radius: var(--radius-md);
-    padding: 1rem;
+    padding: 1.25rem;
     box-shadow: var(--shadow-soft);
 }
 
 .editor-card {
-    max-width: 850px;
+    max-width: 1200px;
 }
 
 /* Form Styles - Optimized for space */
@@ -183,6 +183,19 @@ body {
     outline: none;
     border-color: var(--brand-primary);
     background: rgba(255, 255, 255, 0.05);
+}
+
+/* Fix for dark mode dropdowns/selects */
+select.form-control {
+    background-color: #1a1d21;
+    color: var(--text-main);
+    cursor: pointer;
+}
+
+select.form-control option {
+    background-color: #1a1d21;
+    color: var(--text-main);
+    padding: 10px;
 }
 
 .form-control:disabled,
@@ -324,32 +337,14 @@ body {
     margin-bottom: 1rem !important;
 }
 
-/* Label-specific print adjustments */
+/* --- SISTEMA DE IMPRESIÓN --- */
 @media print {
-    body.printing-labels {
-        background: white !important;
+
+    /* Ocultar toda la interfaz web */
+    body>*:not(#print-area) {
+        display: none !important;
     }
 
-    body.printing-labels #print-area {
-        width: 101mm !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    .label-item {
-        width: 101mm;
-        height: 152mm;
-        page-break-after: always;
-        overflow: hidden;
-        background: white;
-        color: black;
-        border: 2px solid black !important;
-        font-family: sans-serif;
-        box-sizing: border-box;
-    }
-}
-
-@media print {
     #print-area {
         display: block !important;
         position: absolute;
@@ -357,5 +352,25 @@ body {
         left: 0;
         width: 100%;
         background: white !important;
+    }
+
+    /* Formato A4 para Albaranes y Rejilla de Etiquetas */
+    #print-area {
+        width: 210mm;
+    }
+
+    .label-item {
+        width: 100mm;
+        height: 140mm;
+        overflow: hidden;
+        background: white;
+        color: black;
+        border: 1px solid black !important;
+        font-family: sans-serif;
+        box-sizing: border-box;
+    }
+
+    @page {
+        margin: 0;
     }
 }

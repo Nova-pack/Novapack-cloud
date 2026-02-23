@@ -1,15 +1,13 @@
-/**
- * NOVAPACK CLOUD - FULL OPERATIONAL LOGIC
- * Multi-tenant Firebase Integration
- */
-
 // --- GLOBAL STATE ---
+console.log("NOVAPACK CLOUD - ENGINE v2.2 ACTIVE");
 let currentUser = null;
+let userData = null; // Stored profile data (idNum, name, etc.)
 let currentCompanyId = 'default';
 let companies = [];
 let editingId = null;
 let editingClientId = null;
 let currentReportData = [];
+let activeTariffArticles = [];
 
 // Constants
 const DEFAULT_SIZES = "Pequeño, Mediano, Grande, Sobre, Palet, BATERIA 45AH, BATERIA 75AH, BATERIA 100AH, BATERIA CAMION, TAMBOR CAMION, CALIPER DE CAMION, CAJAS DE ACEITE O AGUA, GARRAFAS ADBLUE";
@@ -55,6 +53,42 @@ auth.onAuthStateChanged(async (user) => {
     const userDisplay = document.getElementById('user-display-name');
     if (userDisplay) userDisplay.textContent = user.email;
 
+    // Fetch user profile from Firestore
+    try {
+        let userDoc = await db.collection('users').doc(user.uid).get();
+        let foundProfile = userDoc.exists ? userDoc.data() : null;
+
+        // Si no hay perfil o faltan datos clave (nombre/ID), buscamos por email
+        if (!foundProfile || !foundProfile.name || !foundProfile.idNum) {
+            console.log("Perfil incompleto o inexistente. Buscando por email...");
+            const snap = await db.collection('users').where('email', '==', user.email).get();
+            if (!snap.empty) {
+                const legacyDoc = snap.docs[0];
+                const legacyData = legacyDoc.data();
+                console.log("Perfil maestro encontrado por email. Sincronizando...");
+
+                userData = { ...foundProfile, ...legacyData, uid: user.uid };
+                await db.collection('users').doc(user.uid).set(userData, { merge: true });
+
+                // Si el original era un document ID aleatorio, lo limpiamos para evitar duplicados
+                if (!legacyDoc.id.includes('@') && legacyDoc.id !== user.uid) {
+                    await legacyDoc.ref.delete();
+                }
+            } else {
+                userData = foundProfile;
+            }
+        } else {
+            userData = foundProfile;
+        }
+
+        if (userData && document.getElementById('user-display-name')) {
+            document.getElementById('user-display-name').textContent = `[#${userData.idNum || ''}] ${userData.name || user.email}`;
+            console.log("Perfil cargado satisfactoriamente:", userData.name);
+        }
+    } catch (e) {
+        console.warn("Error en sincronización de perfil:", e);
+    }
+
     // Admin Detection
     try {
         const adminDoc = await db.collection('config').doc('admin').get();
@@ -71,6 +105,7 @@ auth.onAuthStateChanged(async (user) => {
     showLoading();
     try {
         await loadCompanies();
+        await loadActiveTariff(); // Load custom items from tariff
         await loadProvinces();
         await resetEditor();
         await renderCompanySelector();
@@ -97,6 +132,39 @@ async function loadPredefinedPhones() {
     }
 }
 
+async function loadActiveTariff() {
+    activeTariffArticles = [];
+    if (!currentUser) return;
+
+    try {
+        let tariffData = null;
+        // 1. Try Global Tariff if assigned
+        if (userData && userData.tariffId) {
+            const globalDoc = await db.collection('tariffs').doc("GLOBAL_" + userData.tariffId).get();
+            if (globalDoc.exists) {
+                tariffData = globalDoc.data();
+                console.log("Cargando Tarifa Global:", userData.tariffId);
+            }
+        }
+
+        // 2. Fallback to Specific User Tariff
+        if (!tariffData) {
+            const userDoc = await db.collection('tariffs').doc(currentUser.uid).get();
+            if (userDoc.exists) {
+                tariffData = userDoc.data();
+                console.log("Cargando Tarifa Personalizada de Usuario");
+            }
+        }
+
+        if (tariffData && tariffData.items) {
+            activeTariffArticles = Object.keys(tariffData.items);
+            console.log("Artículos de Tarifa activos:", activeTariffArticles);
+        }
+    } catch (e) {
+        console.warn("Error al cargar tarifa activa:", e);
+    }
+}
+
 // --- CLOUD HELPERS ---
 const getCollection = (name) => {
     if (!currentUser) return null;
@@ -118,12 +186,14 @@ async function loadCompanies() {
     snap.forEach(doc => companies.push({ id: doc.id, ...doc.data() }));
 
     if (companies.length === 0) {
-        // Create first company if none exists
+        // Create first company using data provided by admin
+        console.log("Creando empresa inicial vinculada al nombre del cliente...");
+        const clientName = (userData && userData.name) ? userData.name : 'Mi Empresa Novapack';
         const defaultComp = {
-            name: 'Empresa Principal',
-            prefix: 'NP',
-            address: 'Dirección no configurada',
-            phone: '',
+            name: clientName, // El Cliente ES la Empresa
+            prefix: (userData && userData.idNum) ? userData.idNum : 'NP',
+            address: (userData && userData.senderAddress) ? userData.senderAddress : 'Dirección no configurada',
+            phone: (userData && userData.senderPhone) ? userData.senderPhone : '',
             startNum: 1,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
@@ -338,13 +408,13 @@ async function resetEditor() {
     document.getElementById('packages-list').innerHTML = '';
     await addPackageRow();
 
-    // Default Sender
-    const comp = companies.find(c => c.id === currentCompanyId);
-    if (comp) {
-        document.getElementById('ticket-sender').value = comp.name || '';
-        document.getElementById('ticket-sender-address').value = comp.address || '';
-        document.getElementById('ticket-sender-phone').value = comp.phone || '';
-    }
+    // Default Sender: Treat Client name as the main identity
+    const comp = companies.find(c => c.id === currentCompanyId) || {};
+    const clientName = (userData && userData.name) ? userData.name : (comp.name || '');
+
+    document.getElementById('ticket-sender').value = clientName;
+    document.getElementById('ticket-sender-address').value = (userData && userData.senderAddress) ? userData.senderAddress : (comp.address || '');
+    document.getElementById('ticket-sender-phone').value = (userData && userData.senderPhone) ? userData.senderPhone : (comp.phone || '');
 
     // Auto-select slot by hour
     const hour = new Date().getHours();
@@ -497,10 +567,15 @@ async function addPackageRow(data = null) {
     row.className = 'package-row';
     row.style = "display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end; padding: 6px 8px; background: rgba(255,255,255,0.01); border-radius: 4px; border: 1px solid rgba(255,255,255,0.03);";
 
-    // Generate options including custom ones
-    const customSizes = await getCustomData('custom_sizes') || [];
-    let optionsHtml = DEFAULT_SIZES.split(',').map(s => `<option value="${s.trim()}">${s.trim()}</option>`).join('');
-    customSizes.forEach(s => optionsHtml += `<option value="${s.trim()}">${s.trim()}</option>`);
+    // Generate options: Prioritize active tariff articles if they exist
+    let optionsHtml = "";
+    if (activeTariffArticles.length > 0) {
+        optionsHtml = activeTariffArticles.map(s => `<option value="${s.trim()}">${s.trim()}</option>`).join('');
+    } else {
+        const customSizes = await getCustomData('custom_sizes') || [];
+        optionsHtml = DEFAULT_SIZES.split(',').map(s => `<option value="${s.trim()}">${s.trim()}</option>`).join('');
+        customSizes.forEach(s => optionsHtml += `<option value="${s.trim()}">${s.trim()}</option>`);
+    }
     optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
 
     row.innerHTML = `
@@ -1052,8 +1127,12 @@ function renderQRCodesInPrintArea() {
     const elements = document.querySelectorAll('#print-area .ticket-qr-code');
     elements.forEach(el => {
         const id = el.dataset.id;
-        // In Cloud version, we encode a basic JSON with ID for scanning if possible
-        const data = { id: id, type: 'novapack_cloud' };
+        const data = {
+            id: id,
+            type: 'novapack_cloud',
+            clientId: userData ? userData.idNum : '---',
+            tariffId: userData ? userData.tariffId || '---' : '---'
+        };
         new QRCode(el, { text: JSON.stringify(data), width: 80, height: 80, colorDark: "#000000", colorLight: "#ffffff" });
     });
 }
@@ -1172,6 +1251,9 @@ async function printTicket(t) {
 
     renderQRCodesInPrintArea();
     await getCollection('tickets').doc(t.id).update({ printed: true });
+
+    // Asegurar que no tenemos el modo etiqueta activo
+    document.body.classList.remove('printing-labels');
 
     setTimeout(() => {
         window.print();
@@ -1447,31 +1529,31 @@ document.getElementById('btn-print-labels-afternoon').onclick = () => printLabel
 function generateLabelHTML(t, index, total) {
     const weight = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : 0;
     return `
-        <div class="label-item" style="width: 101mm; height: 152mm; border: 2px solid #000; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif; page-break-after: always; overflow: hidden;">
-        <div style="display:flex; justify-content:space-between; border-bottom:3px solid #FF6600; padding-bottom:8px;">
-            <div style="font-weight:900; font-size:1.8rem; color:#FF6600; letter-spacing: -1px;">NOVAPACK</div>
-            <div style="text-align:right; font-size:0.75rem; line-height:1.1;">REMITENTE:<br /><strong style="font-size:0.9rem;">${t.sender}</strong></div>
+        <div class="label-item" style="width: 100mm; height: 140mm; border: 2px solid #000; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif; overflow: hidden;">
+        <div style="display:flex; justify-content:space-between; border-bottom:3px solid #FF6600; padding-bottom:5px;">
+            <div style="font-weight:900; font-size:1.6rem; color:#FF6600; letter-spacing: -1px;">NOVAPACK</div>
+            <div style="text-align:right; font-size:0.65rem; line-height:1.1;">REMITENTE:<br /><strong style="font-size:0.8rem;">${t.sender}</strong></div>
         </div>
         <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
-            <div style="font-size:0.85rem; color:#333; width:100%; text-align:left; font-weight:bold; text-transform:uppercase;">DESTINATARIO:</div>
-            <div style="font-size:2rem; font-weight:900; text-transform:uppercase; margin:15px 0; line-height:1;">${t.receiver}</div>
-            <div style="font-size:1.3rem; line-height:1.2; font-weight:500;">${t.address}</div>
-            <div style="font-size:2.8rem; font-weight:900; color:#FF6600; margin-top:15px; border:3px solid #FF6600; padding:5px 20px; border-radius:10px;">${t.province || ''}</div>
-            ${t.notes ? `<div style="font-size:1rem; font-weight:bold; margin-top:20px; border-top:2px dashed #000; padding-top:10px; width:100%;">OBS: ${t.notes}</div>` : ''}
+            <div style="font-size:0.75rem; color:#333; width:100%; text-align:left; font-weight:bold; text-transform:uppercase;">DESTINATARIO:</div>
+            <div style="font-size:1.8rem; font-weight:900; text-transform:uppercase; margin:8px 0; line-height:1;">${t.receiver}</div>
+            <div style="font-size:1.2rem; line-height:1.2; font-weight:500;">${t.address}</div>
+            <div style="font-size:2.4rem; font-weight:900; color:#FF6600; margin-top:10px; border:2px solid #FF6600; padding:3px 15px; border-radius:8px;">${t.province || ''}</div>
+            ${t.notes ? `<div style="font-size:0.9rem; font-weight:bold; margin-top:15px; border-top:1px dashed #000; padding-top:8px; width:100%;">OBS: ${t.notes}</div>` : ''}
         </div>
-        <div style="position:absolute; bottom:90px; right:20px;" class="ticket-qr-code" data-id="${t.id}"></div>
-        <div style="display:flex; justify-content:space-between; border-top:4px solid #000; padding-top:10px; margin-top:10px;">
+        <div style="position:absolute; bottom:80px; right:15px;" class="ticket-qr-code" data-id="${t.id}"></div>
+        <div style="display:flex; justify-content:space-between; border-top:3px solid #000; padding-top:8px; margin-top:8px;">
             <div style="text-align:center; flex:1; border-right:2px solid #000;">
-                <div style="font-size:0.7rem; text-transform:uppercase;">Bulto</div>
-                <div style="font-size:1.5rem; font-weight:900;">${index + 1} / ${total}</div>
+                <div style="font-size:0.6rem; text-transform:uppercase;">Bulto</div>
+                <div style="font-size:1.3rem; font-weight:900;">${index + 1} / ${total}</div>
             </div>
-            <div style="text-align:center; flex:2; display:flex; align-items:center; justify-content:center; font-size:1.4rem; font-weight:900; background:#eee; margin:0 10px;">${t.id}</div>
+            <div style="text-align:center; flex:2; display:flex; align-items:center; justify-content:center; font-size:1.2rem; font-weight:900; background:#eee; margin:0 8px;">${t.id}</div>
             <div style="text-align:center; flex:1; border-left:2px solid #000;">
-                <div style="font-size:0.7rem; text-transform:uppercase;">Peso</div>
-                <div style="font-size:1.5rem; font-weight:900;">${weight} kg</div>
+                <div style="font-size:0.6rem; text-transform:uppercase;">Peso</div>
+                <div style="font-size:1.3rem; font-weight:900;">${weight} kg</div>
             </div>
         </div>
-        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:110px; right:5px; border:4px solid black; background:white; color:black; font-weight:900; padding:10px; transform:rotate(15deg); text-align:center; box-shadow: 5px 5px 0 #000; z-index:10;">ATENCIÓN<br />REEMBOLSO<br /><span style="font-size:1.8rem;">${t.cod} €</span></div>` : ''}
+        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:100px; right:5px; border:3px solid black; background:white; color:black; font-weight:900; padding:8px; transform:rotate(15deg); text-align:center; box-shadow: 4px 4px 0 #000; z-index:10;">ATENCIÓN<br />REEMBOLSO<br /><span style="font-size:1.5rem;">${t.cod} €</span></div>` : ''}
     </div>
         `;
 }
@@ -1498,7 +1580,7 @@ async function printLabelShiftBatch(slot) {
         for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
     });
 
-    area.innerHTML = labelsHtml.join('');
+    renderLabelsInA4Grid(area, labelsHtml);
     renderQRCodesInPrintArea();
     document.body.classList.add('printing-labels');
     setTimeout(() => {
@@ -1508,6 +1590,21 @@ async function printLabelShiftBatch(slot) {
     }, 500);
 }
 
+function renderLabelsInA4Grid(container, labelsHtml) {
+    let page = null;
+    labelsHtml.forEach((html, i) => {
+        if (i % 4 === 0) {
+            page = document.createElement('div');
+            page.style = "display:grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; width:210mm; height:297mm; page-break-after:always; box-sizing:border-box; padding:5mm; gap:5mm;";
+            container.appendChild(page);
+        }
+        const wrapper = document.createElement('div');
+        wrapper.style = "display:flex; justify-content:center; align-items:center;";
+        wrapper.innerHTML = html;
+        page.appendChild(wrapper);
+    });
+}
+
 function printLabel(t) {
     const area = document.getElementById('print-area');
     area.innerHTML = '';
@@ -1515,7 +1612,7 @@ function printLabel(t) {
     let labelsHtml = [];
     for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
 
-    area.innerHTML = labelsHtml.join('');
+    renderLabelsInA4Grid(area, labelsHtml);
     renderQRCodesInPrintArea();
     document.body.classList.add('printing-labels');
     setTimeout(() => {

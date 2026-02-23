@@ -13,7 +13,12 @@ Es muy probable que GitHub diga que está "mal configurado" si hay registros ant
     - `185.199.109.153`
     - `185.199.110.153`
     - `185.199.111.153`
-4. Añade **1 Registro CNAME**:
+4. Añade estos **4 Registros AAAA** (IPv6 de GitHub):
+    - `2606:50c0:8000::153`
+    - `2606:50c0:8001::153`
+    - `2606:50c0:8002::153`
+    - `2606:50c0:8003::153`
+5. Añade **1 Registro CNAME**:
     - **Host**: `www`
     - **Valor**: `TU_USUARIO.github.io` (Cambia `TU_USUARIO` por tu nombre de GitHub).
 
