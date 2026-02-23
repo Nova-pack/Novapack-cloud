@@ -14,10 +14,11 @@ let currentReportData = [];
 // Constants
 const DEFAULT_SIZES = "Pequeño, Mediano, Grande, Sobre, Palet, BATERIA 45AH, BATERIA 75AH, BATERIA 100AH, BATERIA CAMION, TAMBOR CAMION, CALIPER DE CAMION, CAJAS DE ACEITE O AGUA, GARRAFAS ADBLUE";
 
-// --- CUSTOM STORAGE (Firestore-backed Global Settings) ---
+// --- CUSTOM STORAGE (Firestore-backed User Settings) ---
 async function getCustomData(key) {
+    if (!currentUser) return null;
     try {
-        const doc = await db.collection('config').doc('settings').get();
+        const doc = await db.collection('users').doc(currentUser.uid).collection('config').doc('settings').get();
         return doc.exists ? doc.data()[key] : null;
     } catch (e) {
         console.warn("Error getting custom data:", e);
@@ -25,9 +26,20 @@ async function getCustomData(key) {
     }
 }
 
-async function saveCustomData(key, value) {
+async function getGlobalData(key) {
     try {
-        await db.collection('config').doc('settings').set({ [key]: value }, { merge: true });
+        const doc = await db.collection('config').doc('settings').get();
+        return doc.exists ? doc.data()[key] : null;
+    } catch (e) {
+        console.warn("Error getting global data:", e);
+        return null;
+    }
+}
+
+async function saveCustomData(key, value) {
+    if (!currentUser) return;
+    try {
+        await db.collection('users').doc(currentUser.uid).collection('config').doc('settings').set({ [key]: value }, { merge: true });
     } catch (e) {
         console.error("Error saving custom data:", e);
     }
@@ -61,19 +73,42 @@ auth.onAuthStateChanged(async (user) => {
         await loadCompanies();
         await loadProvinces();
         await resetEditor();
-        hideLoading();
-    } catch (e) {
-        console.error("Init Error:", e);
-        hideLoading();
-    }
+        await renderCompanySelector();
+        await loadPredefinedPhones();
+    } catch (e) { console.error("LoadCompanies Error:", e); }
+    hideLoading();
 });
+
+async function loadPredefinedPhones() {
+    try {
+        const snap = await db.collection('config').doc('phones').collection('list').get();
+        const list = document.getElementById('predefined-phones');
+        if (!list) return;
+        list.innerHTML = '';
+        snap.forEach(doc => {
+            const data = doc.data();
+            const opt = document.createElement('option');
+            opt.value = data.number;
+            opt.textContent = data.label;
+            list.appendChild(opt);
+        });
+    } catch (e) {
+        console.warn("Predefined phones ignored (possibly no permissions):", e);
+    }
+}
 
 // --- CLOUD HELPERS ---
 const getCollection = (name) => {
     if (!currentUser) return null;
-    return db.collection('users').doc(currentUser.uid)
-        .collection('companies').doc(currentCompanyId)
-        .collection(name);
+    const userRef = db.collection('users').doc(currentUser.uid);
+
+    // Shared collections (global to the user, across all their companies)
+    if (name === 'destinations') {
+        return userRef.collection(name);
+    }
+
+    // Company-specific collections
+    return userRef.collection('companies').doc(currentCompanyId).collection(name);
 };
 
 // --- DATA ACCESS: COMPANIES ---
@@ -224,12 +259,12 @@ function renderTicketItem(t, list) {
     const pkgCount = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (t.packages || 1);
 
     div.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <strong style="color:var(--brand-primary);">${t.id}</strong>
-            <span class="status-badge ${t.printed ? 'printed' : 'new'}">${t.printed ? 'IMP' : 'NUEVO'}</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+            <strong style="color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${t.id}</strong>
+            <span class="status-badge ${t.printed ? 'printed' : 'new'}" style="font-size:0.55rem; padding:1px 4px;">${t.printed ? 'IMP' : 'NUEVO'}</span>
         </div>
-        <div style="font-weight:700; margin:4px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(t.receiver || "").toUpperCase()}</div>
-        <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-dim);">
+        <div style="font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${(t.receiver || "").toUpperCase()}</div>
+        <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-dim); opacity:0.8;">
             <span>${dateStr}</span>
             <span>📦 ${pkgCount}</span>
         </div>
@@ -370,6 +405,9 @@ window.editCompanyUI = (id) => {
     document.getElementById('comp-phone').value = c.phone || '';
     document.getElementById('comp-prefix').value = c.prefix || 'NP';
     document.getElementById('comp-start-num').value = c.startNum || 1;
+    document.getElementById('comp-province').value = c.province || '';
+    document.getElementById('comp-sms-gateway').value = c.smsGateway || '';
+    document.getElementById('comp-sms-pickup').value = c.pickupAlertPhone || '';
 
     document.getElementById('company-form-title').textContent = "EDITAR EMPRESA";
     document.getElementById('btn-cancel-comp-edit').classList.remove('hidden');
@@ -389,8 +427,11 @@ async function handleCompanyFormSubmit(e) {
         name: document.getElementById('comp-name').value.trim(),
         address: document.getElementById('comp-address').value.trim(),
         phone: document.getElementById('comp-phone').value.trim(),
+        province: document.getElementById('comp-province').value,
         prefix: (document.getElementById('comp-prefix').value.trim() || 'NP').toUpperCase(),
         startNum: parseInt(document.getElementById('comp-start-num').value) || 1,
+        smsGateway: document.getElementById('comp-sms-gateway').value.trim(),
+        pickupAlertPhone: document.getElementById('comp-sms-pickup').value.trim(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
@@ -401,11 +442,21 @@ async function handleCompanyFormSubmit(e) {
             await col.doc(id).update(data);
         } else {
             data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-            await col.add(data);
+            const newDoc = await col.add(data);
+            // Switch to the new company automatically
+            currentCompanyId = newDoc.id;
+            localStorage.setItem('last_company_id', currentCompanyId);
         }
         await loadCompanies();
         resetCompanyForm();
-        alert("Empresa guardada con éxito.");
+        // Force refresh editor to use the new company as sender
+        await resetEditor();
+
+        // CERRAR MODAL AUTOMÁTICAMENTE
+        document.getElementById('company-modal').classList.add('hidden');
+
+        console.log("Empresa guardada con éxito.");
+        // Opcional: Notificación menos intrusiva si se prefiere, pero alert está bien.
     } catch (err) {
         alert("Error: " + err.message);
     } finally {
@@ -444,7 +495,7 @@ async function addPackageRow(data = null) {
     const list = document.getElementById('packages-list');
     const row = document.createElement('div');
     row.className = 'package-row';
-    row.style = "display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-end; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 8px;";
+    row.style = "display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end; padding: 6px 8px; background: rgba(255,255,255,0.01); border-radius: 4px; border: 1px solid rgba(255,255,255,0.03);";
 
     // Generate options including custom ones
     const customSizes = await getCustomData('custom_sizes') || [];
@@ -453,13 +504,13 @@ async function addPackageRow(data = null) {
     optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
 
     row.innerHTML = `
-        <div style="width: 70px;">
-            <label style="font-size:0.65rem; color:var(--text-dim);">CANT.</label>
-            <input type="number" class="pkg-qty form-control" value="1" min="1" style="text-align:center; font-weight:bold;">
+        <div style="width: 60px;">
+            <label style="font-size:0.6rem; color:var(--text-dim); font-weight:600;">CANT.</label>
+            <input type="number" class="pkg-qty form-control" value="1" min="1" style="text-align:center; padding:4px;">
         </div>
-        <div style="width: 90px;">
-            <label style="font-size:0.65rem; color:var(--text-dim);">PESO (KG)</label>
-            <input type="number" class="pkg-weight form-control" step="0.1" placeholder="0.0" style="text-align:center;">
+        <div style="width: 70px;">
+            <label style="font-size:0.6rem; color:var(--text-dim); font-weight:600;">PESO</label>
+            <input type="number" class="pkg-weight form-control" step="0.1" placeholder="0.0" style="text-align:center; padding:4px;">
         </div>
         <div style="flex:1;">
             <label style="font-size:0.65rem; color:var(--text-dim);">TAMAÑO / TIPO</label>
@@ -601,21 +652,28 @@ async function handleFormSubmit(e) {
 }
 
 async function checkAndSendAutoShiftSMS(ticket) {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = now.toLocaleDateString('en-CA'); // YYYY-MM-DD local
     const snap = await getCollection('tickets').get();
+
     let count = 0;
     snap.forEach(doc => {
         const d = doc.data();
-        const dStr = (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)).toISOString().split('T')[0];
+        if (!d.createdAt || !d.timeSlot) return;
+
+        const dateObj = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt);
+        if (isNaN(dateObj.getTime())) return;
+
+        const dStr = dateObj.toLocaleDateString('en-CA');
         if (dStr === today && d.timeSlot === ticket.timeSlot) count++;
     });
 
-    if (count === 1) { // It's the first one
-        const alertPhone = await getCustomData('pickup_alert_phone');
-        const smsGateway = await getCustomData('sms_gateway_url');
+    if (count === 1) { // This is the first one for this shift today
+        const comp = companies.find(c => c.id === currentCompanyId) || {};
+        const alertPhone = comp.pickupAlertPhone || await getGlobalData('pickup_alert_phone');
+        const smsGateway = comp.smsGateway || await getGlobalData('sms_gateway_url');
 
         if (alertPhone && smsGateway) {
-            const now = new Date();
             const timestamp = now.toLocaleDateString() + " " + now.toLocaleTimeString();
             const msg = `NOVAPACK - AVISO RECOGIDA (${ticket.timeSlot}) ${timestamp}: Envío preparado en ${ticket.sender}.`;
 
@@ -623,7 +681,12 @@ async function checkAndSendAutoShiftSMS(ticket) {
                 .replace(/\{TELEFONO\}/gi, alertPhone)
                 .replace(/\{MENSAJE\}/gi, encodeURIComponent(msg));
 
-            fetch(finalUrl, { mode: 'no-cors' }).catch(e => console.warn("SMS Auto-alert failed", e));
+            console.log("SMS Automático: Intentando enviar a " + alertPhone);
+            fetch(finalUrl, { mode: 'no-cors' })
+                .then(() => console.log("✅ SMS Automático disparado."))
+                .catch(e => console.warn("❌ Fallo en SMS Automático:", e));
+        } else {
+            console.warn("SMS Auto-aviso omitido: Falta configurar teléfono o pasarela.");
         }
     }
 }
@@ -689,10 +752,10 @@ async function renderClientsList() {
 
     clients.forEach(c => {
         const item = document.createElement('div');
-        item.style = `padding:15px; border-bottom:1px solid var(--border-glass); cursor:pointer; background:${editingClientId === c.id ? 'var(--surface-active)' : 'transparent'};`;
+        item.style = `padding:10px 15px; border-bottom:1px solid var(--border-glass); cursor:pointer; background:${editingClientId === c.id ? 'var(--surface-active)' : 'transparent'}; transition: background 0.2s;`;
         item.innerHTML = `
-            <div style="font-weight:bold; color:white;">${c.name.toUpperCase()}</div>
-            <div style="font-size:0.8rem; color:var(--text-dim);">${c.addresses.length} direcciones registradas</div>
+            <div style="font-weight:600; color:var(--text-main); font-size:0.9rem;">${c.name.toUpperCase()}</div>
+            <div style="font-size:0.7rem; color:var(--text-dim); opacity:0.8;">${c.addresses.length} DIRECCIONES</div>
         `;
         item.onclick = () => loadClientToEdit(c);
         list.appendChild(item);
@@ -853,7 +916,11 @@ clientPickerInput.oninput = async () => {
 
 // --- PROVINCES ---
 async function loadProvinces() {
-    const sel = document.getElementById('ticket-province');
+    const selectors = [
+        document.getElementById('ticket-province'),
+        document.getElementById('report-province'),
+        document.getElementById('comp-province')
+    ];
     const custom = await getCustomData('provinces') || [];
     const deleted = await getCustomData('provinces_deleted') || [];
 
@@ -864,9 +931,32 @@ async function loadProvinces() {
 
     let html = '<option value="">-- PROVINCIA --</option>';
     all.forEach(z => html += `<option value="${z}">${z}</option>`);
-    html += '<option value="create_new" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVA...</option>';
-    sel.innerHTML = html;
+
+    selectors.forEach(sel => {
+        if (!sel) return;
+        const currentVal = sel.value;
+        sel.innerHTML = html + (sel.id !== 'comp-province' ? '<option value="create_new" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVA...</option>' : '');
+        sel.value = currentVal;
+    });
 }
+
+// Auto-populate driver phone based on company province
+document.getElementById('comp-province').onchange = (e) => {
+    const selectedProv = e.target.value;
+    if (!selectedProv) return;
+
+    // Try to find a matching phone in the datalist options
+    const datalist = document.getElementById('predefined-phones');
+    if (!datalist) return;
+
+    for (const opt of datalist.options) {
+        // Check if the label contains the province name
+        if (opt.textContent.toUpperCase().includes(selectedProv.toUpperCase())) {
+            document.getElementById('comp-sms-pickup').value = opt.value;
+            break;
+        }
+    }
+};
 
 document.getElementById('ticket-province').onchange = async (e) => {
     if (e.target.value === 'create_new') {
@@ -987,62 +1077,76 @@ function generateTicketHTML(t, footerLabel) {
     });
 
     return `
-    <div class="print-ticket" style="font-family: Arial, sans-serif; border: 2px solid #000; padding: 15px; margin-bottom: 20px; position: relative; background: white; color: black; min-height: 120mm; display:flex; flex-direction:column; justify-content:space-between;">
-        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-30deg); font-size:4rem; color:rgba(0,0,0,0.05); font-weight:900; z-index:0; text-transform:uppercase;">${t.province || ''}</div>
+    <div class="print-ticket" style="width: 210mm; height: 148.5mm; border-bottom: 1px dashed #000; padding: 8mm; box-sizing: border-box; position: relative; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; page-break-inside: avoid;">
+        <div style="position:absolute; top:45%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:5rem; color:rgba(0,0,0,0.025); font-weight:900; z-index:0; text-transform:uppercase; pointer-events:none;">${t.province || ''}</div>
         
         <div style="z-index:1;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:10px;">
-                <div>
-                    <div style="font-weight:900; font-size:1.8rem; color:#FF6600;">NOVAPACK</div>
-                    <div style="font-size:0.7rem;">administracion@novapack.info</div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:8px;">
+                <div style="flex:1;">
+                    <div style="font-family: 'Xenotron', sans-serif; font-weight:400; font-size:1.8rem; color:#FF6600; line-height:1; letter-spacing:1px;">NOVAPACK</div>
+                    <div style="font-size:0.65rem; color:#444;">administracion@novapack.info</div>
                 </div>
-                <div style="text-align:center; border:2px solid #FF6600; padding:5px; border-radius:5px;">
-                    <div style="font-size:0.6rem; font-weight:bold; border-bottom:1px solid #FF6600;">ZONA DE REPARTO</div>
-                    <div style="font-size:1.5rem; font-weight:900;">${t.province || 'GENÉRICA'}</div>
+                <div style="flex:1; text-align:center;">
+                    <div style="display:inline-block; border:2px solid #FF6600; padding:3px 12px; border-radius:6px;">
+                        <div style="font-size:0.55rem; font-weight:bold; letter-spacing:1px; color:#666;">ZONA DE REPARTO</div>
+                        <div style="font-size:1.2rem; font-weight:900;">${t.province || 'GENÉRICA'}</div>
+                    </div>
                 </div>
-                <div class="ticket-qr-code" data-id="${t.id}"></div>
-                <div style="text-align:right;">
-                    <div style="font-weight:bold; font-size:1.2rem;">ALBARÁN: <span style="color:#FF6600;">${t.id}</span></div>
-                    <div style="font-size:0.8rem;">${dStr}</div>
-                    <div style="font-size:0.9rem; font-weight:bold; color:#FF6600;">RECOGIDA: ${t.timeSlot || 'MAÑANA'}</div>
-                </div>
-            </div>
-
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-top:15px;">
-                <div style="border:1px solid #ccc; padding:8px; font-size:0.8rem;">
-                    <strong>REMITENTE:</strong><br>${t.sender}<br>${t.senderAddress}<br>${t.senderPhone}
-                </div>
-                <div style="border:1px solid #000; padding:8px; font-size:1rem;">
-                    <strong>DESTINATARIO:</strong><br><span style="font-weight:900; font-size:1.1rem;">${t.receiver}</span><br>${t.address}<br>Telf: ${t.phone || '-'}
+                <div style="flex:1.4; display:flex; justify-content:flex-end; align-items:center; gap:12px;">
+                    <div class="ticket-qr-code" data-id="${t.id}"></div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:bold; font-size:1.1rem; line-height:1.1;">ALBARÁN: <span style="color:#FF6600;">${t.id}</span></div>
+                        <div style="font-size:0.75rem; color:#444;">${dStr}</div>
+                        <div style="font-size:0.8rem; font-weight:900; color:#FF6600; margin-top:1px; letter-spacing:0.5px;">RECOGIDA: ${t.timeSlot || 'MAÑANA'}</div>
+                    </div>
                 </div>
             </div>
 
-            <table style="width:100%; border-collapse:collapse; margin-top:15px; border:1px solid #000;">
+            <div style="display:grid; grid-template-columns: 1fr 1.2fr; gap:12px; margin-top:8px;">
+                <div style="border:1px solid #ddd; padding:6px; font-size:0.75rem; border-radius:5px; background:#fafafa;">
+                    <strong style="color:#888; font-size:0.55rem; display:block; text-transform:uppercase; margin-bottom:2px;">REMITENTE:</strong>
+                    <div style="font-weight:bold; font-size:0.85rem; margin-bottom:1px;">${t.sender}</div>
+                    <div style="color:#333;">${t.senderAddress}</div>
+                    <div style="font-weight:bold;">${t.senderPhone}</div>
+                </div>
+                <div style="border:2px solid #000; padding:6px; font-size:0.8rem; border-radius:5px; background:#fff;">
+                    <strong style="color:#888; font-size:0.55rem; display:block; text-transform:uppercase; margin-bottom:2px;">DESTINATARIO:</strong>
+                    <div style="font-weight:900; font-size:1rem; text-transform:uppercase; margin-bottom:1px;">${t.receiver}</div>
+                    <div style="font-weight:700; color:#111;">${t.address}</div>
+                    <div style="font-weight:900; font-size:1rem; color:#FF6600; margin-top:2px;">${t.phone || '-'}</div>
+                </div>
+            </div>
+
+            <table style="width:100%; border-collapse:collapse; margin-top:10px; border:1.5px solid #000; font-size:0.75rem;">
                 <thead style="background:#000; color:#fff;">
                     <tr>
-                        <th style="font-size:0.7rem;">BULTOS</th>
-                        <th style="font-size:0.7rem;">PESO</th>
-                        <th style="font-size:0.7rem;">TIPO</th>
-                        <th style="font-size:0.7rem;">PORTES</th>
-                        ${hasCod ? '<th style="font-size:0.7rem;">REEMBOLSO</th>' : ''}
+                        <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">BULTOS</th>
+                        <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">PESO</th>
+                        <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">TIPO / TAMAÑO</th>
+                        <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">PORTES</th>
+                        ${hasCod ? '<th style="padding:4px; border:1px solid #000; background:#FF6600; font-size:0.65rem;">REEMBOLSO</th>' : ''}
                     </tr>
                 </thead>
-                <tbody>${rows}</tbody>
+                <tbody style="font-weight:700; text-align:center;">${rows}</tbody>
             </table>
 
-            <div style="margin-top:10px; border:2px solid #000; padding:8px; display:flex; justify-content:space-around; font-weight:bold; background:#f5f5f5;">
-                <span>TOTAL BULTOS: ${pkgList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0)}</span>
-                <span>TOTAL PESO: ${pkgList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0).toFixed(1)} kg</span>
+            <div style="margin-top:6px; border:1.5px solid #000; padding:4px; display:flex; justify-content:space-around; font-weight:900; background:#f5f5f5; font-size:0.9rem; letter-spacing:0.5px;">
+                <span>BULTOS: ${pkgList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0)}</span>
+                <span>PESO: ${pkgList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0).toFixed(1)} kg</span>
             </div>
             
-            <div style="margin-top:10px; border:1px solid #ccc; padding:5px; font-size:0.8rem;">
-                <strong>OBSERVACIONES:</strong> ${t.notes || 'Sin observaciones.'}
+            <div style="margin-top:6px; border:1px dashed #aaa; padding:5px; font-size:0.75rem; border-radius:4px;">
+                <strong style="color:#888; font-size:0.55rem; display:block; text-transform:uppercase;">OBSERVACIONES:</strong>
+                <div style="font-weight:700;">${t.notes || 'Sin observaciones.'}</div>
             </div>
         </div>
 
-        <div style="text-align:right; font-size:0.7rem; border-top:1px dashed #ccc; padding-top:10px; margin-top:10px;">
-            <span>Firma y Sello:</span><br>
-            <strong style="text-transform:uppercase;">${footerLabel}</strong>
+        <div style="font-size:0.65rem; border-top:1px solid #eee; padding-top:6px; margin-top:8px; display:flex; justify-content:space-between; align-items:flex-end;">
+            <div style="color:#999; font-weight:bold; letter-spacing:0.5px;">SISTEMA NOVAPACK CLOUD</div>
+            <div style="text-align:right;">
+                <span style="color:#888;">Firma y Sello:</span><br />
+                <strong style="text-transform:uppercase; font-size:0.75rem;">${footerLabel}</strong>
+            </div>
         </div>
     </div>
     `;
@@ -1052,11 +1156,14 @@ async function printTicket(t) {
     const area = document.getElementById('print-area');
     area.innerHTML = '';
 
-    // Copy for client
-    area.innerHTML += generateTicketHTML(t, "Ejemplar para el Cliente");
-    area.innerHTML += '<div style="border-top: 1px dashed #000; margin: 20px 0; page-break-after: always;"></div>';
-    // Copy for admin
-    area.innerHTML += generateTicketHTML(t, "Ejemplar para Administración");
+    // A4 container for two A5s
+    const page = document.createElement('div');
+    page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box;";
+
+    page.innerHTML = generateTicketHTML(t, "Ejemplar para el Cliente");
+    page.innerHTML += generateTicketHTML(t, "Ejemplar para Administración");
+
+    area.appendChild(page);
 
     if (confirm("¿Deseas imprimir también el Manifiesto para este albarán?")) {
         area.innerHTML += '<div style="page-break-before: always;"></div>';
@@ -1095,7 +1202,7 @@ function generateManifestHTML(tickets) {
     });
 
     return `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
         <div style="display:flex; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:10px;">
             <div><h2 style="margin:0; color:#FF6600;">MANIFIESTO DE SALIDA</h2></div>
             <div style="text-align:right;"><strong>Fecha:</strong> ${dStr} | <strong>Total Envíos:</strong> ${tickets.length}</div>
@@ -1123,13 +1230,53 @@ function generateManifestHTML(tickets) {
             </tfoot>
         </table>
         <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; float:right;">Firma Transportista</div>
-    </div>
-    `;
+    </div >
+        `;
 }
 
 // --- SHIFT BATCH PRINTING ---
 document.getElementById('btn-print-morning').onclick = () => printShiftBatch('MAÑANA');
 document.getElementById('btn-print-afternoon').onclick = () => printShiftBatch('TARDE');
+document.getElementById('btn-manifest-m').onclick = () => printManifestOnlyBatch('MAÑANA');
+document.getElementById('btn-manifest-t').onclick = () => printManifestOnlyBatch('TARDE');
+document.getElementById('btn-manifest-all').onclick = () => printManifestOnlyBatch('AMBOS');
+
+async function printManifestOnlyBatch(slot = 'AMBOS') {
+    const today = new Date().toISOString().split('T')[0];
+    showLoading();
+    const snap = await getCollection('tickets').get();
+    let tickets = [];
+    snap.forEach(doc => {
+        const d = doc.data();
+        const dStr = (d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt)).toISOString().split('T')[0];
+        if (dStr === today) {
+            if (slot === 'AMBOS' || d.timeSlot === slot) {
+                tickets.push({ id: doc.id, ...d });
+            }
+        }
+    });
+    hideLoading();
+
+    if (tickets.length === 0) {
+        alert(slot === 'AMBOS' ? "No hay albaranes registrados hoy." : `No hay albaranes para el turno ${slot} hoy.`);
+        return;
+    }
+
+    const area = document.getElementById('print-area');
+    area.innerHTML = `
+        < div style = "background:white; padding:20px; min-height:297mm;" >
+            <div style="text-align:center; font-weight:bold; font-size:1.2rem; margin-bottom:10px; color:#FF6600;">
+                MANIFIESTO - TURNO: ${slot}
+            </div>
+            ${generateManifestHTML(tickets)}
+        </div >
+        `;
+
+    setTimeout(() => {
+        window.print();
+        area.innerHTML = '';
+    }, 500);
+}
 document.getElementById('btn-export-csv').onclick = handleExportCSV;
 document.getElementById('btn-import-json').onclick = () => {
     const input = document.createElement('input');
@@ -1152,6 +1299,8 @@ async function handleImportJSON(e) {
             const raw = JSON.parse(ev.target.result);
             let importedTickets = [];
             let importedDestinations = [];
+            let importedProvinces = [];
+            let importedSizes = [];
 
             // Case A: Full Backup Object (contains keys like novapack_...)
             if (typeof raw === 'object' && !Array.isArray(raw)) {
@@ -1162,6 +1311,12 @@ async function handleImportJSON(e) {
                     if (key === 'novapack_destinations') {
                         try { importedDestinations = JSON.parse(raw[key]); } catch (e) { }
                     }
+                    if (key === 'novapack_provinces') {
+                        try { importedProvinces = JSON.parse(raw[key]); } catch (e) { }
+                    }
+                    if (key === 'novapack_custom_sizes') {
+                        try { importedSizes = JSON.parse(raw[key]); } catch (e) { }
+                    }
                 });
             }
             // Case B: Array (assume tickets for current company)
@@ -1169,12 +1324,12 @@ async function handleImportJSON(e) {
                 importedTickets = raw;
             }
 
-            if (importedTickets.length === 0 && importedDestinations.length === 0) {
+            if (importedTickets.length === 0 && importedDestinations.length === 0 && importedProvinces.length === 0) {
                 alert("No se encontraron albaranes o clientes válidos en el archivo.");
                 return;
             }
 
-            if (!confirm(`Se han detectado ${importedTickets.length} albaranes y ${importedDestinations.length} clientes. ¿Deseas importarlos a la empresa actual (${companies.find(c => c.id === currentCompanyId).name})?`)) return;
+            if (!confirm(`Se han detectado ${importedTickets.length} albaranes, ${importedDestinations.length} clientes y ${importedProvinces.length} zonas. ¿Deseas importarlos a la empresa actual(${companies.find(c => c.id === currentCompanyId).name}) ? `)) return;
 
             showLoading();
 
@@ -1211,6 +1366,16 @@ async function handleImportJSON(e) {
                 }
             }
 
+            // Import Provinces & Sizes
+            if (importedProvinces.length > 0) {
+                const existingX = await getCustomData('provinces') || [];
+                await saveCustomData('provinces', [...new Set([...existingX, ...importedProvinces])]);
+            }
+            if (importedSizes.length > 0) {
+                const existingS = await getCustomData('custom_sizes') || [];
+                await saveCustomData('custom_sizes', [...new Set([...existingS, ...importedSizes])]);
+            }
+
             hideLoading();
             alert("✅ Importación completada con éxito.");
             location.reload();
@@ -1232,7 +1397,7 @@ function handleExportCSV() {
         const dStr = d.toLocaleDateString();
         const pkgCount = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
         const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
-        csv += `${t.id};${dStr};${t.receiver};${t.province || ''};${pkgCount};${weight.toFixed(1)};${t.timeSlot || ''};${t.shippingType};${t.cod || ''}\n`;
+        csv += `${t.id};${dStr};${t.receiver};${t.province || ''};${pkgCount};${weight.toFixed(1)};${t.timeSlot || ''};${t.shippingType};${t.cod || ''} \n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
@@ -1254,18 +1419,18 @@ async function printShiftBatch(slot) {
     hideLoading();
 
     if (tickets.length === 0) { alert(`No hay albaranes para el turno ${slot} hoy.`); return; }
-    if (!confirm(`¿Imprimir ${tickets.length} albaranes y Manifiesto?`)) return;
+    if (!confirm(`¿Imprimir ${tickets.length} albaranes y Manifiesto ? `)) return;
 
     const area = document.getElementById('print-area');
     area.innerHTML = '';
+
+    // Each ticket gets its own A4 page with 2 A5 copies (Cuartilla)
     tickets.forEach(t => {
-        area.innerHTML += `
-            <div style="page-break-after: always; padding: 20px 0;">
-                ${generateTicketHTML(t, "Ejemplar para el Cliente")}
-                <div style="border-top:1px dashed #000; margin: 30px 0;"></div>
-                ${generateTicketHTML(t, "Ejemplar para Administración")}
-            </div>
-        `;
+        const page = document.createElement('div');
+        page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box; page-break-after: always;";
+        page.innerHTML = generateTicketHTML(t, "Ejemplar para el Cliente");
+        page.innerHTML += generateTicketHTML(t, "Ejemplar para Administración");
+        area.appendChild(page);
         getCollection('tickets').doc(t.id).update({ printed: true });
     });
 
@@ -1282,27 +1447,33 @@ document.getElementById('btn-print-labels-afternoon').onclick = () => printLabel
 function generateLabelHTML(t, index, total) {
     const weight = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : 0;
     return `
-    <div class="label-item" style="width: 100mm; height: 138mm; border: 3px solid #000; padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif;">
-        <div style="display:flex; justify-content:space-between; border-bottom:3px solid #FF6600; padding-bottom:5px;">
-            <div style="font-weight:900; font-size:1.5rem; color:#FF6600;">NOVAPACK</div>
-            <div style="text-align:right; font-size:0.6rem;">REMITENTE:<br><strong>${t.sender}</strong></div>
+        <div class="label-item" style="width: 101mm; height: 152mm; border: 2px solid #000; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; background: white; color: black; position: relative; font-family: sans-serif; page-break-after: always; overflow: hidden;">
+        <div style="display:flex; justify-content:space-between; border-bottom:3px solid #FF6600; padding-bottom:8px;">
+            <div style="font-weight:900; font-size:1.8rem; color:#FF6600; letter-spacing: -1px;">NOVAPACK</div>
+            <div style="text-align:right; font-size:0.75rem; line-height:1.1;">REMITENTE:<br /><strong style="font-size:0.9rem;">${t.sender}</strong></div>
         </div>
         <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
-            <div style="font-size:0.75rem; color:#666; width:100%; text-align:left;">DESTINATARIO:</div>
-            <div style="font-size:1.8rem; font-weight:900; text-transform:uppercase; margin:10px 0;">${t.receiver}</div>
-            <div style="font-size:1.1rem; line-height:1.2;">${t.address}</div>
-            <div style="font-size:2.25rem; font-weight:900; color:#FF6600; margin-top:10px;">${t.province || ''}</div>
-            ${t.notes ? `<div style="font-size:0.8rem; font-weight:bold; margin-top:10px; border-top:1px dotted #ccc; padding-top:5px;">OBS: ${t.notes}</div>` : ''}
+            <div style="font-size:0.85rem; color:#333; width:100%; text-align:left; font-weight:bold; text-transform:uppercase;">DESTINATARIO:</div>
+            <div style="font-size:2rem; font-weight:900; text-transform:uppercase; margin:15px 0; line-height:1;">${t.receiver}</div>
+            <div style="font-size:1.3rem; line-height:1.2; font-weight:500;">${t.address}</div>
+            <div style="font-size:2.8rem; font-weight:900; color:#FF6600; margin-top:15px; border:3px solid #FF6600; padding:5px 20px; border-radius:10px;">${t.province || ''}</div>
+            ${t.notes ? `<div style="font-size:1rem; font-weight:bold; margin-top:20px; border-top:2px dashed #000; padding-top:10px; width:100%;">OBS: ${t.notes}</div>` : ''}
         </div>
-        <div style="position:absolute; bottom:70px; right:15px;" class="ticket-qr-code" data-id="${t.id}"></div>
-        <div style="display:flex; justify-content:space-between; border-top:3px solid #000; padding-top:5px; background:#eee; font-weight:bold;">
-            <div style="text-align:center; flex:1;">BULTO<br><span style="font-size:1.2rem;">${index + 1} / ${total}</span></div>
-            <div style="text-align:center; flex:2; border-left:1px solid #ccc; border-right:1px solid #ccc; font-size:1.1rem; display:flex; align-items:center; justify-content:center;">${t.id}</div>
-            <div style="text-align:center; flex:1;">PESO<br><strong>${weight} kg</strong></div>
+        <div style="position:absolute; bottom:90px; right:20px;" class="ticket-qr-code" data-id="${t.id}"></div>
+        <div style="display:flex; justify-content:space-between; border-top:4px solid #000; padding-top:10px; margin-top:10px;">
+            <div style="text-align:center; flex:1; border-right:2px solid #000;">
+                <div style="font-size:0.7rem; text-transform:uppercase;">Bulto</div>
+                <div style="font-size:1.5rem; font-weight:900;">${index + 1} / ${total}</div>
+            </div>
+            <div style="text-align:center; flex:2; display:flex; align-items:center; justify-content:center; font-size:1.4rem; font-weight:900; background:#eee; margin:0 10px;">${t.id}</div>
+            <div style="text-align:center; flex:1; border-left:2px solid #000;">
+                <div style="font-size:0.7rem; text-transform:uppercase;">Peso</div>
+                <div style="font-size:1.5rem; font-weight:900;">${weight} kg</div>
+            </div>
         </div>
-        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:100px; right:5px; border:3px solid black; background:white; color:black; font-weight:900; padding:5px; transform:rotate(15deg); text-align:center;">ATENCIÓN<br>REEMBOLSO<br><span style="font-size:1.2rem;">${t.cod} €</span></div>` : ''}
+        ${(t.cod && parseFloat(t.cod) > 0) ? `<div style="position:absolute; top:110px; right:5px; border:4px solid black; background:white; color:black; font-weight:900; padding:10px; transform:rotate(15deg); text-align:center; box-shadow: 5px 5px 0 #000; z-index:10;">ATENCIÓN<br />REEMBOLSO<br /><span style="font-size:1.8rem;">${t.cod} €</span></div>` : ''}
     </div>
-    `;
+        `;
 }
 
 async function printLabelShiftBatch(slot) {
@@ -1327,9 +1498,14 @@ async function printLabelShiftBatch(slot) {
         for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
     });
 
-    renderLabelsInA4Grid(area, labelsHtml);
+    area.innerHTML = labelsHtml.join('');
     renderQRCodesInPrintArea();
-    setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
+    document.body.classList.add('printing-labels');
+    setTimeout(() => {
+        window.print();
+        area.innerHTML = '';
+        document.body.classList.remove('printing-labels');
+    }, 500);
 }
 
 function printLabel(t) {
@@ -1339,35 +1515,28 @@ function printLabel(t) {
     let labelsHtml = [];
     for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs));
 
-    renderLabelsInA4Grid(area, labelsHtml);
+    area.innerHTML = labelsHtml.join('');
     renderQRCodesInPrintArea();
-    setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
-}
-
-function renderLabelsInA4Grid(container, labelsHtml) {
-    let page = null;
-    labelsHtml.forEach((html, i) => {
-        if (i % 4 === 0) {
-            page = document.createElement('div');
-            page.style = "display:grid; grid-template-columns: 105mm 105mm; grid-template-rows: 148mm 148mm; width:210mm; height:297mm; page-break-after:always; box-sizing:border-box; padding:5mm;";
-            container.appendChild(page);
-        }
-        const wrapper = document.createElement('div');
-        wrapper.style = "display:flex; justify-content:center; align-items:center;";
-        wrapper.innerHTML = html;
-        page.appendChild(wrapper);
-    });
+    document.body.classList.add('printing-labels');
+    setTimeout(() => {
+        window.print();
+        area.innerHTML = '';
+        document.body.classList.remove('printing-labels');
+    }, 500);
 }
 
 async function sendPickupSMS(t) {
-    const smsGateway = await getCustomData('sms_gateway_url');
-    if (!smsGateway) { alert("Configura la pasarela SMS en el Panel de Administración."); return; }
+    const comp = companies.find(c => c.id === currentCompanyId) || {};
+    const smsGateway = comp.smsGateway || await getGlobalData('sms_gateway_url');
+    if (!smsGateway) { alert("Configura la pasarela SMS en Ajustes de Empresa o Panel de Administración."); return; }
 
     const defaultMsg = `NOVAPACK - AVISO RECOGIDA: Hay envíos listos para ${t.receiver}.`;
     const msg = prompt("Confirmar Mensaje:", defaultMsg);
     if (!msg) return;
 
-    const phone = prompt("Confirmar Teléfono del Repartidor/Cliente:", t.phone || "");
+    // Use company-specific driver phone as default if available
+    const driverPhone = comp.pickupAlertPhone || t.phone || "";
+    const phone = prompt("Confirmar Teléfono del Repartidor/Cliente:", driverPhone);
     if (!phone) return;
 
     showLoading();

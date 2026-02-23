@@ -5,55 +5,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOVAPACK - Admin Console</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Inter:wght@300;400;500&display=swap"
+        rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <style>
         :root {
             --brand-primary: #FF6600;
-            --bg-dark: #080808;
-            --surface: #121212;
-            --glass: rgba(255, 255, 255, 0.05);
-            --border-glass: rgba(255, 255, 255, 0.1);
+            --bg-dark: #0A0B0C;
+            --surface: #121416;
+            --glass: rgba(255, 255, 255, 0.03);
+            --border-glass: rgba(255, 255, 255, 0.08);
         }
 
         body {
             margin: 0;
             padding: 0;
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Inter', sans-serif;
             background-color: var(--bg-dark);
-            color: white;
+            color: #F2F4F7;
             display: flex;
             min-height: 100vh;
         }
 
         /* Sidebar */
         .sidebar {
-            width: 280px;
-            background: var(--surface);
+            width: 240px;
+            background: #0D0E10;
             border-right: 1px solid var(--border-glass);
             display: flex;
             flex-direction: column;
-            padding: 30px;
+            padding: 20px;
         }
 
         .logo {
-            font-size: 1.8rem;
-            font-weight: 900;
-            margin-bottom: 40px;
+            font-family: 'Xenotron', sans-serif;
+            font-size: 1.4rem;
+            font-weight: 300;
+            margin-bottom: 30px;
+            letter-spacing: 1px;
+            color: var(--brand-primary);
         }
 
         .nav-item {
-            padding: 12px 20px;
-            border-radius: 12px;
-            margin-bottom: 8px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 4px;
             cursor: pointer;
-            transition: all 0.3s;
-            color: #888;
+            transition: all 0.2s;
+            color: #8E95A1;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
+            font-size: 0.85rem;
         }
 
         .nav-item.active {
@@ -70,7 +76,7 @@
         /* Main Content */
         .main-content {
             flex: 1;
-            padding: 60px;
+            padding: 30px;
             overflow-y: auto;
         }
 
@@ -78,66 +84,75 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 40px;
+            margin-bottom: 25px;
         }
 
         h1 {
             margin: 0;
-            font-size: 2.2rem;
+            font-size: 1.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 400;
         }
 
         .card {
             background: var(--surface);
             border: 1px solid var(--border-glass);
-            border-radius: 24px;
-            padding: 40px;
-            margin-bottom: 30px;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         }
 
         .user-list {
             width: 100%;
             border-collapse: separate;
-            border-spacing: 0 10px;
+            border-spacing: 0 4px;
         }
 
         .user-list th {
             text-align: left;
-            color: #666;
+            color: #525866;
             text-transform: uppercase;
-            font-size: 0.75rem;
-            padding: 10px 20px;
+            font-size: 0.65rem;
+            padding: 8px 15px;
+            font-weight: 600;
         }
 
         .user-row {
             background: var(--glass);
-            transition: transform 0.2s;
+            transition: background 0.2s;
         }
 
         .user-row:hover {
-            transform: scale(1.01);
-            background: rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .user-row td {
-            padding: 18px 20px;
+            padding: 10px 15px;
+            font-size: 0.85rem;
         }
 
         .user-row td:first-child {
-            border-radius: 12px 0 0 12px;
+            border-radius: 6px 0 0 6px;
         }
 
         .user-row td:last-child {
-            border-radius: 0 12px 12px 0;
+            border-radius: 0 6px 6px 0;
             text-align: right;
         }
 
         .btn {
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-weight: 700;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
             cursor: pointer;
             border: none;
-            transition: all 0.3s;
+            transition: all 0.2s;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn-primary {
@@ -148,13 +163,13 @@
         .btn-outline {
             background: transparent;
             border: 1px solid var(--border-glass);
-            color: white;
+            color: var(--text-dim);
         }
 
         .btn-danger {
-            background: rgba(255, 68, 68, 0.1);
+            background: rgba(255, 68, 68, 0.08);
             color: #ff4444;
-            border: 1px solid rgba(255, 68, 68, 0.2);
+            border: 1px solid rgba(255, 68, 68, 0.15);
         }
 
         .modal {
@@ -164,41 +179,47 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.7);
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(4px);
         }
 
         .modal-content {
             background: var(--surface);
-            padding: 40px;
-            border-radius: 24px;
+            padding: 25px;
+            border-radius: 12px;
             width: 100%;
-            max-width: 450px;
+            max-width: 400px;
             border: 1px solid var(--border-glass);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
-            color: #888;
-            font-size: 0.8rem;
+            margin-bottom: 6px;
+            color: #8E95A1;
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
         }
 
         input {
             width: 100%;
-            padding: 14px;
-            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--border-glass);
-            border-radius: 12px;
+            border-radius: 6px;
             color: white;
             box-sizing: border-box;
+            outline: none;
+            font-family: inherit;
+            font-size: 0.9rem;
         }
 
         .chip {
@@ -215,6 +236,7 @@
     <div class="sidebar" id="sidebar">
         <div class="logo">NOVAPACK<span style="color:var(--brand-primary)">➤</span></div>
         <div class="nav-item active" id="nav-users">👥 Usuarios</div>
+        <div class="nav-item" id="nav-phones">📱 Teléfonos</div>
         <div class="nav-item" id="nav-config">⚙️ Configuración</div>
         <div style="flex:1"></div>
         <div class="nav-item" id="btn-logout">🚪 Cerrar Sesión</div>
@@ -245,34 +267,77 @@
             </div>
         </div>
 
-        <div class="card">
-            <h3 style="margin-top:0; color:var(--brand-primary)">Configuración de Comunicaciones</h3>
-            <div class="form-group">
-                <label>Pasarela SMS Gateway URL (Usar {TELEFONO} y {MENSAJE})</label>
-                <input type="text" id="conf-sms-gateway"
-                    placeholder="https://api.gateway.com/send?to={TELEFONO}&msg={MENSAJE}">
+        <!-- Teléfonos View -->
+        <div id="view-phones" style="display:none">
+            <div class="header">
+                <h1>Teléfonos de Alerta</h1>
+                <button class="btn btn-primary" id="btn-add-phone">+ NUEVO TELÉFONO</button>
             </div>
-            <div class="form-group">
-                <label>Teléfono de Aviso de Recogida (Repartidor)</label>
-                <input type="text" id="conf-pickup-phone" placeholder="+34600000000">
+            <div class="card">
+                <table class="user-list">
+                    <thead>
+                        <tr>
+                            <th>Identificador / Nombre</th>
+                            <th>Nº Teléfono</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="phone-table-body">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
             </div>
-            <button class="btn btn-primary" id="btn-save-settings">💾 GUARDAR CONFIGURACIÓN</button>
         </div>
 
-        <div class="card" style="margin-top:30px; opacity:0.8;">
-            <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
-            <div class="form-group">
-                <label>ID del Proyecto Firebase</label>
-                <div id="conf-project-id"
-                    style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+        <!-- Configuración View -->
+        <div id="view-config" style="display:none">
+            <div class="card">
+                <h3 style="margin-top:0; color:var(--brand-primary)">Configuración de Comunicaciones</h3>
+                <div class="form-group">
+                    <label>Pasarela SMS Gateway URL (Usar {TELEFONO} y {MENSAJE})</label>
+                    <input type="text" id="conf-sms-gateway"
+                        placeholder="https://api.gateway.com/send?to={TELEFONO}&msg={MENSAJE}">
+                </div>
+                <button class="btn btn-primary" id="btn-save-settings">💾 GUARDAR CONFIGURACIÓN</button>
+            </div>
+
+            <div class="card" style="margin-top:30px; opacity:0.8;">
+                <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
+                <div class="form-group">
+                    <label>ID del Proyecto Firebase</label>
+                    <div id="conf-project-id"
+                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Tu UID de Administrador (Actual)</label>
+                    <div id="conf-admin-uid"
+                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+                    </div>
                 </div>
             </div>
-            <div class="form-group">
-                <label>Tu UID de Administrador (Actual)</label>
-                <div id="conf-admin-uid"
-                    style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
+        </div>
+    </div>
+
+    <!-- Add Phone Modal -->
+    <div class="modal" id="add-phone-modal">
+        <div class="modal-content">
+            <h2 style="margin-top:0">Añadir Teléfono Predefinido</h2>
+            <form id="add-phone-form">
+                <div class="form-group">
+                    <label>Identificador (Ej: Delegación Málaga / Repartidor Mañana)</label>
+                    <input type="text" id="new-phone-label" required placeholder="Nombre para el listado">
                 </div>
-            </div>
+                <div class="form-group">
+                    <label>Número de Teléfono</label>
+                    <input type="text" id="new-phone-number" required placeholder="+34600000000">
+                </div>
+                <div style="display:flex; gap:10px; margin-top:30px;">
+                    <button type="button" class="btn btn-outline" style="flex:1"
+                        id="btn-close-phone-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" style="flex:1">Guardar Teléfono</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -313,6 +378,9 @@
                 const adminDoc = await db.collection('config').doc('admin').get();
                 if (!adminDoc.exists || adminDoc.data().uid !== user.uid) {
                     window.location.href = 'app.html';
+                } else {
+                    // Admin verified, load info
+                    loadConfigInfo();
                 }
             } catch (e) {
                 console.error("Admin verification failed:", e);
@@ -329,28 +397,39 @@
 
         // Navigation elements
         const navUsers = document.getElementById('nav-users');
+        const navPhones = document.getElementById('nav-phones');
         const navConfig = document.getElementById('nav-config');
         const viewUsers = document.getElementById('view-users');
+        const viewPhones = document.getElementById('view-phones');
         const viewConfig = document.getElementById('view-config');
 
         // Switching Views
         const showView = (viewId) => {
             console.log("Cambiando a vista:", viewId);
             viewUsers.style.display = viewId === 'users' ? 'block' : 'none';
+            viewPhones.style.display = viewId === 'phones' ? 'block' : 'none';
             viewConfig.style.display = viewId === 'config' ? 'block' : 'none';
 
             navUsers.classList.toggle('active', viewId === 'users');
+            navPhones.classList.toggle('active', viewId === 'phones');
             navConfig.classList.toggle('active', viewId === 'config');
 
             if (viewId === 'config') loadConfigInfo();
+            if (viewId === 'phones') loadPhones();
         };
 
         navUsers.addEventListener('click', () => showView('users'));
+        navPhones.addEventListener('click', () => showView('phones'));
         navConfig.addEventListener('click', () => showView('config'));
 
         async function loadConfigInfo() {
-            document.getElementById('conf-admin-uid').textContent = auth.currentUser ? auth.currentUser.uid : 'Cargando...';
-            document.getElementById('conf-project-id').textContent = firebaseConfig.projectId;
+            if (!auth.currentUser) return;
+
+            const uidEl = document.getElementById('conf-admin-uid');
+            const projectEl = document.getElementById('conf-project-id');
+
+            if (uidEl) uidEl.textContent = auth.currentUser.uid;
+            if (projectEl) projectEl.textContent = firebaseConfig.projectId;
 
             try {
                 const settingsDoc = await db.collection('config').doc('settings').get();
@@ -395,6 +474,7 @@
                         <td>
                             <div style="font-weight:700">${data.name || 'Sin Nombre'}</div>
                             <div style="font-size:0.8rem; color:#888">${data.email}</div>
+                            <div style="font-size:0.7rem; color:var(--brand-primary); margin-top:2px;">Clave: ${data.password || '****'}</div>
                         </td>
                         <td><span class="chip">Activo</span></td>
                         <td style="color:#888">${data.createdAt ? new Date(data.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}</td>
@@ -413,17 +493,19 @@
             e.preventDefault();
             const name = document.getElementById('new-user-name').value;
             const email = document.getElementById('new-user-email').value;
+            const password = document.getElementById('new-user-password').value;
 
             try {
                 const newUserRef = db.collection('users').doc();
                 await newUserRef.set({
                     name,
                     email,
+                    password, // Guardado para referencia admin
                     role: 'client',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
 
-                alert('Usuario registrado en Firestore. Recuerda crearlo también en la pestaña "Authentication" de Firebase con este mismo correo.');
+                alert('¡Cliente añadido con éxito! Los datos se han guardado en Firestore. Recuerda dar de alta el correo en Firebase Auth.');
 
                 addUserModal.style.display = 'none';
                 addUserForm.reset();
@@ -444,6 +526,86 @@
                 }
             }
         };
+
+        // Phone Management
+        const phoneTableBody = document.getElementById('phone-table-body');
+        const addPhoneModal = document.getElementById('add-phone-modal');
+        const btnAddPhone = document.getElementById('btn-add-phone');
+        const btnClosePhoneModal = document.getElementById('btn-close-phone-modal');
+        const addPhoneForm = document.getElementById('add-phone-form');
+
+        async function loadPhones() {
+            try {
+                const snapshot = await db.collection('config').doc('phones').collection('list').get();
+                phoneTableBody.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const row = document.createElement('tr');
+                    row.className = 'user-row';
+                    row.innerHTML = `
+                        <td>
+                            <div style="font-weight:700">${data.label}</div>
+                        </td>
+                        <td>${data.number}</td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deletePhone('${doc.id}')">🗑️</button>
+                        </td>
+                    `;
+                    phoneTableBody.appendChild(row);
+                });
+            } catch (e) {
+                console.error("Error loading phones:", e);
+            }
+        }
+
+        addPhoneForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const label = document.getElementById('new-phone-label').value;
+            const number = document.getElementById('new-phone-number').value;
+            try {
+                await db.collection('config').doc('phones').collection('list').add({
+                    label,
+                    number,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Añadir a plataforma SMS automáticamente (notificar al gateway)
+                const settingsDoc = await db.collection('config').doc('settings').get();
+                const gateway = settingsDoc.exists ? settingsDoc.data().sms_gateway_url : null;
+
+                if (gateway) {
+                    const msg = `NOVAPACK: Registro de nuevo repartidor (${label}) en sistema.`;
+                    const testUrl = gateway.replace(/\{TELEFONO\}/gi, number).replace(/\{MENSAJE\}/gi, encodeURIComponent(msg));
+                    fetch(testUrl, { mode: 'no-cors' }).catch(e => console.warn("SMS Registry notification failed", e));
+
+                    // Si no hay teléfono global configurado, poner este como primero
+                    if (!settingsDoc.exists || !settingsDoc.data().pickup_alert_phone) {
+                        await db.collection('config').doc('settings').set({ pickup_alert_phone: number }, { merge: true });
+                        loadConfigInfo();
+                    }
+                }
+
+                addPhoneModal.style.display = 'none';
+                addPhoneForm.reset();
+                loadPhones();
+            } catch (err) {
+                alert('Error al guardar teléfono.');
+            }
+        };
+
+        window.deletePhone = async (id) => {
+            if (confirm('¿Eliminar este teléfono de la lista?')) {
+                try {
+                    await db.collection('config').doc('phones').collection('list').doc(id).delete();
+                    loadPhones();
+                } catch (e) {
+                    alert("Error al eliminar teléfono.");
+                }
+            }
+        };
+
+        btnAddPhone.onclick = () => addPhoneModal.style.display = 'flex';
+        btnClosePhoneModal.onclick = () => addPhoneModal.style.display = 'none';
 
         btnAddUser.onclick = () => addUserModal.style.display = 'flex';
         btnCloseModal.onclick = () => addUserModal.style.display = 'none';

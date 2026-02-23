@@ -6,7 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOVAPACK - Cloud App</title>
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Inter:wght@300;400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -72,13 +74,33 @@
                     <input type="text" id="ticket-search" class="form-control mb-4"
                         placeholder="🔍 BUSCAR POR ALBARÁN O CLIENTE...">
                     <input type="date" id="date-filter" class="form-control mb-4">
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                        <button id="btn-print-morning" class="btn btn-sm btn-outline">☀️ ENVÍOS MAÑANA</button>
-                        <button id="btn-print-afternoon" class="btn btn-sm btn-outline">🌙 ENVÍOS TARDE</button>
-                        <button id="btn-print-labels-morning" class="btn btn-sm btn-primary">🏷️☀️ ETIQUETAS
-                            MAÑANA</button>
-                        <button id="btn-print-labels-afternoon" class="btn btn-sm btn-primary">🏷️🌙 ETIQUETAS
-                            TARDE</button>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <button id="btn-print-morning" class="btn btn-sm btn-outline"
+                                style="font-size: 0.65rem; padding: 6px 2px;">☀️ ALBARANES MAÑANA</button>
+                            <button id="btn-print-afternoon" class="btn btn-sm btn-outline"
+                                style="font-size: 0.65rem; padding: 6px 2px;">🌙 ALBARANES TARDE</button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                            <button id="btn-print-labels-morning" class="btn btn-sm btn-primary"
+                                style="font-size: 0.65rem; padding: 6px 2px;">🏷️ ETIQUETAS MAÑANA</button>
+                            <button id="btn-print-labels-afternoon" class="btn btn-sm btn-primary"
+                                style="font-size: 0.65rem; padding: 6px 2px;">🏷️ ETIQUETAS TARDE</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                        <div
+                            style="font-size:0.65rem; color:var(--text-dim); font-weight:bold; text-transform:uppercase; border-left: 2px solid var(--brand-primary); padding-left: 8px;">
+                            📋 IMPRIMIR MANIFIESTO</div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
+                            <button id="btn-manifest-m" class="btn btn-sm btn-secondary"
+                                style="font-size: 0.6rem; padding: 8px 2px;">☀️ MAÑANA</button>
+                            <button id="btn-manifest-t" class="btn btn-sm btn-secondary"
+                                style="font-size: 0.6rem; padding: 8px 2px;">🌙 TARDE</button>
+                            <button id="btn-manifest-all" class="btn btn-sm btn-secondary"
+                                style="font-size: 0.6rem; padding: 8px 2px;">🌟 TODO EL DÍA</button>
+                        </div>
                     </div>
                 </div>
                 <div id="tickets-list" class="ticket-list-scroll" style="flex: 1; overflow-y: auto;">
@@ -88,11 +110,12 @@
             <div class="ticket-editor">
                 <div class="card editor-card" style="margin: 0 auto;">
                     <div
-                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid var(--border-glass); padding-bottom:15px;">
-                        <h2 id="editor-title" style="margin:0; font-size:1.5rem; color: var(--brand-primary);">NUEVO
+                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; border-bottom:1px solid var(--border-glass); padding-bottom:8px;">
+                        <h2 id="editor-title"
+                            style="margin:0; font-size:1.1rem; color: var(--brand-primary); letter-spacing:0.5px;">NUEVO
                             ALBARÁN</h2>
                         <span id="editor-status"
-                            style="font-size:0.85rem; color:var(--text-dim); font-weight: 600;">BORRADOR</span>
+                            style="font-size:0.7rem; color:var(--text-dim); font-weight: 600; text-transform:uppercase;">BORRADOR</span>
                     </div>
 
                     <form id="create-ticket-form"
@@ -110,14 +133,14 @@
                             </div>
 
                             <div class="card"
-                                style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass);">
+                                style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-glass);">
                                 <h3
-                                    style="font-size: 0.8rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; margin-bottom: 15px; color: var(--text-dim);">
+                                    style="font-size: 0.65rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; margin-bottom: 10px; color: var(--text-dim);">
                                     📍 DESTINATARIO</h3>
-                                <div style="margin-bottom: 12px;">
+                                <div style="margin-bottom: 8px;">
                                     <input type="text" id="ticket-receiver" class="form-control" required
-                                        autocomplete="off" placeholder="NOMBRE DEL CLIENTE"
-                                        style="font-weight:900; font-size:1.1rem; border-color:var(--brand-primary); color:white;">
+                                        autocomplete="off" placeholder="NOMBRE DEL DESTINATARIO"
+                                        style="font-weight:700; font-size:0.95rem; border-color:var(--brand-primary);">
                                     <div id="suggestions-box" class="suggestions-dropdown hidden"></div>
                                 </div>
                                 <div
@@ -142,19 +165,20 @@
                             </div>
 
                             <div class="card"
-                                style="background: rgba(0,0,0,0.2); border: 1px solid var(--border-glass); flex: 1; display: flex; flex-direction: column;">
+                                style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-glass); flex: 1; display: flex; flex-direction: column;">
                                 <div
-                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                     <h3
-                                        style="font-size: 0.8rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; color: var(--text-dim);">
+                                        style="font-size: 0.65rem; border-bottom: 2px solid var(--brand-primary); display: inline-block; color: var(--text-dim);">
                                         📦 BULTOS / MERCANCÍA</h3>
                                     <button type="button" id="btn-add-package" class="btn btn-sm btn-primary">+
                                         AÑADIR</button>
                                 </div>
                                 <div id="packages-list"
-                                    style="flex:1; min-height: 120px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border-glass);">
+                                    style="flex:1; min-height: 80px; background: rgba(0,0,0,0.2); border-radius: 4px; border: 1px solid var(--border-glass);">
                                 </div>
-                                <div style="text-align:right; font-size:1.1rem; margin-top:10px; font-weight: 800;">
+                                <div
+                                    style="text-align:right; font-size:0.85rem; margin-top:8px; font-weight: 700; color:var(--text-dim);">
                                     TOTALES: <span id="display-total-packages"
                                         style="color:var(--brand-primary);">0</span>
                                     <input type="hidden" id="ticket-packages-count" value="0">
@@ -206,8 +230,8 @@
                             </div>
 
                             <button type="submit" class="btn btn-primary"
-                                style="width: 100%; padding: 20px; font-size: 1.25rem; font-weight: 900;">💾 GUARDAR
-                                NUBE</button>
+                                style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 700; letter-spacing:1px;">💾
+                                GUARDAR ALBARÁN</button>
                         </div>
                     </form>
                 </div>
@@ -391,13 +415,34 @@
                             <input type="text" id="comp-phone" class="form-control">
                         </div>
                         <div>
-                            <label class="form-label" style="font-size:0.6rem;">PREFIJO ALBARÁN</label>
-                            <input type="text" id="comp-prefix" class="form-control" placeholder="Ej: NP" maxlength="4">
+                            <label class="form-label" style="font-size:0.6rem;">PROVINCIA (AUTO-REPARTIDOR)</label>
+                            <select id="comp-province" class="form-control"></select>
                         </div>
                     </div>
-                    <div class="form-group mb-4">
+                    <div class="form-group mb-2">
+                        <label class="form-label" style="font-size:0.6rem;">PREFIJO ALBARÁN (NP, MA, SE...)</label>
+                        <input type="text" id="comp-prefix" class="form-control" placeholder="Ej: NP" maxlength="4">
+                    </div>
+                    <div class="form-group mb-2">
                         <label class="form-label" style="font-size:0.6rem;">CONTADOR INICIAL (NÚMERO)</label>
                         <input type="number" id="comp-start-num" class="form-control" value="1" min="1">
+                    </div>
+                    <div
+                        style="padding:10px; background:rgba(255,102,0,0.05); border-radius:8px; margin-bottom:15px; border:1px solid var(--border-orange);">
+                        <div
+                            style="font-size:0.65rem; font-weight:bold; color:var(--brand-primary); margin-bottom:8px; text-transform:uppercase;">
+                            Configuración SMS (Opcional)</div>
+                        <div class="form-group mb-2">
+                            <label class="form-label" style="font-size:0.6rem;">PASARELA SMS URL</label>
+                            <input type="text" id="comp-sms-gateway" class="form-control"
+                                placeholder="https://api.gateway.com?to={TELEFONO}&msg={MENSAJE}">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" style="font-size:0.6rem;">TELÉFONO AVISO AUTO RECOGIDA</label>
+                            <input type="text" id="comp-sms-pickup" class="form-control"
+                                placeholder="Selecciona o escribe..." list="predefined-phones">
+                            <datalist id="predefined-phones"></datalist>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary" style="width:100%;">💾 GUARDAR CONFIGURACIÓN</button>
                     <button type="button" id="btn-cancel-comp-edit" class="btn btn-outline hidden"
