@@ -1,0 +1,15 @@
+{
+    "name": "novapack-cloud",
+    "version": "1.0.0",
+    "description": "Sistema de gestión NOVAPACK Cloud",
+    "main": "index.html",
+    "dependencies": {},
+    "devDependencies": {
+        "firebase-tools": "^13.0.0"
+    },
+    "scripts": {
+        "deploy": "firebase deploy"
+    },
+    "author": "NOVAPACK",
+    "license": "ISC"
+}
