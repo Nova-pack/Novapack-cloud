@@ -1645,7 +1645,7 @@
 
                     // Comprobación de propiedad: Por UID exacto o por ID numérico del cliente
                     const tUid = t.uid || doc.ref.parent.parent.parent.parent.id;
-                    const isOwner = (tUid === uid) || (t.clientIdNum && t.clientIdNum === uData.idNum);
+                    const isOwner = (tUid === uid) || (t.clientIdNum && uData.idNum && t.clientIdNum === uData.idNum);
 
                     if (!isOwner) return;
 
@@ -1678,8 +1678,10 @@
                     const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
 
                     // Price calc (Case-insensitive matching)
-                    const uData = userMap[t.uid] || {};
-                    const activeTariffRaw = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" + uData.tariffId] : (tariffsCache[t.uid] || {});
+                    // We use t.uid (if present) or fall back to the selected uid if the ticket belongs here
+                    const currentTUid = t.uid || uid;
+                    const uData = userMap[currentTUid] || userMap[uid] || {};
+                    const activeTariffRaw = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" + uData.tariffId] : (tariffsCache[currentTUid] || tariffsCache[uid] || {});
 
                     // Normalize tariff for case-insensitive lookup
                     const activeTariff = {};
@@ -2374,6 +2376,8 @@
                     shippingType: document.getElementById('admin-t-shipping').value,
                     cod: parseFloat(document.getElementById('admin-t-cod').value) || 0,
                     packagesList: adminTicketPackages,
+                    uid: adminTicketUID,
+                    clientIdNum: userMap[adminTicketUID] ? userMap[adminTicketUID].idNum : '---',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
                     adminCreated: true,
