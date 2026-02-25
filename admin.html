@@ -11,6 +11,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="libs/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
@@ -1055,9 +1056,12 @@
                         <td><span class="chip">Activo</span></td>
                         <td style="color:#888">${data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toLocaleDateString() : new Date(data.createdAt).toLocaleDateString()) : 'N/A'}</td>
                         <td>
-                            <button class="btn btn-primary btn-sm" onclick='openEditUserModal(${JSON.stringify(data)}, "${doc.id}")' title="Editar">✏️</button>
-                            <button class="btn btn-outline btn-sm" onclick='showUserQR("${data.idNum || ''}", "${data.name || ''}")' title="Ver QR Cliente">📱</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteUser('${doc.id}')" title="Eliminar">🗑️</button>
+                            <div style="display:flex; gap:5px;">
+                                <button class="btn btn-primary btn-sm" onclick='openEditUserModal(${JSON.stringify(data)}, "${doc.id}")' title="Editar">✏️</button>
+                                <button class="btn btn-outline btn-sm" onclick='showUserQR("${data.idNum || ''}", "${data.name || ''}")' title="Ver QR Cliente">📱</button>
+                                <button class="btn btn-secondary btn-sm" onclick="sendWhatsApp('${data.senderPhone || ''}', 'Hola ${data.name}, le contactamos desde NOVAPACK.')" title="WhatsApp">💬</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteUser('${doc.id}')" title="Eliminar">🗑️</button>
+                            </div>
                         </td>
                     `;
                     userTableBody.appendChild(row);
@@ -1215,8 +1219,9 @@
                 snap.forEach(doc => {
                     const t = doc.data();
                     const d = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
-                    // Path to get UID: users/{uid}/companies/{compId}/tickets/{id}
-                    const uid = doc.ref.parent.parent.parent.id;
+                    // Path: users/{uid}/companies/{compId}/tickets/{id}
+                    const compId = doc.ref.parent.parent.id;
+                    const uid = doc.ref.parent.parent.parent.parent.id;
                     const uData = userMap[uid] || {};
                     const cid = uData.idNum || '---';
                     const tId = uData.tariffId;
@@ -1243,7 +1248,7 @@
                         });
                     }
 
-                    reportsData.push({ ...t, clientIdNum: cid, companyPrice });
+                    reportsData.push({ ...t, uid, compId, docId: doc.id, clientIdNum: cid, companyPrice });
                 });
 
                 if (reportsData.length === 0) {
@@ -1255,15 +1260,20 @@
                         const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
                         const row = document.createElement('tr');
                         row.innerHTML = `
-    <td style="font-weight:900; color:var(--brand-primary)">#${t.clientIdNum}</td>
+    <td style="font-weight:900; color:var(--brand-primary); padding-left:10px;">#${t.clientIdNum}</td>
     <td>${t.id}</td>
     <td>${date.toLocaleDateString()}</td>
-    <td style="text-transform:uppercase;">${t.receiver}</td>
+    <td style="text-transform:uppercase; font-size:0.85rem;">${t.receiver}</td>
     <td>${t.province || ''}</td>
     <td>${t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1}</td>
-    <td style="font-weight:bold; color:#4CAF50;">${t.companyPrice.toFixed(2)}€</td>
     <td>${t.shippingType}</td>
-    <td>${t.cod ? t.cod + '€' : '-'}</td>
+    <td style="font-weight:bold; color:#FF6600;">${t.cod ? t.cod + '€' : '-'}</td>
+    <td>
+        <div style="display:flex; gap:5px;">
+            <button class="btn btn-outline btn-sm" onclick="printTicketFromAdmin('${t.uid}', '${t.compId}', '${t.docId}')" title="Imprimir">🖨️</button>
+            <button class="btn btn-secondary btn-sm" onclick="sendWhatsAppTicket('${t.uid}', '${t.compId}', '${t.docId}')" title="WhatsApp">💬</button>
+        </div>
+    </td>
     `;
                         tbody.appendChild(row);
                     });
@@ -1776,6 +1786,9 @@
                 <div style="display:flex; gap:5px;">
                     <button class="btn btn-outline btn-sm" onclick="printInvoice('${doc.id}')" title="Imprimir">🖨️</button>
                     <button class="btn btn-secondary btn-sm" onclick="emailInvoice('${doc.id}')" title="Email">📧</button>
+                    <button class="btn btn-secondary btn-sm" style="background:#25D366; border-color:#25D366;" onclick="sendWhatsAppInvoice('${doc.id}')" title="WhatsApp">💬</button>
+                    <button class="btn btn-outline btn-sm" style="color:#FF4444;" onclick="downloadInvoicePDF('${doc.id}')" title="PDF">📄</button>
+                    ${!inv.isCredit ? `<button class="btn btn-outline btn-sm" style="color:#FF9500; border-color:#FF9500;" onclick="createCreditInvoice('${doc.id}')" title="Abonar Factura">🔄</button>` : ''}
                     <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${doc.id}')" title="Eliminar">🗑️</button>
                 </div>
             </td>
@@ -1997,10 +2010,11 @@
                 <div class="header">
                     <div>
                         <h1 style="color:#FF6600; margin:0;">NOVAPACK LOGÍSTICA</h1>
-                        <p>Servicios de Paquetería Urgente</p>
+                        <p style="margin:2px 0;">Servicios de Paquetería Urgente</p>
+                        <p style="margin:2px 0; font-size:0.8rem; color:#666;">Consultas: <span style="font-weight:bold;">administracion@novapack.info</span></p>
                     </div>
                     <div style="text-align:right">
-                        <h2 style="margin:0;">FACTURA</h2>
+                        <h2 style="margin:0;">${inv.isCredit ? 'FACTURA RECTIFICATIVA (ABONO)' : 'FACTURA'}</h2>
                         <p style="font-size:1.2rem; font-weight:bold;">${inv.invoiceId}</p>
                         <p>Fecha: ${date}</p>
                     </div>
@@ -2055,6 +2069,125 @@
             const body = encodeURIComponent(`Hola ${inv.clientName},\n\nLe adjuntamos el detalle de su factura ${inv.invoiceId} por importe de ${inv.total.toFixed(2)}€.\n\nForma de pago: Transferencia a ${inv.senderData ? inv.senderData.bank : 'la cuenta habitual'}\n\nGracias por confiar en NOVAPACK.`);
             window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
         };
+
+        window.downloadInvoicePDF = async (id) => {
+            showLoading();
+            const doc = await db.collection('invoices').doc(id).get();
+            const inv = doc.data();
+            const date = (inv.date && inv.date.toDate) ? inv.date.toDate().toLocaleDateString() : 'N/A';
+            const element = document.createElement('div');
+            element.innerHTML = generateInvoiceHTML(inv, date);
+            const opt = {
+                margin: 10,
+                filename: `Factura_${inv.invoiceId}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+            html2pdf().from(element).set(opt).save();
+            hideLoading();
+        };
+
+        window.sendWhatsApp = (phone, msg) => {
+            if (!phone) { alert("Sin teléfono configurado."); return; }
+            const clean = phone.replace(/\s+/g, '').replace('+', '');
+            const final = clean.startsWith('34') ? clean : '34' + clean;
+            window.open(`https://wa.me/${final}?text=${encodeURIComponent(msg)}`, '_blank');
+        };
+
+        window.sendWhatsAppInvoice = async (id) => {
+            const doc = await db.collection('invoices').doc(id).get();
+            const inv = doc.data();
+            const client = userMap[inv.clientId];
+            const phone = client ? client.senderPhone : '';
+            const msg = `Hola ${inv.clientName}, le enviamos su factura ${inv.invoiceId} (${inv.total.toFixed(2)}€). Saludos, NOVAPACK.`;
+            window.sendWhatsApp(phone, msg);
+        };
+
+        window.sendWhatsAppTicket = async (uid, compId, docId) => {
+            const doc = await db.collection('users').doc(uid).collection('companies').doc(compId).collection('tickets').doc(docId).get();
+            const t = doc.data();
+            const client = userMap[uid];
+            const msg = `Hola, consulta sobre el albarán ${t.id} con destino ${t.receiver}.`;
+            window.sendWhatsApp(client ? client.senderPhone : '', msg);
+        };
+
+        window.createCreditInvoice = async (id) => {
+            if (!confirm("¿Desea crear una factura de abono (rectificativa) para esta factura? El importe será negativo.")) return;
+            showLoading();
+            try {
+                const doc = await db.collection('invoices').doc(id).get();
+                const inv = doc.data();
+
+                // Get next invoice ID with a 'CR-' prefix for credits
+                const counterDoc = await db.collection('config').doc('counters').get();
+                let nextNum = (counterDoc.data().invoice || 0) + 1;
+                const creditId = `ABO-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`;
+
+                const creditData = {
+                    ...inv,
+                    invoiceId: creditId,
+                    isCredit: true,
+                    date: firebase.firestore.FieldValue.serverTimestamp(),
+                    subtotal: -inv.subtotal,
+                    iva: -inv.iva,
+                    irpf: -inv.irpf,
+                    total: -inv.total,
+                    originalInvoice: inv.invoiceId,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                await db.collection('invoices').doc(creditId).set(creditData);
+                await db.collection('config').doc('counters').update({ invoice: nextNum });
+
+                alert(`Factura de abono ${creditId} generada con éxito.`);
+                loadInvoices();
+            } catch (e) { alert("Error al crear abono: " + e.message); }
+            finally { hideLoading(); }
+        };
+
+        window.printTicketFromAdmin = async (uid, compId, docId) => {
+            showLoading();
+            const doc = await db.collection('users').doc(uid).collection('companies').doc(compId).collection('tickets').doc(docId).get();
+            const t = doc.data();
+            hideLoading();
+            if (!t) return;
+            const win = window.open('', '_blank');
+            win.document.write(`<html><head><title>Albarán ${t.id}</title><style>body{font-family:sans-serif;padding:20px;}</style></head><body>
+                <h1 style="color:#FF6600">Albarán ${t.id}</h1>
+                <p><strong>Remitente:</strong> ${t.sender}</p>
+                <p><strong>Destinatario:</strong> ${t.receiver}<br>${t.address}<br>${t.province}</p>
+                <p><strong>Bultos:</strong> ${t.packages}</p>
+                <p><strong>Notas:</strong> ${t.notes || '-'}</p>
+                <button onclick="window.print()" style="margin-top:20px">Imprimir</button>
+            </body></html>`);
+            win.document.close();
+        };
+
+        function generateInvoiceHTML(inv, date) {
+            return `
+            <div style="font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; background:white;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #EEE; padding-bottom: 20px; margin-bottom: 40px;">
+                    <div><div style="font-size: 2rem; font-weight: bold; color: #FF6600;">NOVAPACK LOGÍSTICA</div><div style="font-size: 1.2rem; color: #666;">FACTURA: ${inv.invoiceId}</div></div>
+                    <div style="text-align: right;"><div style="font-size: 1.1rem; font-weight: bold;">Fecha: ${date}</div></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px;">
+                    <div style="border: 1px solid #EEE; padding: 20px; border-radius: 8px;"><strong>EMISOR:</strong><br>${inv.senderData.name}<br>CIF: ${inv.senderData.cif}<br>${inv.senderData.address}</div>
+                    <div style="border: 1px solid #EEE; padding: 20px; border-radius: 8px;"><strong>CLIENTE:</strong><br>${inv.clientName}<br>CIF/NIF: ${inv.clientCIF}</div>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 40px;">
+                    <thead><tr style="background: #F9F9F9;"><th style="padding: 15px; border-bottom: 2px solid #EEE; text-align: left;">CONCEPTO</th><th style="padding: 15px; border-bottom: 2px solid #EEE; text-align: right;">TOTAL</th></tr></thead>
+                    <tbody><tr><td style="padding: 15px; border-bottom: 1px solid #EEE;">Servicios de transporte (Albaranes: ${inv.tickets.join(', ')})</td><td style="padding: 15px; border-bottom: 1px solid #EEE; text-align: right;">${inv.subtotal.toFixed(2)}€</td></tr></tbody>
+                </table>
+                <div style="float: right; width: 300px;">
+                    <div style="display: flex; justify-content: space-between; padding: 5px 0;"><span>Base Imponible:</span><span>${inv.subtotal.toFixed(2)}€</span></div>
+                    <div style="display: flex; justify-content: space-between; padding: 5px 0;"><span>IVA (${inv.ivaRate}%):</span><span>${inv.iva.toFixed(2)}€</span></div>
+                    ${inv.irpf > 0 ? `<div style="display: flex; justify-content: space-between; padding: 5px 0;"><span>IRPF (-${inv.irpfRate}%):</span><span>-${inv.irpf.toFixed(2)}€</span></div>` : ''}
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; font-size: 1.4rem; font-weight: bold; border-top: 2px solid #FF6600; color: #FF6600;"><span>TOTAL:</span><span>${inv.total.toFixed(2)}€</span></div>
+                </div>
+                <div style="clear: both; margin-top: 60px; padding: 20px; background: #F9F9F9; border-radius: 8px;"><strong>FORMA DE PAGO:</strong> Transferencia a ${inv.senderData.bank}</div>
+            </div>`;
+        }
 
         window.deleteInvoice = async (id) => {
             if (!confirm("¿Eliminar factura y marcar albaranes como No Facturados?")) return;
@@ -2265,6 +2398,72 @@
             document.getElementById('admin-scanner-modal').style.display = 'none';
         }
         document.getElementById('btn-admin-close-scanner').onclick = stopAdminScanner;
+
+        /** 
+         * LECTOR QR EXTERNO (FÍSICO): Captura de entrada por teclado
+         * Los lectores físicos emulan un teclado y suelen terminar con 'Enter'.
+         */
+        let qrBuffer = "";
+        window.addEventListener('keydown', async (e) => {
+            // Si el foco está en un input normal, no procesar el buffer del lector
+            if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+            if (e.key === 'Enter') {
+                if (qrBuffer.length > 5) {
+                    processPhysicalQR(qrBuffer);
+                }
+                qrBuffer = "";
+            } else {
+                // Solo añadir caracteres alfanuméricos y símbolos habituales en IDs
+                if (e.key.length === 1) qrBuffer += e.key;
+            }
+        });
+
+        async function processPhysicalQR(text) {
+            console.log("Lectura QR Físico:", text);
+            // Formato esperado TICKET_ID:XXXXX o CLIENT_ID:XXXXX
+            if (text.startsWith("TICKET_ID:")) {
+                const tid = text.split(":")[1];
+                showLoading();
+                try {
+                    const tSnap = await db.collectionGroup('tickets').where('id', '==', tid).get();
+                    if (!tSnap.empty) {
+                        const tDoc = tSnap.docs[0];
+                        const tData = tDoc.data();
+
+                        // Si estamos en la vista de creación manual, cargar sus datos
+                        if (document.getElementById('view-admin-tickets').style.display !== 'none') {
+                            document.getElementById('admin-t-receiver').value = tData.receiver || "";
+                            document.getElementById('admin-t-phone').value = tData.phone || "";
+                            document.getElementById('admin-t-address').value = (tData.address || "").split(" Nº ")[0];
+                            document.getElementById('admin-t-number').value = (tData.address || "").includes(" Nº ") ? tData.address.split(" Nº ")[1] : "";
+                            document.getElementById('admin-t-province').value = tData.province || "";
+                            adminTicketPackages = tData.packagesList || [];
+                            renderAdminPackages();
+                            alert("Albarán cargado: " + tid);
+                        } else {
+                            alert("Albarán detectado: " + tid + " (Ve a la sección 'Crear Albaranes' para ver/editar)");
+                        }
+                    } else {
+                        alert("Albarán no encontrado en la base de datos: " + tid);
+                    }
+                } catch (e) { alert("Error lector: " + e.message); }
+                finally { hideLoading(); }
+            } else if (text.startsWith("CLIENT_ID:")) {
+                const cid = text.split(":")[1];
+                const uEntry = Object.entries(userMap).find(([id, data]) => data.idNum == cid);
+                if (uEntry) {
+                    if (document.getElementById('view-admin-tickets').style.display !== 'none') {
+                        adminTicketUID = uEntry[0];
+                        document.getElementById('admin-ticket-client-select').value = adminTicketUID;
+                        loadAdminTicketCompanies(adminTicketUID);
+                        alert("Cliente asignado: " + uEntry[1].name);
+                    } else {
+                        alert("Cliente detectado: " + uEntry[1].name);
+                    }
+                }
+            }
+        }
     </script>
 
     <!-- Shared Global Datalists -->
