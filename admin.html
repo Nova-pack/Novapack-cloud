@@ -12,6 +12,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <script src="libs/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root {
             --brand-primary: #FF6600;
@@ -246,6 +247,7 @@
         <div class="nav-item" id="nav-reports">📊 Listados Globales</div>
         <div class="nav-item" id="nav-tariffs">💰 Tarifas Clientes</div>
         <div class="nav-item" id="nav-phones">📱 Teléfonos</div>
+        <div class="nav-item" id="nav-admin-tickets">📦 Albaranes Manuales</div>
         <div class="nav-item" id="nav-billing">📄 Facturación</div>
         <div class="nav-item" id="nav-config">⚙️ Configuración</div>
         <div style="flex:1"></div>
@@ -463,6 +465,14 @@
                         <input type="email" id="fiscal-email" placeholder="facturacion@novapack.info">
                     </div>
                     <div class="form-group">
+                        <label>IBAN / Cuenta Bancaria (Para Cobros)</label>
+                        <input type="text" id="fiscal-bank" placeholder="ES00 0000 0000 0000 0000 0000">
+                    </div>
+                    <div class="form-group">
+                        <label>ID Acreedor SEPA (Sufijo)</label>
+                        <input type="text" id="fiscal-sepa-id" placeholder="Ej: 000 (Consultar con su banco)">
+                    </div>
+                    <div class="form-group">
                         <label>Tipo de IVA por Defecto (%)</label>
                         <input type="number" id="fiscal-iva" value="21">
                     </div>
@@ -476,10 +486,15 @@
 
             <!-- Invoices List -->
             <div class="card" style="margin-bottom:30px;">
-                <h3 style="margin-top:0;">Registro de Facturas Emitidas</h3>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3 style="margin:0;">Registro de Facturas Emitidas</h3>
+                    <button class="btn btn-secondary" id="btn-generate-sepa" style="font-size:0.8rem;">📦 GENERAR REMESA
+                        SEPA (BANCO)</button>
+                </div>
                 <table class="user-list">
                     <thead>
                         <tr>
+                            <th style="width:40px;">SEL.</th>
                             <th>Nº FACTURA</th>
                             <th>FECHA</th>
                             <th>CLIENTE</th>
@@ -519,13 +534,126 @@
             </div>
         </div>
 
+        <!-- Albaranes Manuales View -->
+        <div id="view-admin-tickets" style="display:none">
+            <div class="header">
+                <h1>Creación Manual de Albaranes (Admin)</h1>
+                <button class="btn btn-primary" id="btn-admin-scan-qr">📷 ESCANEAR QR</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 2fr; gap:20px;">
+                <div class="card">
+                    <h3 style="margin-top:0; color:var(--brand-primary)">1. Seleccionar Cliente</h3>
+                    <input type="text" id="admin-ticket-client-search" class="form-control mb-2"
+                        placeholder="Buscar cliente...">
+                    <select id="admin-ticket-client-select" class="form-control" size="10"
+                        style="height:200px;"></select>
+
+                    <h3 style="margin-top:20px; color:var(--brand-primary)">2. Empresa del Cliente</h3>
+                    <select id="admin-ticket-company-select" class="form-control"></select>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-top:0; color:var(--brand-primary)">3. Datos del Albarán</h3>
+                    <form id="admin-manual-ticket-form">
+                        <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; margin-bottom:10px;">
+                            <div>
+                                <label>Destinatario</label>
+                                <input type="text" id="admin-t-receiver" class="form-control" required
+                                    placeholder="Nombre">
+                            </div>
+                            <div>
+                                <label>Teléfono</label>
+                                <input type="text" id="admin-t-phone" class="form-control" placeholder="Teléfono">
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 3fr 1fr; gap:10px; margin-bottom:10px;">
+                            <div>
+                                <label>Dirección</label>
+                                <input type="text" id="admin-t-address" class="form-control" required
+                                    placeholder="Calle...">
+                            </div>
+                            <div>
+                                <label>Nº</label>
+                                <input type="text" id="admin-t-number" class="form-control" placeholder="Nº">
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                            <div>
+                                <label>Provincia</label>
+                                <input type="text" id="admin-t-province" class="form-control" placeholder="Provincia">
+                            </div>
+                            <div>
+                                <label>Turno</label>
+                                <select id="admin-t-timeslot" class="form-control">
+                                    <option value="MAÑANA">☀️ MAÑANA</option>
+                                    <option value="TARDE">🌙 TARDE</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <h4 style="margin:15px 0 5px 0;">Bultos</h4>
+                        <div id="admin-t-packages-container"
+                            style="background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px;">
+                            <div style="display:flex; gap:10px; margin-bottom:10px;">
+                                <input type="number" id="admin-t-pkg-qty" class="form-control" value="1"
+                                    style="width:70px;">
+                                <input type="text" id="admin-t-pkg-size" class="form-control"
+                                    placeholder="Tamaño/Tipo (Bulto, Sobre...)" list="admin-suggested-sizes">
+                                <button type="button" class="btn btn-sm btn-primary" id="btn-admin-add-pkg">+</button>
+                            </div>
+                            <div id="admin-t-packages-list" style="font-size:0.8rem;"></div>
+                        </div>
+
+                        <datalist id="admin-suggested-sizes">
+                            <option value="Sobre">
+                            <option value="Pequeño">
+                            <option value="Mediano">
+                            <option value="Grande">
+                            <option value="Palet">
+                            <option value="Bulto">
+                        </datalist>
+
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px;">
+                            <div>
+                                <label>Portes</label>
+                                <select id="admin-t-shipping" class="form-control">
+                                    <option value="Pagados">PAGADOS</option>
+                                    <option value="Debidos">DEBIDOS</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>Reembolso (€)</label>
+                                <input type="number" id="admin-t-cod" class="form-control" step="0.01" value="0">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" style="width:100%; padding:15px;">💾 CREAR ALBARÁN
+                            EN NUBE</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scanner Modal for Admin -->
+        <div id="admin-scanner-modal" class="modal">
+            <div class="modal-content" style="max-width:400px;">
+                <h2 style="margin-top:0">Escanear Código QR</h2>
+                <div id="admin-qr-reader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
+                <button class="btn btn-outline" id="btn-admin-close-scanner"
+                    style="width:100%; margin-top:20px;">CANCELAR</button>
+            </div>
+        </div>
+
         <!-- Generate Invoice Modal -->
         <div class="modal" id="modal-generate-invoice">
             <div class="modal-content" style="max-width: 900px;">
                 <h2 style="margin-top:0">Generar Nueva Factura de Transporte</h2>
                 <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
                     <div>
-                        <label>Seleccionar Cliente</label>
+                        <label>Buscar / Seleccionar Cliente</label>
+                        <input type="text" id="inv-client-search" class="form-control mb-2"
+                            placeholder="Filtrar por nombre o ID...">
                         <select id="inv-client-select" class="form-control"></select>
                     </div>
                     <div>
@@ -750,37 +878,50 @@
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>ID de Tarifa Asignada (Opcional)</label>
-                    <input type="text" id="new-user-tariff-id" placeholder="Selecciona o escribe..."
-                        list="global-tariffs-datalist">
-                    <p style="font-size:0.6rem; color:#888; margin-top:4px;">Si dejas esto vacío, se usará la tarifa
-                        personalizada.</p>
-                </div>
-
-                <div
-                    style="padding:20px; background:rgba(255,102,0,0.05); border-radius:12px; margin-bottom:20px; border:1px solid var(--border-glass);">
-                    <div
-                        style="font-size:0.65rem; font-weight:bold; color:var(--brand-primary); margin-bottom:15px; text-transform:uppercase;">
-                        Datos del Remitente (Auto-Albarán)</div>
-                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="form-group" style="margin-bottom: 0;">
+                        <label>ID de Tarifa Asignada (Opcional)</label>
+                        <input type="text" id="new-user-tariff-id" placeholder="Selecciona o escribe..."
+                            list="global-tariffs-datalist">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px;">
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label>Dirección del Remitente</label>
-                            <input type="text" id="new-user-sender-address" placeholder="Calle Ejemplo 1, Local 2">
+                            <label>IBAN Cliente</label>
+                            <input type="text" id="new-user-iban" placeholder="ES00...">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
-                            <label>Teléfono del Remitente</label>
-                            <input type="text" id="new-user-sender-phone" placeholder="600000000">
+                            <label>Ref. Mandato SEPA</label>
+                            <input type="text" id="new-user-sepa-ref" placeholder="Ej: MANDATO-001">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Fecha Firma Mandato</label>
+                            <input type="date" id="new-user-sepa-date">
                         </div>
                     </div>
-                </div>
 
-                <div style="display:flex; gap:15px; margin-top:30px;">
-                    <button type="submit" class="btn btn-primary" style="flex:2; padding: 15px; font-size: 1rem;">💾
-                        GUARDAR DATOS DEL CLIENTE</button>
-                    <button type="button" class="btn btn-outline" id="btn-close-modal"
-                        style="flex:1; padding: 15px;">Cancelar</button>
-                </div>
+                    <div
+                        style="padding:20px; background:rgba(255,102,0,0.05); border-radius:12px; margin-bottom:20px; border:1px solid var(--border-glass);">
+                        <div
+                            style="font-size:0.65rem; font-weight:bold; color:var(--brand-primary); margin-bottom:15px; text-transform:uppercase;">
+                            Datos del Remitente (Auto-Albarán)</div>
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Dirección del Remitente</label>
+                                <input type="text" id="new-user-sender-address" placeholder="Calle Ejemplo 1, Local 2">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label>Teléfono del Remitente</label>
+                                <input type="text" id="new-user-sender-phone" placeholder="600000000">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:15px; margin-top:30px;">
+                        <button type="submit" class="btn btn-primary" style="flex:2; padding: 15px; font-size: 1rem;">💾
+                            GUARDAR DATOS DEL CLIENTE</button>
+                        <button type="button" class="btn btn-outline" id="btn-close-modal"
+                            style="flex:1; padding: 15px;">Cancelar</button>
+                    </div>
             </form>
         </div>
     </div>
@@ -829,6 +970,8 @@
         const viewConfig = document.getElementById('view-config');
         const viewBilling = document.getElementById('view-billing');
         const navBilling = document.getElementById('nav-billing');
+        const viewAdminTickets = document.getElementById('view-admin-tickets');
+        const navAdminTickets = document.getElementById('nav-admin-tickets');
 
         // Switching Views
         const showView = (viewId) => {
@@ -838,6 +981,7 @@
             viewPhones.style.display = viewId === 'phones' ? 'block' : 'none';
             viewConfig.style.display = viewId === 'config' ? 'block' : 'none';
             viewBilling.style.display = viewId === 'billing' ? 'block' : 'none';
+            viewAdminTickets.style.display = viewId === 'admin-tickets' ? 'block' : 'none';
 
             navUsers.classList.toggle('active', viewId === 'users');
             navReports.classList.toggle('active', viewId === 'reports');
@@ -845,12 +989,14 @@
             navPhones.classList.toggle('active', viewId === 'phones');
             navConfig.classList.toggle('active', viewId === 'config');
             navBilling.classList.toggle('active', viewId === 'billing');
+            navAdminTickets.classList.toggle('active', viewId === 'admin-tickets');
 
             if (viewId === 'config') loadConfigInfo();
             if (viewId === 'phones') loadPhones();
             if (viewId === 'reports') initReportsView();
             if (viewId === 'tariffs') loadTariffClients();
             if (viewId === 'billing') initBillingView();
+            if (viewId === 'admin-tickets') initAdminTicketsView();
         };
 
         navUsers.onclick = () => showView('users');
@@ -859,6 +1005,7 @@
         navPhones.onclick = () => showView('phones');
         navConfig.onclick = () => showView('config');
         navBilling.onclick = () => showView('billing');
+        navAdminTickets.onclick = () => showView('admin-tickets');
 
         async function loadConfigInfo() {
             if (!auth.currentUser) return;
@@ -888,13 +1035,13 @@
 
         async function loadUsers() {
             try {
-                // Populate Global Tariffs Datalist early for the Modal
                 populateGlobalTariffsDatalist();
-
                 const snapshot = await db.collection('users').get();
                 userTableBody.innerHTML = '';
+                userMap = {};
                 snapshot.forEach(doc => {
                     const data = doc.data();
+                    userMap[doc.id] = data;
                     if (data.role === 'admin') return;
                     const row = document.createElement('tr');
                     row.className = 'user-row';
@@ -906,7 +1053,7 @@
                             <div style="font-size:0.7rem; color:var(--brand-primary); margin-top:2px;">Clave: ${data.password || '****'}</div>
                         </td>
                         <td><span class="chip">Activo</span></td>
-                        <td style="color:#888">${data.createdAt ? new Date(data.createdAt.seconds * 1000).toLocaleDateString() : 'N/A'}</td>
+                        <td style="color:#888">${data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toLocaleDateString() : new Date(data.createdAt).toLocaleDateString()) : 'N/A'}</td>
                         <td>
                             <button class="btn btn-primary btn-sm" onclick='openEditUserModal(${JSON.stringify(data)}, "${doc.id}")' title="Editar">✏️</button>
                             <button class="btn btn-outline btn-sm" onclick='showUserQR("${data.idNum || ''}", "${data.name || ''}")' title="Ver QR Cliente">📱</button>
@@ -925,12 +1072,15 @@
             const email = document.getElementById('new-user-email').value;
             const password = document.getElementById('new-user-password').value;
             const tariffId = document.getElementById('new-user-tariff-id').value.trim();
+            const iban = document.getElementById('new-user-iban').value.trim();
+            const sepaRef = document.getElementById('new-user-sepa-ref').value.trim();
+            const sepaDate = document.getElementById('new-user-sepa-date').value;
             const senderAddress = document.getElementById('new-user-sender-address').value.trim();
             const senderPhone = document.getElementById('new-user-sender-phone').value.trim();
             const userId = document.getElementById('edit-user-uid').value;
 
             try {
-                const updateData = { idNum, name, email, password, tariffId, senderAddress, senderPhone };
+                const updateData = { idNum, name, email, password, tariffId, iban, sepaRef, sepaDate, senderAddress, senderPhone };
                 if (userId) {
                     await db.collection('users').doc(userId).update(updateData);
                 } else {
@@ -953,6 +1103,9 @@
             document.getElementById('new-user-email').value = data.email || '';
             document.getElementById('new-user-password').value = data.password || '';
             document.getElementById('new-user-tariff-id').value = data.tariffId || '';
+            document.getElementById('new-user-iban').value = data.iban || '';
+            document.getElementById('new-user-sepa-ref').value = data.sepaRef || '';
+            document.getElementById('new-user-sepa-date').value = data.sepaDate || '';
             document.getElementById('new-user-sender-address').value = data.senderAddress || '';
             document.getElementById('new-user-sender-phone').value = data.senderPhone || '';
             addUserModal.style.display = 'flex';
@@ -1373,6 +1526,8 @@
                 document.getElementById('fiscal-cif').value = invCompanyData.cif || '';
                 document.getElementById('fiscal-address').value = invCompanyData.address || '';
                 document.getElementById('fiscal-email').value = invCompanyData.email || '';
+                document.getElementById('fiscal-bank').value = invCompanyData.bank || '';
+                document.getElementById('fiscal-sepa-id').value = invCompanyData.sepaId || '';
                 document.getElementById('fiscal-iva').value = invCompanyData.iva || 21;
                 document.getElementById('fiscal-irpf').value = invCompanyData.irpf || 0;
             }
@@ -1384,6 +1539,8 @@
                 cif: document.getElementById('fiscal-cif').value.trim(),
                 address: document.getElementById('fiscal-address').value.trim(),
                 email: document.getElementById('fiscal-email').value.trim(),
+                bank: document.getElementById('fiscal-bank').value.trim(),
+                sepaId: document.getElementById('fiscal-sepa-id').value.trim(),
                 iva: parseFloat(document.getElementById('fiscal-iva').value) || 0,
                 irpf: parseFloat(document.getElementById('fiscal-irpf').value) || 0,
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1400,6 +1557,7 @@
 
         document.getElementById('btn-generate-invoice-view').onclick = () => {
             document.getElementById('modal-generate-invoice').style.display = 'flex';
+            document.getElementById('inv-client-search').value = '';
             populateInvoiceClientSelect();
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('inv-date-from').value = today;
@@ -1410,14 +1568,17 @@
             document.getElementById('modal-generate-invoice').style.display = 'none';
         };
 
-        function populateInvoiceClientSelect() {
+        function populateInvoiceClientSelect(filter = "") {
             const select = document.getElementById('inv-client-select');
             select.innerHTML = '<option value="">-- Seleccionar Cliente --</option>';
-            Object.values(userMap).forEach(u => {
+            Object.keys(userMap).forEach(uid => {
+                const u = userMap[uid];
                 if (u.role === 'admin') return;
+                const searchStr = ((u.name || "") + " " + (u.idNum || "")).toLowerCase();
+                if (filter && !searchStr.includes(filter.toLowerCase())) return;
                 const opt = document.createElement('option');
-                opt.value = u.uid;
-                opt.textContent = `[#${u.idNum}] ${u.name}`;
+                opt.value = uid;
+                opt.textContent = `[#${u.idNum || '?'}] ${u.name || 'Sin Nombre'}`;
                 select.appendChild(opt);
             });
         }
@@ -1601,7 +1762,10 @@
                     const tr = document.createElement('tr');
                     tr.className = 'user-row';
                     tr.innerHTML = `
-            <td style="font-weight:bold;">${inv.invoiceId}</td>
+            <td style="display:flex; align-items:center; gap:5px; border-bottom:none;">
+                <input type="checkbox" class="sepa-check" data-id="${doc.id}">
+                <span style="font-weight:bold;">${inv.invoiceId}</span>
+            </td>
             <td>${date.toLocaleDateString()}</td>
             <td>${inv.clientName}</td>
             <td>${inv.subtotal.toFixed(2)}€</td>
@@ -1609,9 +1773,11 @@
             <td>${inv.irpf.toFixed(2)}€ (${inv.irpfRate}%)</td>
             <td style="font-weight:900; color:var(--brand-primary)">${inv.total.toFixed(2)}€</td>
             <td>
-                <button class="btn btn-outline btn-sm" onclick="printInvoice('${doc.id}')"
-                    title="Imprimir Factura">🖨️</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${doc.id}')" title="Eliminar">🗑️</button>
+                <div style="display:flex; gap:5px;">
+                    <button class="btn btn-outline btn-sm" onclick="printInvoice('${doc.id}')" title="Imprimir">🖨️</button>
+                    <button class="btn btn-secondary btn-sm" onclick="emailInvoice('${doc.id}')" title="Email">📧</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${doc.id}')" title="Eliminar">🗑️</button>
+                </div>
             </td>
             `;
                     tbody.appendChild(tr);
@@ -1619,6 +1785,97 @@
 
                 renderTaxSummary(stats303, stats111);
             } catch (e) { console.error(e); }
+        }
+
+        document.getElementById('btn-generate-sepa').onclick = async () => {
+            const checks = document.querySelectorAll('.sepa-check:checked');
+            if (checks.length === 0) { alert("Selecciona al menos una factura para remesar."); return; }
+            if (!invCompanyData || !invCompanyData.bank || !invCompanyData.cif) {
+                alert("Configura primero los datos fiscales y el IBAN de NOVAPACK."); return;
+            }
+
+            showLoading();
+            try {
+                let invoices = [];
+                for (let c of checks) {
+                    const doc = await db.collection('invoices').doc(c.dataset.id).get();
+                    if (doc.exists) invoices.push({ id: doc.id, ...doc.data() });
+                }
+
+                const xml = generateSEPAXML(invoices, invCompanyData);
+                const blob = new Blob([xml], { type: 'application/xml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `REMESA_SEPA_${new Date().toISOString().split('T')[0]}.xml`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                alert("Remesa SEPA generada correctamente. Súbala ahora a la web de su banco.");
+            } catch (e) { alert("Error: " + e.message); }
+            finally { hideLoading(); }
+        };
+
+        function generateSEPAXML(invoices, company) {
+            const msgId = "MSG" + Date.now();
+            const creationDate = new Date().toISOString().split('.')[0];
+            const totalAmount = invoices.reduce((sum, inv) => sum + inv.total, 0).toFixed(2);
+            const numTrans = invoices.length;
+            const creditorIBAN = company.bank.replace(/\s/g, '');
+            const creditorCIF = company.cif.replace(/[^A-Z0-9]/g, '');
+            const creditorName = company.name;
+            const sepaId = company.sepaId || "000";
+            const creditorId = `ES${creditorIBAN.substring(2, 4)}${sepaId}${creditorCIF}`;
+
+            let transactionsHTML = '';
+            invoices.forEach(inv => {
+                const client = userMap[inv.clientId] || {};
+                const clientIBAN = (client.iban || "").replace(/\s/g, '');
+                const clientName = (client.name || inv.clientName).substring(0, 70).replace(/[&<>"]/g, '');
+                const mandateId = client.sepaRef || ("MANDATO-" + inv.clientId.substring(0, 8));
+                const mandateDate = client.sepaDate || new Date().toISOString().split('T')[0];
+
+                transactionsHTML += `
+                <DrctDbtTxInf>
+                    <PmtId><EndToEndId>${inv.invoiceId}</EndToEndId></PmtId>
+                    <InstdAmt Ccy="EUR">${inv.total.toFixed(2)}</InstdAmt>
+                    <DrctDbtTx>
+                        <MndtRltdInf>
+                            <MndtId>${mandateId}</MndtId>
+                            <DtOfSgntr>${mandateDate}</DtOfSgntr>
+                        </MndtRltdInf>
+                    </DrctDbtTx>
+                    <Dbtr><Nm>${clientName}</Nm></Dbtr>
+                    <DbtrAcct><Id><IBAN>${clientIBAN}</IBAN></Id></DbtrAcct>
+                    <RmtInf><Ustrd>Factura ${inv.invoiceId}</Ustrd></RmtInf>
+                </DrctDbtTxInf>`;
+            });
+
+            return `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.008.001.02">
+  <CstmrDrctDbtInitn>
+    <GrpHdr>
+      <MsgId>${msgId}</MsgId>
+      <CreDtTm>${creationDate}</CreDtTm>
+      <NbOfTxs>${numTrans}</NbOfTxs>
+      <CtrlSum>${totalAmount}</CtrlSum>
+      <InitgPty><Nm>${creditorName}</Nm></InitgPty>
+    </GrpHdr>
+    <PmtInf>
+      <PmtInfId>${msgId}-INF</PmtInfId>
+      <PmtMtd>DD</PmtMtd>
+      <NbOfTxs>${numTrans}</NbOfTxs>
+      <CtrlSum>${totalAmount}</CtrlSum>
+      <PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl><LclInstrm><Cd>CORE</Cd></LclInstrm><SeqTp>RCUR</SeqTp></PmtTpInf>
+      <ReqdColltnDt>${new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]}</ReqdColltnDt>
+      <Cdtr><Nm>${creditorName}</Nm></Cdtr>
+      <CdtrAcct><Id><IBAN>${creditorIBAN}</IBAN></Id></CdtrAcct>
+      <CdtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></CdtrAgt>
+      <CdtrSchmeId><Id><PrvtId><Othr><Id>${creditorId}</Id><SchmeNm><Prtry>SEPA</Prtry></SchmeNm></Othr></PrvtId></Id></CdtrSchmeId>
+      ${transactionsHTML}
+    </PmtInf>
+  </CstmrDrctDbtInitn>
+</Document>`;
         }
 
         function renderTaxSummary(s303, s111) {
@@ -1776,12 +2033,27 @@
                     ${inv.irpf > 0 ? `<div class="total-row"><span>Retención IRPF (${inv.irpfRate}%):</span> <span>-${inv.irpf.toFixed(2)}€</span></div>` : ''}
                     <div class="total-row total-final"><span>TOTAL:</span> <span>${inv.total.toFixed(2)}€</span></div>
                 </div>
-                <div style="margin-top:100px; font-size:0.8rem; color:#888; text-align:center;">Factura generada por el sistema NOVAPACK CLOUD. Registro mercantil de Málaga.</div>
+                <div style="margin-top:60px; padding:20px; border:1px solid #EEE; border-radius:8px; background:#F9F9F9;">
+                    <strong style="color:var(--brand-primary)">FORMA DE PAGO:</strong><br>
+                    Transferencia bancaria a la cuenta:<br>
+                    <span style="font-size:1.1rem; font-weight:bold; letter-spacing:1px;">${inv.senderData.bank || 'Consultar con administración'}</span>
+                </div>
+                <div style="margin-top:40px; font-size:0.8rem; color:#888; text-align:center;">Factura generada por el sistema NOVAPACK CLOUD. Registro mercantil de Málaga.</div>
                 <button class="no-print" onclick="window.print()" style="padding:15px 30px; background:#FF6600; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:20px;">🖨️ IMPRIMIR FACTURA</button>
             </body>
             </html>
             `);
             win.document.close();
+        };
+
+        window.emailInvoice = async (id) => {
+            const doc = await db.collection('invoices').doc(id).get();
+            const inv = doc.data();
+            const client = userMap[inv.clientId];
+            const email = client ? client.email : '';
+            const subject = encodeURIComponent(`Factura ${inv.invoiceId} - NOVAPACK LOGÍSTICA`);
+            const body = encodeURIComponent(`Hola ${inv.clientName},\n\nLe adjuntamos el detalle de su factura ${inv.invoiceId} por importe de ${inv.total.toFixed(2)}€.\n\nForma de pago: Transferencia a ${inv.senderData ? inv.senderData.bank : 'la cuenta habitual'}\n\nGracias por confiar en NOVAPACK.`);
+            window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;
         };
 
         window.deleteInvoice = async (id) => {
@@ -1814,6 +2086,185 @@
             if (document.getElementById('loading-overlay'))
                 document.getElementById('loading-overlay').style.display = 'none';
         }
+
+        // --- ADMIN MANUAL TICKETS ---
+        let adminTicketPackages = [];
+        let adminTicketUID = null;
+        let adminTicketCompID = null;
+
+        function initAdminTicketsView() {
+            populateAdminTicketClients();
+            resetAdminTicketForm();
+        }
+
+        function populateAdminTicketClients(filter = "") {
+            const select = document.getElementById('admin-ticket-client-select');
+            select.innerHTML = '';
+            Object.keys(userMap).forEach(uid => {
+                const u = userMap[uid];
+                if (u.role === 'admin') return;
+                const searchStr = ((u.name || "") + " " + (u.idNum || "")).toLowerCase();
+                if (filter && !searchStr.includes(filter.toLowerCase())) return;
+
+                const opt = document.createElement('option');
+                opt.value = uid;
+                opt.textContent = `[#${u.idNum || '?'}] ${u.name || 'Sin Nombre'}`;
+                select.appendChild(opt);
+            });
+        }
+
+        document.getElementById('admin-ticket-client-search').oninput = (e) => {
+            populateAdminTicketClients(e.target.value);
+        };
+
+        document.getElementById('admin-ticket-client-select').onchange = async (e) => {
+            adminTicketUID = e.target.value;
+            loadAdminTicketCompanies(adminTicketUID);
+        };
+
+        async function loadAdminTicketCompanies(uid) {
+            const select = document.getElementById('admin-ticket-company-select');
+            select.innerHTML = '<option value="">Cargando empresas...</option>';
+            try {
+                const snap = await db.collection('users').doc(uid).collection('companies').get();
+                select.innerHTML = '';
+                snap.forEach(doc => {
+                    const opt = document.createElement('option');
+                    opt.value = doc.id;
+                    opt.textContent = doc.data().name;
+                    select.appendChild(opt);
+                });
+                adminTicketCompID = select.value;
+            } catch (e) { select.innerHTML = '<option value="">Error al cargar empresas</option>'; }
+        }
+
+        document.getElementById('admin-ticket-company-select').onchange = (e) => {
+            adminTicketCompID = e.target.value;
+        };
+
+        document.getElementById('btn-admin-add-pkg').onclick = () => {
+            const qty = parseInt(document.getElementById('admin-t-pkg-qty').value) || 1;
+            const size = document.getElementById('admin-t-pkg-size').value.trim();
+            if (!size) return;
+            adminTicketPackages.push({ qty, size });
+            renderAdminPackages();
+            document.getElementById('admin-t-pkg-size').value = '';
+        };
+
+        function renderAdminPackages() {
+            const container = document.getElementById('admin-t-packages-list');
+            container.innerHTML = adminTicketPackages.map((p, i) => `
+                <div style="display:flex; justify-content:space-between; margin-bottom:5px; background:rgba(255,255,255,0.05); padding:5px; border-radius:4px;">
+                    <span>${p.qty}x ${p.size}</span>
+                    <button type="button" onclick="removeAdminPkg(${i})" style="background:none; border:none; color:#FF3B30; cursor:pointer;">✕</button>
+                </div>
+            `).join('');
+        }
+
+        window.removeAdminPkg = (i) => {
+            adminTicketPackages.splice(i, 1);
+            renderAdminPackages();
+        };
+
+        document.getElementById('admin-manual-ticket-form').onsubmit = async (e) => {
+            e.preventDefault();
+            if (!adminTicketUID || !adminTicketCompID) { alert("Selecciona cliente y empresa."); return; }
+            if (adminTicketPackages.length === 0) { alert("Añade al menos un bulto."); return; }
+
+            showLoading();
+            try {
+                const counterRef = db.collection('users').doc(adminTicketUID).collection('companies').doc(adminTicketCompID).collection('nextId').doc('counter');
+                const counterDoc = await counterRef.get();
+                let nextVal = 1;
+                if (counterDoc.exists) nextVal = (counterDoc.data().value || 0) + 1;
+
+                const compDoc = await db.collection('users').doc(adminTicketUID).collection('companies').doc(adminTicketCompID).get();
+                const prefix = compDoc.data().prefix || "MAN";
+                const ticketId = `${prefix}${nextVal.toString().padStart(5, '0')}`;
+
+                const ticketData = {
+                    id: ticketId,
+                    receiver: document.getElementById('admin-t-receiver').value,
+                    phone: document.getElementById('admin-t-phone').value,
+                    address: document.getElementById('admin-t-address').value + (document.getElementById('admin-t-number').value ? " Nº " + document.getElementById('admin-t-number').value : ""),
+                    province: document.getElementById('admin-t-province').value,
+                    timeSlot: document.getElementById('admin-t-timeslot').value,
+                    shippingType: document.getElementById('admin-t-shipping').value,
+                    cod: parseFloat(document.getElementById('admin-t-cod').value) || 0,
+                    packagesList: adminTicketPackages,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    adminCreated: true,
+                    printed: false
+                };
+
+                await db.collection('users').doc(adminTicketUID).collection('companies').doc(adminTicketCompID).collection('tickets').doc(ticketId).set(ticketData);
+                await counterRef.set({ value: nextVal });
+
+                alert(`Albarán ${ticketId} creado con éxito para el cliente.`);
+                resetAdminTicketForm();
+            } catch (err) { alert("Error: " + err.message); }
+            finally { hideLoading(); }
+        };
+
+        function resetAdminTicketForm() {
+            document.getElementById('admin-manual-ticket-form').reset();
+            adminTicketPackages = [];
+            document.getElementById('admin-t-packages-list').innerHTML = '';
+        }
+
+        // Billing Selection Filter logic
+        document.getElementById('inv-client-search').oninput = (e) => {
+            populateInvoiceClientSelect(e.target.value);
+        };
+
+        // Admin Scanner Logic
+        let adminScanner = null;
+        document.getElementById('btn-admin-scan-qr').onclick = async () => {
+            document.getElementById('admin-scanner-modal').style.display = 'flex';
+            if (!adminScanner) adminScanner = new Html5Qrcode("admin-qr-reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            try {
+                await adminScanner.start({ facingMode: "environment" }, config, async (text) => {
+                    if (text.startsWith("CLIENT_ID:")) {
+                        const idNum = text.split(":")[1];
+                        const uEntry = Object.entries(userMap).find(([id, data]) => data.idNum == idNum);
+                        if (uEntry) {
+                            adminTicketUID = uEntry[0];
+                            document.getElementById('admin-ticket-client-select').value = adminTicketUID;
+                            loadAdminTicketCompanies(adminTicketUID);
+                            stopAdminScanner();
+                            alert("Cliente detectado: " + uEntry[1].name);
+                        }
+                    } else if (text.startsWith("TICKET_ID:")) {
+                        const tid = text.split(":")[1];
+                        showLoading();
+                        try {
+                            const tSnap = await db.collectionGroup('tickets').where('id', '==', tid).get();
+                            if (!tSnap.empty) {
+                                const tData = tSnap.docs[0].data();
+                                document.getElementById('admin-t-receiver').value = tData.receiver || "";
+                                document.getElementById('admin-t-phone').value = tData.phone || "";
+                                document.getElementById('admin-t-address').value = (tData.address || "").split(" Nº ")[0];
+                                document.getElementById('admin-t-number').value = (tData.address || "").includes(" Nº ") ? tData.address.split(" Nº ")[1] : "";
+                                document.getElementById('admin-t-province').value = tData.province || "";
+                                adminTicketPackages = tData.packagesList || [];
+                                renderAdminPackages();
+                                stopAdminScanner();
+                                alert("Datos del albarán cargados correctamente.");
+                            } else { alert("Albarán no encontrado."); }
+                        } catch (e) { alert("Error al buscar albarán: " + e.message); }
+                        finally { hideLoading(); }
+                    }
+                });
+            } catch (e) { alert("Error cámara: " + e); }
+        };
+
+        function stopAdminScanner() {
+            if (adminScanner) adminScanner.stop().catch(() => { });
+            document.getElementById('admin-scanner-modal').style.display = 'none';
+        }
+        document.getElementById('btn-admin-close-scanner').onclick = stopAdminScanner;
     </script>
 
     <!-- Shared Global Datalists -->

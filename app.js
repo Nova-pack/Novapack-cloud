@@ -2686,6 +2686,12 @@ function generateLabelHTML(t, index, total, weightStr) {
                 </div>
             </div>
 
+            <!-- Date & Time Footer -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; font-size: 0.65rem; color: #444; border-top: 1px solid #ccc; padding-top: 2px;">
+                <span>${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</span>
+                <span style="font-weight:bold; color:#FF6600">NOVAPACK CLOUD</span>
+            </div>
+
             <!-- COD Warning -->
             ${(t.cod && parseFloat(t.cod) > 0) ? `
             <div style="position: absolute; top: 120px; right: -5px; transform: rotate(15deg); background: white; color: black; padding: 4px 10px; font-weight: 900; border-radius: 4px; font-size: 0.8rem; border: 3px solid black; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); text-align: center; line-height: 1.1; z-index: 10;">
