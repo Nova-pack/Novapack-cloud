@@ -244,13 +244,26 @@
 <body>
     <div class="sidebar" id="sidebar">
         <div class="logo">NOVAPACK<span style="color:var(--brand-primary)">➤</span></div>
-        <div class="nav-item active" id="nav-users">👥 Usuarios</div>
+
+        <div
+            style="font-size:0.65rem; color:#555; margin:15px 0 5px 15px; text-transform:uppercase; font-weight:700; letter-spacing:1px;">
+            Gestión de Envios</div>
+        <div class="nav-item active" id="nav-users">👥 Usuarios y Clientes</div>
         <div class="nav-item" id="nav-reports">📊 Listados Globales</div>
-        <div class="nav-item" id="nav-tariffs">💰 Tarifas Clientes</div>
-        <div class="nav-item" id="nav-phones">📱 Teléfonos</div>
         <div class="nav-item" id="nav-admin-tickets">📦 Albaranes Manuales</div>
+        <div class="nav-item" id="nav-phones">📱 Teléfonos Alerta</div>
+
+        <div
+            style="font-size:0.65rem; color:#555; margin:15px 0 5px 15px; text-transform:uppercase; font-weight:700; letter-spacing:1px;">
+            Facturación y Tarifas</div>
         <div class="nav-item" id="nav-billing">📄 Facturación</div>
+        <div class="nav-item" id="nav-tariffs">💰 Tarifas Clientes</div>
+
+        <div
+            style="font-size:0.65rem; color:#555; margin:15px 0 5px 15px; text-transform:uppercase; font-weight:700; letter-spacing:1px;">
+            Sistema</div>
         <div class="nav-item" id="nav-config">⚙️ Configuración</div>
+
         <div style="flex:1"></div>
         <div class="nav-item" id="btn-logout">🚪 Cerrar Sesión</div>
     </div>
@@ -1043,7 +1056,6 @@
                 snapshot.forEach(doc => {
                     const data = doc.data();
                     userMap[doc.id] = data;
-                    if (data.role === 'admin') return;
                     const row = document.createElement('tr');
                     row.className = 'user-row';
                     row.innerHTML = `
@@ -1390,9 +1402,7 @@
                 allClientsForTariff = [];
                 snap.forEach(doc => {
                     const data = doc.data();
-                    if (data.role !== 'admin') {
-                        allClientsForTariff.push({ uid: doc.id, ...data });
-                    }
+                    allClientsForTariff.push({ uid: doc.id, ...data });
                 });
                 renderFilteredTariffClients('');
 
@@ -1583,7 +1593,6 @@
             select.innerHTML = '<option value="">-- Seleccionar Cliente --</option>';
             Object.keys(userMap).forEach(uid => {
                 const u = userMap[uid];
-                if (u.role === 'admin') return;
                 const searchStr = ((u.name || "") + " " + (u.idNum || "")).toLowerCase();
                 if (filter && !searchStr.includes(filter.toLowerCase())) return;
                 const opt = document.createElement('option');
@@ -1596,6 +1605,18 @@
         document.getElementById('inv-client-select').onchange = refreshUnbilledList;
         document.getElementById('inv-date-from').onchange = refreshUnbilledList;
         document.getElementById('inv-date-to').onchange = refreshUnbilledList;
+
+        // Buscador de clientes en el modal de factura
+        document.getElementById('inv-client-search').oninput = (e) => {
+            populateInvoiceClientSelect(e.target.value);
+        };
+
+        // Seleccionar/Deseleccionar todos los albaranes
+        document.getElementById('inv-select-all').onchange = (e) => {
+            const checks = document.querySelectorAll('.inv-ticket-check');
+            checks.forEach(c => c.checked = e.target.checked);
+            updateInvoiceCalculations();
+        };
 
         async function refreshUnbilledList() {
             const uid = document.getElementById('inv-client-select').value;
@@ -1642,6 +1663,9 @@
                 unbilledTickets = tickets;
                 renderUnbilledTable();
                 updateInvoiceCalculations();
+
+                // Reset select all checkbox
+                document.getElementById('inv-select-all').checked = true;
             } catch (e) {
                 console.error(e);
                 tbody.innerHTML = '<tr><td colspan="6">Error al cargar.</td></tr>';
@@ -1653,17 +1677,29 @@
                     const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
                     const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
 
-                    // Price calc
+                    // Price calc (Case-insensitive matching)
                     const uData = userMap[t.uid] || {};
-                    const activeTariff = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" +
-                        uData.tariffId] : (tariffsCache[t.uid] || {});
+                    const activeTariffRaw = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" + uData.tariffId] : (tariffsCache[t.uid] || {});
+
+                    // Normalize tariff for case-insensitive lookup
+                    const activeTariff = {};
+                    Object.keys(activeTariffRaw).forEach(k => { activeTariff[k.toLowerCase()] = activeTariffRaw[k]; });
+
                     let price = 0;
                     if (t.packagesList) {
-                        t.packagesList.forEach(p => price += (parseInt(p.qty) || 1) * (activeTariff[p.size] || 0));
+                        t.packagesList.forEach(p => {
+                            const sizeKey = (p.size || 'Bulto').toLowerCase();
+                            price += (parseInt(p.qty) || 1) * (activeTariff[sizeKey] || 0);
+                        });
+                    } else {
+                        // Legacy fallback 
+                        const sizeKey = (t.size || 'Bulto').toLowerCase();
+                        price = (parseInt(t.packages) || 1) * (activeTariff[sizeKey] || 0);
                     }
                     t.calculatedPrice = price;
 
                     const tr = document.createElement('tr');
+                    tr.className = 'user-row';
                     tr.innerHTML = `
         <td><input type="checkbox" class="inv-ticket-check" data-index="${i}" checked
                 onchange="updateInvoiceCalculations()"></td>
@@ -2249,7 +2285,6 @@
             select.innerHTML = '';
             Object.keys(userMap).forEach(uid => {
                 const u = userMap[uid];
-                if (u.role === 'admin') return;
                 const searchStr = ((u.name || "") + " " + (u.idNum || "")).toLowerCase();
                 if (filter && !searchStr.includes(filter.toLowerCase())) return;
 

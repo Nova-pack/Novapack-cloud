@@ -1255,23 +1255,47 @@ function handleExportCSV() {
 document.getElementById('btn-export-csv').onclick = handleExportCSV;
 
 // --- PRINTING LOGIC ---
-function renderQRCodesInPrintArea() {
+function renderQRCodesInPrintArea(ticketData = null) {
     const elements = document.querySelectorAll('#print-area .ticket-qr-code');
     elements.forEach(el => {
         const id = el.dataset.id;
-        const data = {
-            id: id,
-            type: 'novapack_cloud',
-            clientId: userData ? userData.idNum : '---',
-            tariffId: userData ? userData.tariffId || '---' : '---'
-        };
+
+        let qrValue = "TICKET_ID:" + id;
+
+        // If ticketData is provided, encode full info to avoid encoding issues (Mojibake)
+        if (ticketData && ticketData.id === id) {
+            try {
+                const compactData = {
+                    id: ticketData.id,
+                    r: ticketData.receiver,
+                    a: ticketData.address,
+                    p: ticketData.phone || '',
+                    v: ticketData.province || '',
+                    s: ticketData.sender || '',
+                    sa: ticketData.senderAddress || '',
+                    sp: ticketData.senderPhone || '',
+                    t: ticketData.timeSlot || 'MAÑANA',
+                    st: ticketData.shippingType || 'Pagados',
+                    c: ticketData.cod || '0.00',
+                    n: ticketData.notes || '',
+                    pkgs: ticketData.packagesList || []
+                };
+                // Encode as Base64 to safely store Spanish characters and complex objects
+                const jsonStr = JSON.stringify(compactData);
+                const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
+                qrValue = "TICKET_DATA:" + base64;
+            } catch (e) {
+                console.error("Error encoding QR full data", e);
+            }
+        }
+
         new QRCode(el, {
-            text: "TICKET_ID:" + id,
+            text: qrValue,
             width: 80,
             height: 80,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: 1
+            correctLevel: 0 // Level L for higher data density
         });
     });
 }
@@ -1308,6 +1332,7 @@ function generateTicketHTML(t, footerLabel) {
                     <div style="display:inline-block; border:2px solid #FF6600; padding:3px 12px; border-radius:6px;">
                         <div style="font-size:0.55rem; font-weight:bold; letter-spacing:1px; color:#666;">ZONA DE REPARTO</div>
                         <div style="font-size:1.2rem; font-weight:900;">${t.province || 'GENÉRICA'}</div>
+                        <div style="font-size:1rem; font-weight:900; color:#000; border-top:1px solid #FF6600; margin-top:2px;">${t.timeSlot || 'MAÑANA'}</div>
                     </div>
                 </div>
                 <div style="flex:1.4; display:flex; justify-content:flex-end; align-items:center; gap:12px;">
@@ -1315,7 +1340,8 @@ function generateTicketHTML(t, footerLabel) {
                     <div style="text-align:right;">
                         <div style="font-weight:bold; font-size:1.1rem; line-height:1.1;">ALBARÁN: <span style="color:#FF6600;">${t.id}</span></div>
                         <div style="font-size:0.75rem; color:#444;">${dStr}</div>
-                        <div style="font-size:0.8rem; font-weight:900; color:#FF6600; margin-top:1px; letter-spacing:0.5px;">RECOGIDA: ${t.timeSlot || 'MAÑANA'}</div>
+                        <div style="font-size:1.1rem; font-weight:900; color:#000; margin-top:2px; letter-spacing:0.5px; border:1px solid #000; padding:1px 5px; display:inline-block;">${t.timeSlot || 'MAÑANA'}</div>
+                        <div style="font-size:0.8rem; font-weight:900; color:#000; margin-top:1px;">PORTES: ${t.shippingType.toUpperCase()}</div>
                     </div>
                 </div>
             </div>
@@ -1323,15 +1349,15 @@ function generateTicketHTML(t, footerLabel) {
             <div style="display:grid; grid-template-columns: 1fr 1.2fr; gap:12px; margin-top:8px;">
                 <div style="border:1px solid #ddd; padding:6px; font-size:0.75rem; border-radius:5px; background:#fafafa;">
                     <strong style="color:#888; font-size:0.55rem; display:block; text-transform:uppercase; margin-bottom:2px;">REMITENTE:</strong>
-                    <div style="font-weight:bold; font-size:0.85rem; margin-bottom:1px;">${t.sender}</div>
-                    <div style="color:#333;">${t.senderAddress}</div>
-                    <div style="font-weight:bold;">${t.senderPhone}</div>
+                    <div style="font-weight:normal; font-size:0.85rem; margin-bottom:1px;">${t.sender}</div>
+                    <div style="font-weight:bold; color:#111;">${t.senderAddress}</div>
+                    <div style="font-weight:normal;">${t.senderPhone}</div>
                 </div>
                 <div style="border:2px solid #000; padding:6px; font-size:0.8rem; border-radius:5px; background:#fff;">
                     <strong style="color:#888; font-size:0.55rem; display:block; text-transform:uppercase; margin-bottom:2px;">DESTINATARIO:</strong>
-                    <div style="font-weight:900; font-size:1rem; text-transform:uppercase; margin-bottom:1px;">${t.receiver}</div>
-                    <div style="font-weight:700; color:#111;">${t.address}</div>
-                    <div style="font-weight:900; font-size:1rem; color:#FF6600; margin-top:2px;">${t.phone || '-'}</div>
+                    <div style="font-weight:normal; font-size:1rem; text-transform:uppercase; margin-bottom:1px;">${t.receiver}</div>
+                    <div style="font-weight:bold; color:#000;">${t.address}</div>
+                    <div style="font-weight:normal; font-size:1rem; color:#000; margin-top:2px;">${t.phone || '-'}</div>
                 </div>
             </div>
 
@@ -1388,7 +1414,7 @@ async function printTicket(t) {
         area.innerHTML += generateManifestHTML([t]);
     }
 
-    renderQRCodesInPrintArea();
+    renderQRCodesInPrintArea(t);
     await getCollection('tickets').doc(t.id).update({ printed: true });
 
     // Asegurar que no tenemos el modo etiqueta activo

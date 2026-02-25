@@ -1153,15 +1153,17 @@ function renderQRCodesInPrintArea() {
             const isLabel = container.closest('.label-item');
             const qrSize = isLabel ? 100 : 140;
 
-            // Use M correction level for better balance between data capacity and readability
             // Use the prefixed format for better scanner compatibility
+            // Including full data for detail retrieval
+            const qrText = "TICKET_ID:" + JSON.stringify(data);
+
             new QRCode(container, {
-                text: "TICKET_ID:" + t.id,
+                text: qrText,
                 width: qrSize,
                 height: qrSize,
                 colorDark: "#000000",
                 colorLight: "#ffffff",
-                correctLevel: 1 // Level M
+                correctLevel: 0 // Level L (better for large data)
             });
         } catch (e) {
             console.error("QR Error", e);
@@ -1230,6 +1232,9 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-size: 1.6rem; font-weight: 900; color: #FF6600; text-transform:uppercase; line-height: 1.1;">
                             ${t.province || '&nbsp;'}
                         </div>
+                        <div style="font-size: 1.1rem; font-weight: 900; color: #000; text-transform:uppercase; border-top:1px solid #FF6600; margin-top:2px; padding-top:2px;">
+                            ${t.timeSlot || 'MAÑANA'}
+                        </div>
                      </div>
                 </div>
 
@@ -1241,29 +1246,28 @@ function generateTicketHTML(t, footerLabel) {
                 <!-- Right: Ticket Info -->
                 <div style="flex: 1; text-align: right;">
                     <div style="font-size: 14pt; font-weight: bold; color: #000;">Albarán: <span style="color: #FF6600;">${t.id}</span></div>
-                    <div style="font-size: 1.1rem; font-weight: 900; color: #000; text-transform: uppercase; margin: 3px 0; border: 2px solid #000; display: inline-block; padding: 2px 8px; border-radius: 4px; background: #FFF;">
-                         ${t.shippingType}
+                    <div style="font-size: 1.2rem; font-weight: 900; color: #000; text-transform: uppercase; margin: 3px 0; border: 2px solid #000; display: inline-block; padding: 2px 8px; border-radius: 4px; background: #FFF;">
+                         ${t.timeSlot || 'MAÑANA'}
                     </div>
                     <div style="font-size: 0.85rem; color:#444; margin-top:2px;">${date}</div>
-                    ${t.timeSlot ? `
-                     <div style="margin-top: 4px; border: 1px solid #FF6600; padding: 2px 5px; background:#FFF; display: inline-block; border-radius: 3px;">
-                        <span style="font-size: 0.6rem; font-weight: 700; color:#555;">RECOGIDA:</span>
-                        <span style="font-size: 0.8rem; font-weight: 800; color: #FF6600;">${t.timeSlot}</span>
-                     </div>` : ''}
+                    <div style="margin-top: 4px; border: 1px solid #000; padding: 1px 5px; background:#FFF; display: inline-block; border-radius: 3px;">
+                        <span style="font-size: 0.6rem; font-weight: 700; color:#000;">PORTES:</span>
+                        <span style="font-size: 0.8rem; font-weight: 900; color: #000;">${t.shippingType}</span>
+                     </div>
                 </div>
             </div>
             
             <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position:relative;">
                 <div style="border: 1px solid #ccc; padding: 5px; font-size: 0.8rem;">
                     <strong>REMITENTE:</strong><br>
-                    ${t.sender}<br>
-                    ${t.senderAddress || ''}<br>
-                    ${t.senderPhone ? `Telf: ${t.senderPhone}` : ''}
+                    <span style="font-weight: normal;">${t.sender}</span><br>
+                    <span style="font-weight: bold;">${t.senderAddress || ''}</span><br>
+                    <span style="font-weight: normal;">${t.senderPhone ? `Telf: ${t.senderPhone}` : ''}</span>
                 </div>
                 <div style="border: 1px solid #000; padding: 5px; font-size: 10pt;">
                     <strong>DESTINATARIO:</strong><br>
-                    <div style="font-weight:bold; font-size:1.1em;">${t.receiver}</div>
-                    ${t.address}
+                    <div style="font-weight:normal; font-size:1.1em;">${t.receiver}</div>
+                    <div style="font-weight:bold;">${t.address}</div>
                 </div>
             </div>
 
