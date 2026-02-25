@@ -1232,6 +1232,9 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-size: 1.6rem; font-weight: 900; color: #FF6600; text-transform:uppercase; line-height: 1.1;">
                             ${t.province || '&nbsp;'}
                         </div>
+                        <div style="font-size: 0.95rem; font-weight: 900; text-transform:uppercase; color: #000; margin-top: 2px;">
+                            PORTES: ${t.shippingType.toUpperCase()}
+                        </div>
                         <div style="font-size: 1.1rem; font-weight: 900; color: #000; text-transform:uppercase; border-top:1px solid #FF6600; margin-top:2px; padding-top:2px;">
                             ${t.timeSlot || 'MAÑANA'}
                         </div>
@@ -2670,7 +2673,14 @@ function generateLabelHTML(t, index, total, weightStr) {
                 <div style="font-size: 10pt; line-height: 1.2; overflow: hidden;">
                     ${t.address}
                 </div>
-                ${t.province ? `<div style="font-size: 22pt; font-weight:900; text-transform:uppercase; color: #FF6600; margin-top: 4px;">${t.province}</div>` : ''}
+                ${t.province ? `
+                    <div style="font-size: 22pt; font-weight:900; text-transform:uppercase; color: #FF6600; margin-top: 4px; line-height: 1;">
+                        ${t.province}
+                    </div>
+                     <div style="font-size: 14pt; font-weight:900; text-transform:uppercase; color: #000; margin-top: 5px;">
+                        PORTES: ${t.shippingType.toUpperCase()}
+                    </div>
+                ` : ''}
                 ${t.notes ? `<div style="font-size: 0.8rem; font-weight: bold; color: #333; margin-top: 10px; border-top: 1px dotted #ccc; padding-top: 5px; white-space: normal; line-height: 1.2;">OBS: ${t.notes}</div>` : ''}
             </div>
 

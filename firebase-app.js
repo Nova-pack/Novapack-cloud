@@ -1332,6 +1332,7 @@ function generateTicketHTML(t, footerLabel) {
                     <div style="display:inline-block; border:2px solid #FF6600; padding:3px 12px; border-radius:6px;">
                         <div style="font-size:0.55rem; font-weight:bold; letter-spacing:1px; color:#666;">ZONA DE REPARTO</div>
                         <div style="font-size:1.2rem; font-weight:900;">${t.province || 'GENÉRICA'}</div>
+                        <div style="font-size:0.9rem; font-weight:bold; text-transform:uppercase; margin-top:2px; color:#000;">PORTES: ${t.shippingType.toUpperCase()}</div>
                         <div style="font-size:1rem; font-weight:900; color:#000; border-top:1px solid #FF6600; margin-top:2px;">${t.timeSlot || 'MAÑANA'}</div>
                     </div>
                 </div>
@@ -1703,7 +1704,10 @@ function generateLabelHTML(t, index, total) {
             <div style="font-size:0.75rem; color:#333; width:100%; text-align:left; font-weight:bold; text-transform:uppercase;">DESTINATARIO:</div>
             <div style="font-size:1.8rem; font-weight:900; text-transform:uppercase; margin:8px 0; line-height:1;">${t.receiver}</div>
             <div style="font-size:1.2rem; line-height:1.2; font-weight:500;">${t.address}</div>
-            <div style="font-size:2.4rem; font-weight:900; color:#FF6600; margin-top:10px; border:2px solid #FF6600; padding:3px 15px; border-radius:8px;">${t.province || ''}</div>
+            <div style="font-size:2.4rem; font-weight:900; color:#FF6600; margin-top:10px; border:2px solid #FF6600; padding:3px 15px; border-radius:8px; line-height:1.1;">
+                ${t.province || ''}<br>
+                <span style="font-size:1.2rem; color:#000; display:block; margin-top:5px;">PORTES: ${t.shippingType.toUpperCase()}</span>
+            </div>
             ${t.notes ? `<div style="font-size:0.9rem; font-weight:bold; margin-top:15px; border-top:1px dashed #000; padding-top:8px; width:100%;">OBS: ${t.notes}</div>` : ''}
         </div>
         <div style="position:absolute; bottom:80px; right:15px;" class="ticket-qr-code" data-id="${t.id}"></div>
