@@ -1104,71 +1104,43 @@ function renderQRCodesInPrintArea() {
     containers.forEach(container => {
         const id = container.dataset.id;
         if (!id) return;
+        container.innerHTML = ''; // Clear previous
+
         const t = db.getOne('tickets', id);
         if (!t) return;
 
-        // Calculate totals
-        const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (parseInt(t.packages) || 1);
-        const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + ((parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1)), 0) : (parseFloat(t.weight) || 0);
-
-        // Prepare detailed items list
-        let detailedItems = [];
-        if (t.packagesList && t.packagesList.length > 0) {
-            detailedItems = t.packagesList.map(p => ({
-                q: parseInt(p.qty) || 1,
-                s: p.size || 'Bulto',
-                w: parseFloat(p.weight) || 0
-            }));
-        } else {
-            // Legacy fallback
-            detailedItems.push({
-                q: parseInt(t.packages) || 1,
-                s: t.size || 'Bulto',
-                w: parseFloat(t.weight) || 0
-            });
-        }
-
-        // Compact Data for QR (to ensure it fits in a small code)
-        const senderNum = localStorage.getItem(db.getKey('sender_number')) || "";
-        const data = {
-            id: t.id,
-            sn: senderNum, // Sender Number / Code
-            d: t.createdAt ? t.createdAt.split('T')[0] : '', // Date only
-            r: t.receiver,
-            a: t.address,
-            p: t.phone || '',
-            v: t.province || '',
-            k: pkgs,
-            w: weight.toFixed(2),
-            s: t.shippingType || 'Pagados',
-            c: t.cod || '',
-            n: t.notes || ''
-        };
-
-        // Clear previous content just in case
-        container.innerHTML = '';
+        let qrValue = "TICKET_ID:" + id;
 
         try {
-            // Check if it's inside a label to use a smaller size
-            const isLabel = container.closest('.label-item');
-            const qrSize = isLabel ? 100 : 140;
+            const compactData = {
+                id: t.id,
+                r: t.receiver,
+                a: t.address,
+                p: t.phone || '',
+                v: t.province || '',
+                s: t.sender || '',
+                sa: t.senderAddress || '',
+                sp: t.senderPhone || '',
+                t: t.timeSlot || 'MAÑANA',
+                st: t.shippingType || 'Pagados',
+                cod: t.cod || '0.00'
+            };
+            const jsonStr = JSON.stringify(compactData);
+            const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
+            qrValue = "TICKET_DATA:" + base64;
+        } catch (e) { console.error("Error encoding QR Offline", e); }
 
-            // Use the prefixed format for better scanner compatibility
-            // Including full data for detail retrieval
-            const qrText = "TICKET_ID:" + JSON.stringify(data);
+        const isLabel = container.closest('.label-item');
+        const size = isLabel ? 128 : 140;
 
-            new QRCode(container, {
-                text: qrText,
-                width: qrSize,
-                height: qrSize,
-                colorDark: "#000000",
-                colorLight: "#ffffff",
-                correctLevel: 0 // Level L (better for large data)
-            });
-        } catch (e) {
-            console.error("QR Error", e);
-            container.innerHTML = "Error QR";
-        }
+        new QRCode(container, {
+            text: qrValue,
+            width: size,
+            height: size,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.L
+        });
     });
 }
 
@@ -1206,7 +1178,6 @@ function generateTicketHTML(t, footerLabel) {
                <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${qty}</td>
                <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${w}</td>
                <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${p.size || 'Bulto'}</td>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${t.shippingType}</td>
                ${hasCod ? `<td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${t.cod} €</td>` : ''}
             </tr>
         `;
@@ -1250,10 +1221,6 @@ function generateTicketHTML(t, footerLabel) {
                          ${t.timeSlot || 'MAÑANA'}
                     </div>
                     <div style="font-size: 0.85rem; color:#444; margin-top:2px;">${date}</div>
-                    <div style="margin-top: 4px; border: 1px solid #000; padding: 1px 5px; background:#FFF; display: inline-block; border-radius: 3px;">
-                        <span style="font-size: 0.6rem; font-weight: 700; color:#000;">PORTES:</span>
-                        <span style="font-size: 0.8rem; font-weight: 900; color: #000;">${t.shippingType}</span>
-                     </div>
                 </div>
             </div>
             
@@ -1277,7 +1244,6 @@ function generateTicketHTML(t, footerLabel) {
                         <th style="border: 1px solid #000; padding: 1px; font-size: 0.7rem;">BULTOS</th>
                         <th style="border: 1px solid #000; padding: 1px; font-size: 0.7rem;">PESO</th>
                         <th style="border: 1px solid #000; padding: 1px; font-size: 0.7rem;">MEDIDA</th>
-                        <th style="border: 1px solid #000; padding: 1px; font-size: 0.7rem;">PORTES</th>
                         ${hasCod ? '<th style="border: 1px solid #000; padding: 1px; font-size: 0.7rem;">REEMBOLSO</th>' : ''}
                     </tr>
                 </thead>
@@ -1899,10 +1865,12 @@ function renderTicketItem(t, list) {
         pkgCount = t.packages || 0;
     }
 
+    const isBilled = !!(t.invoiceId || t.invoiceNum);
+
     div.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
             <strong style="color:var(--brand-primary); font-size:1rem; font-family:var(--font-heading);">${t.id}</strong>
-            <span class="status-badge ${t.printed ? 'printed' : 'new'}">${t.printed ? 'IMP' : 'NUEVO'}</span>
+            <span class="status-badge ${isBilled ? 'billed' : (t.printed ? 'printed' : 'new')}">${isBilled ? '🔒 FACTURADO' : (t.printed ? 'IMP' : 'NUEVO')}</span>
         </div>
         <div style="font-weight:700; font-size:0.9rem; color: #FFF; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom: 4px;">${t.receiver.toUpperCase()}</div>
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem; color:var(--text-dim); border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;">
@@ -1967,14 +1935,58 @@ function loadEditor(id) {
     }
 
     // UI State
-    document.getElementById('editor-title').textContent = "Visualizando Albarán";
-    document.getElementById('editor-status').textContent = `ID: ${t.id}`;
+    const isBilled = !!(t.invoiceId || t.invoiceNum);
+    const form = document.getElementById('create-ticket-form');
+
+    if (isBilled) {
+        document.getElementById('editor-title').innerHTML = `<span style="color:#FF3B30; font-weight:900;">🔒 ALBARÁN FACTURADO (BLOQUEADO)</span>`;
+        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FF3B30; color:white; padding: 2px 6px; border-radius:4px;">FACTURA: ${t.invoiceNum || 'ASIGNADA'}</span>`;
+
+        // Bloqueo físico mediante CSS
+        form.style.pointerEvents = 'none';
+        form.style.opacity = '0.7';
+
+        document.getElementById('action-delete').style.display = 'none';
+
+        const submitBtn = document.querySelector('#create-ticket-form button[type="submit"]');
+        if (submitBtn) submitBtn.style.display = 'none';
+
+        const inputs = document.querySelectorAll('#create-ticket-form input, #create-ticket-form select, #create-ticket-form textarea');
+        inputs.forEach(inp => inp.disabled = true);
+
+        const addPkgBtn = document.getElementById('btn-add-package');
+        if (addPkgBtn) addPkgBtn.style.display = 'none';
+
+        document.querySelectorAll('.btn-remove-pkg').forEach(btn => btn.style.display = 'none');
+    } else {
+        form.style.pointerEvents = 'auto';
+        form.style.opacity = '1';
+        document.getElementById('editor-title').textContent = "Visualizando Albarán";
+        document.getElementById('editor-status').textContent = `ID: ${t.id}`;
+        document.getElementById('action-delete').style.display = 'inline-block';
+
+        const submitBtn = document.querySelector('#create-ticket-form button[type="submit"]');
+        if (submitBtn) submitBtn.style.display = 'block';
+
+        const inputs = document.querySelectorAll('#create-ticket-form input, #create-ticket-form select, #create-ticket-form textarea');
+        inputs.forEach(inp => inp.disabled = false);
+
+        const addPkgBtn = document.getElementById('btn-add-package');
+        if (addPkgBtn) addPkgBtn.style.display = 'inline-block';
+    }
+
     document.getElementById('editor-actions').classList.remove('hidden');
 
     // Update Action Handlers
     document.getElementById('action-print').onclick = () => printTicket(id);
     document.getElementById('action-label').onclick = () => printLabel(id);
-    document.getElementById('action-delete').onclick = () => deleteTicket(id);
+    document.getElementById('action-delete').onclick = () => {
+        if (isBilled) {
+            alert("Este albarán ya ha sido facturado por administración y no puede eliminarse.");
+            return;
+        }
+        deleteTicket(id);
+    };
 
     // SMS Button
     const btnSMS = document.getElementById('action-sms-pickup');
@@ -2012,6 +2024,16 @@ function resetEditor() {
     document.getElementById('ticket-time-slot').value = timeSlot;
 
     // Restore default sender
+    // Restore UI for new entry
+    const submitBtn = document.querySelector('#create-ticket-form button[type="submit"]');
+    if (submitBtn) submitBtn.style.display = 'block';
+
+    const inputs = document.querySelectorAll('#create-ticket-form input, #create-ticket-form select, #create-ticket-form textarea');
+    inputs.forEach(inp => inp.disabled = false);
+
+    const addPkgBtn = document.getElementById('btn-add-package');
+    if (addPkgBtn) addPkgBtn.style.display = 'inline-block';
+
     const savedSender = localStorage.getItem(db.getKey('default_sender'));
     const savedSenderAddr = localStorage.getItem(db.getKey('default_sender_address'));
     const savedSenderPhone = localStorage.getItem(db.getKey('default_sender_phone'));
@@ -2083,6 +2105,14 @@ function getNextId(senderName) {
 
 async function handleFormSubmit(e) {
     e.preventDefault();
+
+    if (editingId) {
+        const currentTicket = db.getOne('tickets', editingId);
+        if (currentTicket && currentTicket.invoiceId) {
+            alert("Este albarán ya ha sido facturado por administración y no puede modificarse.");
+            return;
+        }
+    }
 
     const packagesList = getPackagesData();
     if (packagesList.length === 0) {
@@ -2214,6 +2244,12 @@ async function handleFormSubmit(e) {
 }
 
 function deleteTicket(id) {
+    const t = db.getOne('tickets', id);
+    if (t && t.invoiceId) {
+        alert("Este albarán no puede eliminarse porque ya ha sido facturado por administración.");
+        return;
+    }
+
     if (confirm("¿Estás seguro de borrar este albarán?")) {
         db.delete('tickets', id);
         resetEditor();

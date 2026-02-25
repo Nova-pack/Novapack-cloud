@@ -20,11 +20,42 @@
 </head>
 
 <body>
+    <style>
+        @keyframes logoPulse {
+            0% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+
+            50% {
+                transform: scale(1.02);
+                opacity: 1;
+                text-shadow: 0 0 15px rgba(255, 77, 0, 0.3);
+            }
+
+            100% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+        }
+
+        .intro-logo {
+            font-family: 'Xenotron', sans-serif;
+            --brand-primary: #FF4D00;
+            font-weight: 200;
+            animation: logoPulse 4s infinite ease-in-out;
+            letter-spacing: 12px;
+            text-transform: uppercase;
+        }
+    </style>
     <!-- Overlay for Loading -->
     <div id="loading-overlay"
         style="position:fixed; top:0; left:0; width:100%; height:100%; background:var(--bg-main); z-index:9999; display:flex; flex-direction:column; justify-content:center; align-items:center;">
-        <div class="intro-logo" style="font-size:3rem;">NOVAPACK<span class="logo-arrow">➤</span></div>
-        <div style="margin-top:20px; color:var(--brand-primary); font-weight:bold;">SINCRONIZANDO CON LA NUBE...</div>
+        <div class="intro-logo" style="font-size:4.5rem; color: #FFF; margin-bottom: 30px;">NOVAPACK<span
+                class="logo-arrow" style="font-size: 0.5em; opacity: 0.5;">➤</span></div>
+        <div
+            style="color:var(--text-dim); font-weight:300; font-family: 'Outfit', sans-serif; letter-spacing: 6px; font-size: 0.6rem; opacity: 0.6; text-transform: uppercase;">
+            Sincronizando con la nube</div>
     </div>
 
     <!-- Dashboard View -->

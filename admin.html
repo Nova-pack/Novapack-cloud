@@ -15,8 +15,15 @@
     <script src="libs/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
+        @import url('https://db.onlinewebfonts.com/c/13f990d5baee565bea4d9ff96e201c84?family=Xenotron+Normal');
+
+        @font-face {
+            font-family: 'Xenotron';
+            src: local('Xenotron'), url('https://db.onlinewebfonts.com/t/13f990d5baee565bea4d9ff96e201c84.woff2') format('woff2');
+        }
+
         :root {
-            --brand-primary: #FF6600;
+            --brand-primary: #FF4D00;
             --bg-dark: #0A0B0C;
             --surface: #121416;
             --glass: rgba(255, 255, 255, 0.03);
@@ -258,6 +265,7 @@
             Facturación y Tarifas</div>
         <div class="nav-item" id="nav-billing">📄 Facturación</div>
         <div class="nav-item" id="nav-tariffs">💰 Tarifas Clientes</div>
+        <div class="nav-item" id="nav-tax-models">⚖️ Modelos Tributarios</div>
 
         <div
             style="font-size:0.65rem; color:#555; margin:15px 0 5px 15px; text-transform:uppercase; font-weight:700; letter-spacing:1px;">
@@ -273,7 +281,11 @@
         <div id="view-users">
             <div class="header">
                 <h1>Gestión de Clientes Cloud</h1>
-                <button class="btn btn-primary" id="btn-add-user">+ NUEVO CLIENTE</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-outline" id="btn-reindex-ids" onclick="reindexUserIds()"
+                        title="Corregir correlación de IDs (101, 102...)">🔄 RE-INDEXAR IDs</button>
+                    <button class="btn btn-primary" id="btn-add-user">+ NUEVO CLIENTE</button>
+                </div>
             </div>
 
             <div class="card">
@@ -332,20 +344,14 @@
                 <button class="btn btn-primary" id="btn-save-settings">💾 GUARDAR CONFIGURACIÓN</button>
             </div>
 
-            <div class="card" style="margin-top:30px; opacity:0.8;">
-                <h3 style="margin-top:0; color:var(--brand-primary)">Información Técnica</h3>
-                <div class="form-group">
-                    <label>ID del Proyecto Firebase</label>
-                    <div id="conf-project-id"
-                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Tu UID de Administrador (Actual)</label>
-                    <div id="conf-admin-uid"
-                        style="background:rgba(0,0,0,0.3); padding:15px; border-radius:12px; font-family:monospace; border:1px solid var(--border-glass)">
-                    </div>
-                </div>
+            <div class="card" style="margin-top:30px; border: 1px solid #ff444452;">
+                <h3 style="margin-top:0; color:#ff4444">Zona de Peligro / Mantenimiento</h3>
+                <p style="font-size:0.8rem; color:#888; margin-bottom:15px;">Use estas opciones con extrema precaución.
+                    Son irreversibles.</p>
+                <button class="btn btn-danger" onclick="wipeAllOperationalData()" style="width:100%; padding:15px;">🧨
+                    BORRAR TODOS LOS ALBARANES Y FACTURAS (EMPEZAR DE CERO)</button>
+                <div style="font-size:0.7rem; color:#666; margin-top:10px; text-align:center;">Esto eliminará albaranes,
+                    facturas y reiniciará contadores a 1. Los clientes y tarifas se mantienen.</div>
             </div>
         </div>
 
@@ -525,320 +531,357 @@
                 </table>
             </div>
 
-            <!-- Tax Models Summary (303/111) -->
-            <div class="card" style="background: #1a1d21; border-top: 4px solid #4CAF50;">
-                <h3 style="margin-top:0; color:#4CAF50;">Resumen para Modelos Tributarios (AEAT)</h3>
-                <p style="font-size:0.8rem; color:#888; margin-bottom:20px;">Cálculos estimados para la presentación de
-                    los modelos 303 (IVA) y 111 (Retenciones) según facturación emitida.</p>
+        </div>
+    </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
-                    <div>
-                        <h4 style="margin-bottom:10px;">Modelo 303 - IVA (Transporte)</h4>
-                        <div id="summary-303" style="font-size:0.9rem;">
-                            <!-- Loaded via JS -->
-                        </div>
-                    </div>
-                    <div>
-                        <h4 style="margin-bottom:10px;">Modelo 111 - Retenciones (IRPF)</h4>
-                        <div id="summary-111" style="font-size:0.9rem;">
-                            <!-- Loaded via JS -->
-                        </div>
-                    </div>
-                </div>
+    <!-- Modelos Tributarios View -->
+    <div id="view-tax-models" style="display:none">
+        <div class="header">
+            <h1>Modelos Tributarios (AEAT)</h1>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-outline" id="btn-export-taxes" onclick="exportTaxData()"
+                    style="border-color:#4CAF50; color:#4CAF50;">📥 DESCARGAR DATOS</button>
+                <button class="btn btn-outline" onclick="window.print()">🖨️ IMPRIMIR MODELOS</button>
+                <button class="btn btn-primary" id="btn-email-taxes" onclick="sendTaxesByEmail()">📧 ENVIAR A
+                    GESTORÍA</button>
             </div>
         </div>
 
-        <!-- Albaranes Manuales View -->
-        <div id="view-admin-tickets" style="display:none">
-            <div class="header">
-                <h1>Creación Manual de Albaranes (Admin)</h1>
-                <button class="btn btn-primary" id="btn-admin-scan-qr">📷 ESCANEAR QR</button>
+        <div class="card"
+            style="margin-bottom:20px; display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; align-items:flex-end;">
+            <div>
+                <label>Trimestre / Periodo</label>
+                <select id="tax-period-select" onchange="initTaxModelsView()">
+                    <option value="1">1º Trimestre (Ene-Mar)</option>
+                    <option value="2">2º Trimestre (Abr-Jun)</option>
+                    <option value="3">3º Trimestre (Jul-Sep)</option>
+                    <option value="4">4º Trimestre (Oct-Dic)</option>
+                    <option value="ALL">Todo el Año</option>
+                </select>
+            </div>
+            <div>
+                <label>Año</label>
+                <input type="number" id="tax-year-input" value="2026" onchange="initTaxModelsView()">
+            </div>
+            <button class="btn btn-primary" onclick="initTaxModelsView()">🔄 ACTUALIZAR DATOS</button>
+        </div>
+
+        <div id="printable-tax-area">
+            <div class="card" style="background: #1a1d21; border-top: 4px solid #4CAF50; margin-bottom:20px;">
+                <h3 style="margin-top:0; color:#4CAF50;">Modelo 303 - IVA (Autoliquidación)</h3>
+                <p style="font-size:0.8rem; color:#888; margin-bottom:20px;">Resumen de IVA repercutido acumulado por
+                    facturación oficial.</p>
+                <div id="full-summary-303" style="font-size:0.95rem;">
+                    <!-- JS Loaded -->
+                </div>
             </div>
 
-            <div style="display:grid; grid-template-columns: 1fr 2fr; gap:20px;">
-                <div class="card">
-                    <h3 style="margin-top:0; color:var(--brand-primary)">1. Seleccionar Cliente</h3>
-                    <input type="text" id="admin-ticket-client-search" class="form-control mb-2"
-                        placeholder="Buscar cliente...">
-                    <select id="admin-ticket-client-select" class="form-control" size="10"
-                        style="height:200px;"></select>
-
-                    <h3 style="margin-top:20px; color:var(--brand-primary)">2. Empresa del Cliente</h3>
-                    <select id="admin-ticket-company-select" class="form-control"></select>
+            <div class="card" style="background: #1a1d21; border-top: 4px solid #FF9800;">
+                <h3 style="margin-top:0; color:#FF9800;">Modelo 111 - Retenciones IRPF</h3>
+                <p style="font-size:0.8rem; color:#888; margin-bottom:20px;">Resumen de retenciones practicadas a
+                    transportistas autónomos.</p>
+                <div id="full-summary-111" style="font-size:0.95rem;">
+                    <!-- JS Loaded -->
                 </div>
+            </div>
+        </div>
+    </div>
 
-                <div class="card">
-                    <h3 style="margin-top:0; color:var(--brand-primary)">3. Datos del Albarán</h3>
-                    <form id="admin-manual-ticket-form">
-                        <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; margin-bottom:10px;">
-                            <div>
-                                <label>Destinatario</label>
-                                <input type="text" id="admin-t-receiver" class="form-control" required
-                                    placeholder="Nombre">
-                            </div>
-                            <div>
-                                <label>Teléfono</label>
-                                <input type="text" id="admin-t-phone" class="form-control" placeholder="Teléfono">
-                            </div>
-                        </div>
-                        <div style="display:grid; grid-template-columns: 3fr 1fr; gap:10px; margin-bottom:10px;">
-                            <div>
-                                <label>Dirección</label>
-                                <input type="text" id="admin-t-address" class="form-control" required
-                                    placeholder="Calle...">
-                            </div>
-                            <div>
-                                <label>Nº</label>
-                                <input type="text" id="admin-t-number" class="form-control" placeholder="Nº">
-                            </div>
-                        </div>
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
-                            <div>
-                                <label>Provincia</label>
-                                <input type="text" id="admin-t-province" class="form-control" placeholder="Provincia">
-                            </div>
-                            <div>
-                                <label>Turno</label>
-                                <select id="admin-t-timeslot" class="form-control">
-                                    <option value="MAÑANA">☀️ MAÑANA</option>
-                                    <option value="TARDE">🌙 TARDE</option>
-                                </select>
-                            </div>
-                        </div>
+    <!-- Albaranes Manuales View -->
+    <div id="view-admin-tickets" style="display:none">
+        <div class="header">
+            <h1>Creación Manual de Albaranes (Admin)</h1>
+            <button class="btn btn-primary" id="btn-admin-scan-qr">📷 ESCANEAR QR</button>
+        </div>
 
-                        <h4 style="margin:15px 0 5px 0;">Bultos</h4>
-                        <div id="admin-t-packages-container"
-                            style="background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px;">
-                            <div style="display:flex; gap:10px; margin-bottom:10px;">
-                                <input type="number" id="admin-t-pkg-qty" class="form-control" value="1"
-                                    style="width:70px;">
-                                <input type="text" id="admin-t-pkg-size" class="form-control"
-                                    placeholder="Tamaño/Tipo (Bulto, Sobre...)" list="admin-suggested-sizes">
-                                <button type="button" class="btn btn-sm btn-primary" id="btn-admin-add-pkg">+</button>
-                            </div>
-                            <div id="admin-t-packages-list" style="font-size:0.8rem;"></div>
-                        </div>
+        <div style="display:grid; grid-template-columns: 1fr 2fr; gap:20px;">
+            <div class="card">
+                <h3 style="margin-top:0; color:var(--brand-primary)">1. Seleccionar Cliente</h3>
+                <input type="text" id="admin-ticket-client-search" class="form-control mb-2"
+                    placeholder="Buscar cliente...">
+                <select id="admin-ticket-client-select" class="form-control" size="10" style="height:200px;"></select>
 
-                        <datalist id="admin-suggested-sizes">
+                <h3 style="margin-top:20px; color:var(--brand-primary)">2. Empresa del Cliente</h3>
+                <select id="admin-ticket-company-select" class="form-control"></select>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-top:0; color:var(--brand-primary)">3. Datos del Albarán</h3>
+                <form id="admin-manual-ticket-form">
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; margin-bottom:10px;">
+                        <div>
+                            <label>Destinatario</label>
+                            <input type="text" id="admin-t-receiver" class="form-control" required placeholder="Nombre">
+                        </div>
+                        <div>
+                            <label>Teléfono</label>
+                            <input type="text" id="admin-t-phone" class="form-control" placeholder="Teléfono">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 3fr 1fr; gap:10px; margin-bottom:10px;">
+                        <div>
+                            <label>Dirección</label>
+                            <input type="text" id="admin-t-address" class="form-control" required
+                                placeholder="Calle...">
+                        </div>
+                        <div>
+                            <label>Nº</label>
+                            <input type="text" id="admin-t-number" class="form-control" placeholder="Nº">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                        <div>
+                            <label>Provincia</label>
+                            <input type="text" id="admin-t-province" class="form-control" placeholder="Provincia">
+                        </div>
+                        <div>
+                            <label>Turno</label>
+                            <select id="admin-t-timeslot" class="form-control">
+                                <option value="MAÑANA">☀️ MAÑANA</option>
+                                <option value="TARDE">🌙 TARDE</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h4 style="margin:15px 0 5px 0;">Bultos</h4>
+                    <div id="admin-t-packages-container"
+                        style="background:rgba(0,0,0,0.2); padding:10px; border-radius:8px; margin-bottom:15px;">
+                        <div style="display:flex; gap:10px; margin-bottom:10px;">
+                            <input type="number" id="admin-t-pkg-qty" class="form-control" value="1"
+                                style="width:70px;">
+                            <input type="text" id="admin-t-pkg-size" class="form-control"
+                                placeholder="Tamaño/Tipo (Bulto, Sobre...)" list="admin-suggested-sizes">
+                            <button type="button" class="btn btn-sm btn-primary" id="btn-admin-add-pkg">+</button>
+                        </div>
+                        <div id="admin-t-packages-list" style="font-size:0.8rem;"></div>
+                    </div>
+
+                    <datalist id="admin-suggested-sizes">
+                        <option value="Sobre">
+                        <option value="Pequeño">
+                        <option value="Mediano">
+                        <option value="Grande">
+                        <option value="Palet">
+                        <option value="Bulto">
+                    </datalist>
+
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px;">
+                        <div>
+                            <label>Portes</label>
+                            <select id="admin-t-shipping" class="form-control">
+                                <option value="Pagados">PAGADOS</option>
+                                <option value="Debidos">DEBIDOS</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Reembolso (€)</label>
+                            <input type="number" id="admin-t-cod" class="form-control" step="0.01" value="0">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width:100%; padding:15px;">💾 CREAR ALBARÁN
+                        EN NUBE</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scanner Modal for Admin -->
+    <div id="admin-scanner-modal" class="modal">
+        <div class="modal-content" style="max-width:400px;">
+            <h2 style="margin-top:0">Escanear Código QR</h2>
+            <div id="admin-qr-reader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
+            <button class="btn btn-outline" id="btn-admin-close-scanner"
+                style="width:100%; margin-top:20px;">CANCELAR</button>
+        </div>
+    </div>
+
+    <!-- Generate Invoice Modal -->
+    <div class="modal" id="modal-generate-invoice">
+        <div class="modal-content" style="max-width: 900px;">
+            <h2 style="margin-top:0">Generar Nueva Factura de Transporte</h2>
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
+                <div>
+                    <label>1. Buscar Cliente</label>
+                    <input type="text" id="inv-client-search" class="form-control mb-2" placeholder="Nombre o ID...">
+                    <select id="inv-client-select" class="form-control" style="height: 100px;" size="5"></select>
+                </div>
+                <div>
+                    <label>2. Empresa / Sender</label>
+                    <select id="inv-company-select" class="form-control">
+                        <option value="">-- Primero elije cliente --</option>
+                    </select>
+                    <div style="margin-top:10px; font-size:0.7rem; color:#888;">Si no aparece nada, el cliente no
+                        tiene empresas configuradas.</div>
+                </div>
+                <div>
+                    <label>3. Desde Fecha</label>
+                    <input type="date" id="inv-date-from">
+                </div>
+                <div>
+                    <label>4. Hasta Fecha</label>
+                    <input type="date" id="inv-date-to">
+                </div>
+            </div>
+
+            <div
+                style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 8px; margin-bottom: 20px;">
+                <table class="user-list" style="margin:0;">
+                    <thead>
+                        <tr>
+                            <th style="width:30px;"><input type="checkbox" id="inv-select-all"></th>
+                            <th>FECHA</th>
+                            <th>ALBARÁN</th>
+                            <th>DESTINATARIO</th>
+                            <th>BULTOS</th>
+                            <th>P. TARIFA</th>
+                        </tr>
+                    </thead>
+                    <tbody id="unbilled-tickets-body">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="card"
+                style="background:rgba(255,102,0,0.05); display:grid; grid-template-columns: repeat(4, 1fr); gap:15px;">
+                <div><label>SUBTOTAL</label>
+                    <div id="inv-calc-subtotal" style="font-weight:900; font-size:1.2rem;">0.00€</div>
+                </div>
+                <div><label>IVA (21%)</label>
+                    <div id="inv-calc-iva" style="font-weight:900; font-size:1.2rem; color: #4CAF50;">0.00€</div>
+                </div>
+                <div><label>IRPF (REMANENTE)</label>
+                    <div id="inv-calc-irpf" style="font-weight:900; font-size:1.2rem; color: #FF3B30;">0.00€</div>
+                </div>
+                <div><label>TOTAL FACTURA</label>
+                    <div id="inv-calc-total" style="font-weight:900; font-size:1.5rem; color: var(--brand-primary);">
+                        0.00€</div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:15px; margin-top:20px;">
+                <button class="btn btn-primary" id="btn-create-invoice-final" style="flex:2; padding:15px;">🚀
+                    GENERAR Y REGISTRAR FACTURA</button>
+                <button class="btn btn-outline" id="btn-close-inv-modal" style="flex:1;">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User QR Modal -->
+    <div id="user-qr-modal" class="modal">
+        <div class="modal-content" style="max-width:350px; text-align:center;">
+            <h2 id="qr-modal-title" style="color:var(--brand-primary); margin-bottom:10px;">Identificador QR</h2>
+            <div id="qr-container"
+                style="background:white; padding:20px; display:inline-block; border-radius:12px; margin:20px 0;">
+            </div>
+            <div id="qr-modal-id" style="font-weight:900; font-size:1.5rem; margin-bottom:20px; letter-spacing:2px;">
+            </div>
+            <p style="font-size:0.8rem; color:#888;">Escanee este código en la App para cargar automáticamente los
+                datos de este cliente.</p>
+            <div style="margin-top:20px; display:flex; gap:10px;">
+                <button class="btn btn-primary" onclick="window.printQR()" style="flex:1;">🖨️ IMPRIMIR</button>
+                <button class="btn btn-outline" onclick="document.getElementById('user-qr-modal').style.display='none'"
+                    style="flex:1;">CERRAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tariff View -->
+    <div id="view-tariffs" style="display:none">
+        <div class="header">
+            <h1>Tarifas por Artículo (Personalizadas)</h1>
+        </div>
+
+        <div class="card"
+            style="display:flex; flex-direction:column; gap:15px; margin-bottom:20px; border-left: 4px solid var(--brand-primary);">
+            <h3 style="margin-top:0; color:var(--brand-primary); font-size:1rem;">Opcional: Crear/Editar Tarifa
+                Global por ID</h3>
+            <p style="font-size:0.75rem; color:#888; margin-top:-10px;">Crea una tarifa "maestra" (ej: 101, 200) que
+                luego puedes asignar a cualquier empresa.</p>
+            <div style="display:flex; gap:20px; align-items: flex-end;">
+                <div style="flex:1">
+                    <label>ID Identificativo de Tarifa (Número o Nombre)</label>
+                    <input type="text" id="tariff-global-id" placeholder="Selecciona o escribe..."
+                        list="global-tariffs-datalist">
+                </div>
+                <button class="btn btn-primary" id="btn-load-global-tariff"
+                    style="height:38px; background:#4CAF50; border-color:#4CAF50;">GESTIONAR TARIFA GLOBAL</button>
+            </div>
+        </div>
+
+        <div class="card" style="display:flex; flex-direction:column; gap:15px;">
+            <h3 style="margin-top:0; color:var(--brand-primary); font-size:1rem;">Gestionar Tarifa Específica de
+                Cliente</h3>
+            <div style="display:flex; gap:20px; align-items: flex-end;">
+                <div style="width:100%">
+                    <label>1. Buscar / Filtrar Cliente</label>
+                    <input type="text" id="tariff-client-search" placeholder="Escribe nombre o ID para filtrar..."
+                        style="margin-bottom:10px;">
+
+                    <label>2. Seleccionar del desplegable</label>
+                    <select id="tariff-client-select" class="form-control">
+                        <option value="">Cargando clientes...</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" id="btn-load-tariff" style="height:38px;">CARGAR TARIFA
+                    CLIENTE</button>
+            </div>
+        </div>
+
+        <div id="tariff-editor-area" style="display:none">
+            <div class="card">
+                <h3 id="tariff-editor-title" style="margin-top:0; color:var(--brand-primary); font-size:1rem;">
+                    Añadir Artículo a Tarifa</h3>
+                <p style="font-size:0.75rem; color:#888; margin-top:-10px; margin-bottom:15px;">Anota aquí el nombre
+                    exacto de la "Medida/Tamaño" (Bulto, Sobre, etc.) y su precio para este cliente.</p>
+                <div style="display:grid; grid-template-columns: 2fr 1fr auto; gap:10px; align-items: flex-end;">
+                    <div>
+                        <label>Nombre del Artículo / Medida</label>
+                        <input type="text" id="new-tariff-item-name" placeholder="Ej: Bulto"
+                            list="tariff-items-suggested">
+                        <datalist id="tariff-items-suggested">
                             <option value="Sobre">
                             <option value="Pequeño">
                             <option value="Mediano">
                             <option value="Grande">
+                            <option value="Extra Grande">
                             <option value="Palet">
                             <option value="Bulto">
+                            <option value="Caja">
+                            <option value="BATERIA 45AH">
+                            <option value="BATERIA 75AH">
+                            <option value="BATERIA 100AH">
+                            <option value="LUNA DELANTERA">
+                            <option value="NEUMATICOS">
+                            <option value="GARRAFAS ADBLUE">
+                            <option value="FARO">
+                            <option value="ALETA">
+                            <option value="PARAGOLPES">
                         </datalist>
-
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:20px;">
-                            <div>
-                                <label>Portes</label>
-                                <select id="admin-t-shipping" class="form-control">
-                                    <option value="Pagados">PAGADOS</option>
-                                    <option value="Debidos">DEBIDOS</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label>Reembolso (€)</label>
-                                <input type="number" id="admin-t-cod" class="form-control" step="0.01" value="0">
-                            </div>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary" style="width:100%; padding:15px;">💾 CREAR ALBARÁN
-                            EN NUBE</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- Scanner Modal for Admin -->
-        <div id="admin-scanner-modal" class="modal">
-            <div class="modal-content" style="max-width:400px;">
-                <h2 style="margin-top:0">Escanear Código QR</h2>
-                <div id="admin-qr-reader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
-                <button class="btn btn-outline" id="btn-admin-close-scanner"
-                    style="width:100%; margin-top:20px;">CANCELAR</button>
-            </div>
-        </div>
-
-        <!-- Generate Invoice Modal -->
-        <div class="modal" id="modal-generate-invoice">
-            <div class="modal-content" style="max-width: 900px;">
-                <h2 style="margin-top:0">Generar Nueva Factura de Transporte</h2>
-                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div>
-                        <label>Buscar / Seleccionar Cliente</label>
-                        <input type="text" id="inv-client-search" class="form-control mb-2"
-                            placeholder="Filtrar por nombre o ID...">
-                        <select id="inv-client-select" class="form-control"></select>
                     </div>
                     <div>
-                        <label>Desde Fecha</label>
-                        <input type="date" id="inv-date-from">
+                        <label>Precio Unitario (€)</label>
+                        <input type="number" step="0.01" id="new-tariff-item-price" placeholder="0.00">
                     </div>
-                    <div>
-                        <label>Hasta Fecha</label>
-                        <input type="date" id="inv-date-to">
-                    </div>
+                    <button class="btn btn-primary" id="btn-add-tariff-item">➕ AÑADIR</button>
                 </div>
+            </div>
 
-                <div
-                    style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 8px; margin-bottom: 20px;">
-                    <table class="user-list" style="margin:0;">
-                        <thead>
-                            <tr>
-                                <th style="width:30px;"><input type="checkbox" id="inv-select-all"></th>
-                                <th>FECHA</th>
-                                <th>ALBARÁN</th>
-                                <th>DESTINATARIO</th>
-                                <th>BULTOS</th>
-                                <th>P. TARIFA</th>
-                            </tr>
-                        </thead>
-                        <tbody id="unbilled-tickets-body">
-                            <!-- Loaded via JS -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="card"
-                    style="background:rgba(255,102,0,0.05); display:grid; grid-template-columns: repeat(4, 1fr); gap:15px;">
-                    <div><label>SUBTOTAL</label>
-                        <div id="inv-calc-subtotal" style="font-weight:900; font-size:1.2rem;">0.00€</div>
-                    </div>
-                    <div><label>IVA (21%)</label>
-                        <div id="inv-calc-iva" style="font-weight:900; font-size:1.2rem; color: #4CAF50;">0.00€</div>
-                    </div>
-                    <div><label>IRPF (REMANENTE)</label>
-                        <div id="inv-calc-irpf" style="font-weight:900; font-size:1.2rem; color: #FF3B30;">0.00€</div>
-                    </div>
-                    <div><label>TOTAL FACTURA</label>
-                        <div id="inv-calc-total"
-                            style="font-weight:900; font-size:1.5rem; color: var(--brand-primary);">0.00€</div>
-                    </div>
-                </div>
-
-                <div style="display:flex; gap:15px; margin-top:20px;">
-                    <button class="btn btn-primary" id="btn-create-invoice-final" style="flex:2; padding:15px;">🚀
-                        GENERAR Y REGISTRAR FACTURA</button>
-                    <button class="btn btn-outline" id="btn-close-inv-modal" style="flex:1;">CANCELAR</button>
-                </div>
+            <div class="card">
+                <table class="user-list">
+                    <thead>
+                        <tr>
+                            <th>Artículo / Medida</th>
+                            <th>Precio Unitario</th>
+                            <th style="text-align:right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tariff-items-body"></tbody>
+                </table>
             </div>
         </div>
-
-        <!-- User QR Modal -->
-        <div id="user-qr-modal" class="modal">
-            <div class="modal-content" style="max-width:350px; text-align:center;">
-                <h2 id="qr-modal-title" style="color:var(--brand-primary); margin-bottom:10px;">Identificador QR</h2>
-                <div id="qr-container"
-                    style="background:white; padding:20px; display:inline-block; border-radius:12px; margin:20px 0;">
-                </div>
-                <div id="qr-modal-id"
-                    style="font-weight:900; font-size:1.5rem; margin-bottom:20px; letter-spacing:2px;"></div>
-                <p style="font-size:0.8rem; color:#888;">Escanee este código en la App para cargar automáticamente los
-                    datos de este cliente.</p>
-                <div style="margin-top:20px; display:flex; gap:10px;">
-                    <button class="btn btn-primary" onclick="window.printQR()" style="flex:1;">🖨️ IMPRIMIR</button>
-                    <button class="btn btn-outline"
-                        onclick="document.getElementById('user-qr-modal').style.display='none'"
-                        style="flex:1;">CERRAR</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tariff View -->
-        <div id="view-tariffs" style="display:none">
-            <div class="header">
-                <h1>Tarifas por Artículo (Personalizadas)</h1>
-            </div>
-
-            <div class="card"
-                style="display:flex; flex-direction:column; gap:15px; margin-bottom:20px; border-left: 4px solid var(--brand-primary);">
-                <h3 style="margin-top:0; color:var(--brand-primary); font-size:1rem;">Opcional: Crear/Editar Tarifa
-                    Global por ID</h3>
-                <p style="font-size:0.75rem; color:#888; margin-top:-10px;">Crea una tarifa "maestra" (ej: 101, 200) que
-                    luego puedes asignar a cualquier empresa.</p>
-                <div style="display:flex; gap:20px; align-items: flex-end;">
-                    <div style="flex:1">
-                        <label>ID Identificativo de Tarifa (Número o Nombre)</label>
-                        <input type="text" id="tariff-global-id" placeholder="Selecciona o escribe..."
-                            list="global-tariffs-datalist">
-                    </div>
-                    <button class="btn btn-primary" id="btn-load-global-tariff"
-                        style="height:38px; background:#4CAF50; border-color:#4CAF50;">GESTIONAR TARIFA GLOBAL</button>
-                </div>
-            </div>
-
-            <div class="card" style="display:flex; flex-direction:column; gap:15px;">
-                <h3 style="margin-top:0; color:var(--brand-primary); font-size:1rem;">Gestionar Tarifa Específica de
-                    Cliente</h3>
-                <div style="display:flex; gap:20px; align-items: flex-end;">
-                    <div style="width:100%">
-                        <label>1. Buscar / Filtrar Cliente</label>
-                        <input type="text" id="tariff-client-search" placeholder="Escribe nombre o ID para filtrar..."
-                            style="margin-bottom:10px;">
-
-                        <label>2. Seleccionar del desplegable</label>
-                        <select id="tariff-client-select" class="form-control">
-                            <option value="">Cargando clientes...</option>
-                        </select>
-                    </div>
-                    <button class="btn btn-primary" id="btn-load-tariff" style="height:38px;">CARGAR TARIFA
-                        CLIENTE</button>
-                </div>
-            </div>
-
-            <div id="tariff-editor-area" style="display:none">
-                <div class="card">
-                    <h3 id="tariff-editor-title" style="margin-top:0; color:var(--brand-primary); font-size:1rem;">
-                        Añadir Artículo a Tarifa</h3>
-                    <p style="font-size:0.75rem; color:#888; margin-top:-10px; margin-bottom:15px;">Anota aquí el nombre
-                        exacto de la "Medida/Tamaño" (Bulto, Sobre, etc.) y su precio para este cliente.</p>
-                    <div style="display:grid; grid-template-columns: 2fr 1fr auto; gap:10px; align-items: flex-end;">
-                        <div>
-                            <label>Nombre del Artículo / Medida</label>
-                            <input type="text" id="new-tariff-item-name" placeholder="Ej: Bulto"
-                                list="tariff-items-suggested">
-                            <datalist id="tariff-items-suggested">
-                                <option value="Sobre">
-                                <option value="Pequeño">
-                                <option value="Mediano">
-                                <option value="Grande">
-                                <option value="Extra Grande">
-                                <option value="Palet">
-                                <option value="Bulto">
-                                <option value="Caja">
-                                <option value="BATERIA 45AH">
-                                <option value="BATERIA 75AH">
-                                <option value="BATERIA 100AH">
-                                <option value="LUNA DELANTERA">
-                                <option value="NEUMATICOS">
-                                <option value="GARRAFAS ADBLUE">
-                                <option value="FARO">
-                                <option value="ALETA">
-                                <option value="PARAGOLPES">
-                            </datalist>
-                        </div>
-                        <div>
-                            <label>Precio Unitario (€)</label>
-                            <input type="number" step="0.01" id="new-tariff-item-price" placeholder="0.00">
-                        </div>
-                        <button class="btn btn-primary" id="btn-add-tariff-item">➕ AÑADIR</button>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <table class="user-list">
-                        <thead>
-                            <tr>
-                                <th>Artículo / Medida</th>
-                                <th>Precio Unitario</th>
-                                <th style="text-align:right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tariff-items-body"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
+    </div>
     </div>
 
     <!-- Add Phone Modal -->
@@ -996,6 +1039,7 @@
             viewConfig.style.display = viewId === 'config' ? 'block' : 'none';
             viewBilling.style.display = viewId === 'billing' ? 'block' : 'none';
             viewAdminTickets.style.display = viewId === 'admin-tickets' ? 'block' : 'none';
+            document.getElementById('view-tax-models').style.display = viewId === 'tax-models' ? 'block' : 'none';
 
             navUsers.classList.toggle('active', viewId === 'users');
             navReports.classList.toggle('active', viewId === 'reports');
@@ -1004,6 +1048,7 @@
             navConfig.classList.toggle('active', viewId === 'config');
             navBilling.classList.toggle('active', viewId === 'billing');
             navAdminTickets.classList.toggle('active', viewId === 'admin-tickets');
+            document.getElementById('nav-tax-models').classList.toggle('active', viewId === 'tax-models');
 
             if (viewId === 'config') loadConfigInfo();
             if (viewId === 'phones') loadPhones();
@@ -1011,6 +1056,7 @@
             if (viewId === 'tariffs') loadTariffClients();
             if (viewId === 'billing') initBillingView();
             if (viewId === 'admin-tickets') initAdminTicketsView();
+            if (viewId === 'tax-models') initTaxModelsView();
         };
 
         navUsers.onclick = () => showView('users');
@@ -1019,7 +1065,51 @@
         navPhones.onclick = () => showView('phones');
         navConfig.onclick = () => showView('config');
         navBilling.onclick = () => showView('billing');
+        navTariffs.onclick = () => showView('tariffs');
+        document.getElementById('nav-tax-models').onclick = () => showView('tax-models');
         navAdminTickets.onclick = () => showView('admin-tickets');
+
+        // Función para calcular el siguiente ID de usuario disponible
+        function getNextUserId() {
+            let max = 100; // Empezamos en 101 como base
+            Object.values(userMap).forEach(u => {
+                const id = parseInt(u.idNum);
+                if (!isNaN(id) && id > max) max = id;
+            });
+            return max + 1;
+        }
+
+        // Función para corregir correlación de IDs existentes (Re-indexación)
+        window.reindexUserIds = async () => {
+            if (!confirm("Esto reasignará IDs correlativos (101, 102...) a TODOS los clientes según su fecha de creación. ¿Continuar?")) return;
+            showLoading();
+            try {
+                const snap = await db.collection('users').get();
+                const users = [];
+                snap.forEach(doc => users.push({ id: doc.id, ...doc.data() }));
+
+                // Ordenar por fecha de creación para mantener lógica histórica
+                users.sort((a, b) => {
+                    const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                    const db_ = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                    return da - db_;
+                });
+
+                const batch = db.batch();
+                users.forEach((u, index) => {
+                    const newId = (101 + index).toString();
+                    batch.update(db.collection('users').doc(u.id), { idNum: newId });
+                });
+
+                await batch.commit();
+                alert("IDs re-indexados correctamente.");
+                loadUsers();
+            } catch (e) {
+                alert("Error en re-indexación: " + e.message);
+            } finally {
+                hideLoading();
+            }
+        };
 
         async function loadConfigInfo() {
             if (!auth.currentUser) return;
@@ -1045,6 +1135,76 @@
                 }, { merge: true });
                 alert("Configuración guardada.");
             } catch (e) { alert("Error al guardar."); }
+        };
+
+        // FUNCIÓN DE RESET TOTAL DE DATOS OPERATIVOS
+        window.wipeAllOperationalData = async () => {
+            const p1 = confirm("⚠️ ATENCIÓN: Vas a borrar TODOS los albaranes y facturas de la base de datos.\n\n¿Estás completamente seguro?");
+            if (!p1) return;
+
+            const p2 = confirm("ESTA ACCIÓN NO SE PUEDE DESHACER.\nLos contadores de facturas y albaranes volverán a empezar desde el número 1.\n\n¿Deseas continuar?");
+            if (!p2) return;
+
+            const code = prompt("Escribe 'BORRAR TODO' para confirmar definitivamente:");
+            if (code !== 'BORRAR TODO') {
+                alert("Confirmación incorrecta. Acción cancelada.");
+                return;
+            }
+
+            showLoading();
+            try {
+                console.log("[Maintenance] Iniciando borrado masivo...");
+
+                // 1. Borrar todos los albaranes (Tickets)
+                const ticketsSnap = await db.collectionGroup('tickets').get();
+                console.log(`[Maintenance] Eliminando ${ticketsSnap.size} albaranes...`);
+                let batch = db.batch();
+                let count = 0;
+
+                for (const doc of ticketsSnap.docs) {
+                    batch.delete(doc.ref);
+                    count++;
+                    if (count >= 400) { // Límite de batch de Firebase (500)
+                        await batch.commit();
+                        batch = db.batch();
+                        count = 0;
+                    }
+                }
+                await batch.commit();
+
+                // 2. Borrar todas las facturas
+                const invoicesSnap = await db.collection('invoices').get();
+                console.log(`[Maintenance] Eliminando ${invoicesSnap.size} facturas...`);
+                batch = db.batch();
+                count = 0;
+                for (const doc of invoicesSnap.docs) {
+                    batch.delete(doc.ref);
+                    count++;
+                    if (count >= 400) {
+                        await batch.commit();
+                        batch = db.batch();
+                        count = 0;
+                    }
+                }
+                await batch.commit();
+
+                // 3. Reiniciar contadores (nextId)
+                const nextIdSnap = await db.collectionGroup('nextId').get();
+                console.log(`[Maintenance] Reiniciando contadores de ID...`);
+                batch = db.batch();
+                for (const doc of nextIdSnap.docs) {
+                    batch.delete(doc.ref);
+                }
+                await batch.commit();
+
+                alert("✅ ÉXITO: El sistema ha sido reiniciado. Todos los datos operativos han sido eliminados y los contadores han vuelto a cero.");
+                window.location.reload();
+            } catch (e) {
+                console.error(e);
+                alert("Error durante el borrado: " + e.message);
+            } finally {
+                hideLoading();
+            }
         };
 
         async function loadUsers() {
@@ -1083,10 +1243,10 @@
 
         addUserForm.onsubmit = async (e) => {
             e.preventDefault();
-            const idNum = document.getElementById('new-user-id-num').value;
-            const name = document.getElementById('new-user-name').value;
-            const email = document.getElementById('new-user-email').value;
-            const password = document.getElementById('new-user-password').value;
+            const idNum = document.getElementById('new-user-id-num').value.trim();
+            const name = document.getElementById('new-user-name').value.trim();
+            const email = document.getElementById('new-user-email').value.trim().toLowerCase();
+            const password = document.getElementById('new-user-password').value.trim();
             const tariffId = document.getElementById('new-user-tariff-id').value.trim();
             const iban = document.getElementById('new-user-iban').value.trim();
             const sepaRef = document.getElementById('new-user-sepa-ref').value.trim();
@@ -1095,20 +1255,65 @@
             const senderPhone = document.getElementById('new-user-sender-phone').value.trim();
             const userId = document.getElementById('edit-user-uid').value;
 
+            if (!email || !idNum) { alert("Email e ID son obligatorios."); return; }
+
             try {
+                showLoading();
+
+                // 1. VERIFICACIÓN DE DUPLICADOS (Seguridad e Independencia)
+                if (!userId) {
+                    // Si es nuevo cliente, probamos si el email ya existe
+                    const docEmail = await db.collection('users').doc(email).get();
+                    if (docEmail.exists) {
+                        alert(`❌ ERROR: El email "${email}" ya está registrado para otro cliente.`);
+                        hideLoading();
+                        return;
+                    }
+
+                    // Probamos si el ID de cliente ya existe en otro documento
+                    const snapId = await db.collection('users').where('idNum', '==', idNum).get();
+                    if (!snapId.empty) {
+                        const existing = snapId.docs[0].data();
+                        alert(`⚠️ AVISO: El ID #${idNum} ya pertenece a "${existing.name}".\nPor favor, usa un ID único.`);
+                        hideLoading();
+                        return;
+                    }
+                }
+
+                // 2. GUARDAR DATOS DEL USUARIO
                 const updateData = { idNum, name, email, password, tariffId, iban, sepaRef, sepaDate, senderAddress, senderPhone };
+
                 if (userId) {
+                    // Actualización
                     await db.collection('users').doc(userId).update(updateData);
                 } else {
+                    // Creación de nuevo registro maestro
                     await db.collection('users').doc(email).set({
                         ...updateData,
                         role: 'client',
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
+
+                    // 3. INICIALIZACIÓN DE BASE DE DATOS INDIVIDUAL (Usuario = Empresa)
+                    // Creamos la carpeta de empresa por defecto (comp_main para alineación con App móvil)
+                    await db.collection('users').doc(email).collection('companies').doc('comp_main').set({
+                        name: name,
+                        address: senderAddress || 'Dirección no definida',
+                        phone: senderPhone || '',
+                        prefix: idNum.substring(0, 3).toUpperCase(),
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
                 }
+
+                alert(userId ? "Cliente actualizado." : "Cliente y base de datos creados correctamente.");
                 addUserModal.style.display = 'none';
                 loadUsers();
-            } catch (err) { alert('Error al guardar.'); }
+            } catch (err) {
+                console.error(err);
+                alert('Error al procesar el usuario: ' + err.message);
+            } finally {
+                hideLoading();
+            }
         };
 
         window.openEditUserModal = (data, uid) => {
@@ -1221,35 +1426,55 @@
             reportsData = [];
 
             try {
-                // Ensure tariffs are loaded
                 if (Object.keys(tariffsCache).length === 0) {
                     const tariffSnap = await db.collectionGroup('tariffs').get();
                     tariffSnap.forEach(doc => { tariffsCache[doc.id] = doc.data().items || {}; });
                 }
 
                 const snap = await db.collectionGroup('tickets').get();
+
+                // Helper to find user data by any ID (email or UID)
+                const findUserData = (id) => {
+                    if (userMap[id]) return userMap[id];
+                    // Search by internal uid field
+                    const found = Object.values(userMap).find(u => u.uid === id);
+                    if (found) return found;
+                    return null;
+                };
+
                 snap.forEach(doc => {
                     const t = doc.data();
-                    const d = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
-                    // Path: users/{uid}/companies/{compId}/tickets/{id}
-                    const compId = doc.ref.parent.parent.id;
-                    const uid = doc.ref.parent.parent.parent.parent.id;
-                    const uData = userMap[uid] || {};
-                    const cid = uData.idNum || '---';
+                    const d = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : null);
+
+                    // Si no hay fecha, solo lo filtramos si el usuario puso un rango
+                    let dIso = "";
+                    if (d && !isNaN(d.getTime())) {
+                        dIso = d.toISOString().split('T')[0];
+                        if (dFrom && dIso < dFrom) return;
+                        if (dTo && dIso > dTo) return;
+                    } else if (dFrom || dTo) {
+                        return; // Omitimos si no tiene fecha y hay filtro de fecha
+                    }
+
+                    // Identificación del propietario
+                    const path = doc.ref.path;
+                    const parts = path.split('/');
+                    const pathUid = parts[1]; // users/{uid}/...
+
+                    const uData = findUserData(pathUid) || findUserData(t.uid) || {};
+                    const cid = uData.idNum || t.clientIdNum || '---';
                     const tId = uData.tariffId;
 
-                    const dIso = d.toISOString().split('T')[0];
-
-                    if (dFrom && dIso < dFrom) return; if (dTo && dIso > dTo) return;
                     if (fCID && cid !== fCID) return;
                     if (fProv && (!t.province || !t.province.toLowerCase().includes(fProv))) return;
 
-                    // Calculate Price based on Tariff (Global ID first, then Personal UID)
+                    // Tarifa
                     let activeTariff = null;
+                    const lookupId = uData.uid || pathUid || t.uid;
                     if (tId && tariffsCache["GLOBAL_" + tId]) {
                         activeTariff = tariffsCache["GLOBAL_" + tId];
-                    } else if (tariffsCache[uid]) {
-                        activeTariff = tariffsCache[uid];
+                    } else if (tariffsCache[lookupId]) {
+                        activeTariff = tariffsCache[lookupId];
                     }
 
                     let companyPrice = 0;
@@ -1260,7 +1485,7 @@
                         });
                     }
 
-                    reportsData.push({ ...t, uid, compId, docId: doc.id, clientIdNum: cid, companyPrice });
+                    reportsData.push({ ...t, uid: lookupId, compId: parts[3] || 'default', docId: doc.id, clientIdNum: cid, companyPrice });
                 });
 
                 if (reportsData.length === 0) {
@@ -1268,29 +1493,36 @@
                 } else {
                     status.style.display = 'none';
                     table.style.display = 'table';
-                    reportsData.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).forEach(t => {
+                    reportsData.sort((a, b) => {
+                        const da = (a.createdAt && a.createdAt.toDate) ? a.createdAt.toDate() : new Date(a.createdAt);
+                        const db_ = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate() : new Date(b.createdAt);
+                        return db_ - da;
+                    }).forEach(t => {
                         const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
                         const row = document.createElement('tr');
                         row.innerHTML = `
-    <td style="font-weight:900; color:var(--brand-primary); padding-left:10px;">#${t.clientIdNum}</td>
-    <td>${t.id}</td>
-    <td>${date.toLocaleDateString()}</td>
-    <td style="text-transform:uppercase; font-size:0.85rem;">${t.receiver}</td>
-    <td>${t.province || ''}</td>
-    <td>${t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1}</td>
-    <td>${t.shippingType}</td>
-    <td style="font-weight:bold; color:#FF6600;">${t.cod ? t.cod + '€' : '-'}</td>
-    <td>
-        <div style="display:flex; gap:5px;">
-            <button class="btn btn-outline btn-sm" onclick="printTicketFromAdmin('${t.uid}', '${t.compId}', '${t.docId}')" title="Imprimir">🖨️</button>
-            <button class="btn btn-secondary btn-sm" onclick="sendWhatsAppTicket('${t.uid}', '${t.compId}', '${t.docId}')" title="WhatsApp">💬</button>
-        </div>
-    </td>
-    `;
+                            <td style="font-weight:900; color:var(--brand-primary); padding-left:10px;">#${t.clientIdNum}</td>
+                            <td>${t.id}</td>
+                            <td>${isNaN(date.getTime()) ? '---' : date.toLocaleDateString()}</td>
+                            <td style="text-transform:uppercase; font-size:0.85rem;">${t.receiver}</td>
+                            <td>${t.province || ''}</td>
+                            <td>${t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1}</td>
+                            <td>${t.shippingType}</td>
+                            <td style="font-weight:bold; color:#FF6600;">${t.cod ? t.cod + '€' : '-'}</td>
+                            <td>
+                                <div style="display:flex; gap:5px;">
+                                    <button class="btn btn-outline btn-sm" onclick="printTicketFromAdmin('${t.uid}', '${t.compId}', '${t.docId}')" title="Imprimir">🖨️</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="sendWhatsAppTicket('${t.uid}', '${t.compId}', '${t.docId}')" title="WhatsApp">💬</button>
+                                </div>
+                            </td>
+                        `;
                         tbody.appendChild(row);
                     });
                 }
-            } catch (e) { console.error(e); status.textContent = "Error al cargar datos."; }
+            } catch (e) {
+                console.error(e);
+                status.textContent = "Error al cargar datos: " + e.message;
+            }
         };
 
         document.getElementById('btn-export-reports').onclick = () => {
@@ -1383,6 +1615,8 @@
             document.getElementById('modal-user-title').textContent = "Añadir Nuevo Cliente";
             document.getElementById('edit-user-uid').value = "";
             addUserForm.reset();
+            // Auto-generar el siguiente ID lógico
+            document.getElementById('new-user-id-num').value = getNextUserId();
             addUserModal.style.display = 'flex';
         };
         btnCloseModal.onclick = () => addUserModal.style.display = 'none';
@@ -1579,9 +1813,15 @@
             document.getElementById('modal-generate-invoice').style.display = 'flex';
             document.getElementById('inv-client-search').value = '';
             populateInvoiceClientSelect();
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('inv-date-from').value = today;
-            document.getElementById('inv-date-to').value = today;
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+
+            const fromStr = thirtyDaysAgo.toISOString().split('T')[0];
+            const toStr = today.toISOString().split('T')[0];
+
+            document.getElementById('inv-date-from').value = fromStr;
+            document.getElementById('inv-date-to').value = toStr;
         };
 
         document.getElementById('btn-close-inv-modal').onclick = () => {
@@ -1602,9 +1842,88 @@
             });
         }
 
-        document.getElementById('inv-client-select').onchange = refreshUnbilledList;
+        document.getElementById('inv-client-select').onchange = (e) => loadInvoiceCompanies(e.target.value);
+        document.getElementById('inv-company-select').onchange = refreshUnbilledList;
         document.getElementById('inv-date-from').onchange = refreshUnbilledList;
         document.getElementById('inv-date-to').onchange = refreshUnbilledList;
+
+        async function loadInvoiceCompanies(uid) {
+            const select = document.getElementById('inv-company-select');
+            const tbody = document.getElementById('unbilled-tickets-body');
+
+            if (!uid) {
+                select.innerHTML = '<option value="">-- Primero elije cliente --</option>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona un cliente para comenzar.</td></tr>';
+                return;
+            }
+
+            const uData = userMap[uid] || {};
+            // El doc ID puede ser el email o el UID real. Intentamos ambos.
+            const idsToTry = [uid];
+            if (uData.uid && uData.uid !== uid) idsToTry.push(uData.uid);
+
+            select.innerHTML = '<option value="">Buscando empresas...</option>';
+            console.log(`[Billing] Buscando empresas para IDs: ${idsToTry.join(', ')}`);
+
+            try {
+                let snap = null;
+                let workingUid = uid;
+
+                for (const id of idsToTry) {
+                    const s = await db.collection('users').doc(id).collection('companies').get();
+                    if (!s.empty) {
+                        snap = s;
+                        workingUid = id;
+                        break;
+                    }
+                }
+
+                // Si ninguno funcionó, se queda con el último intento (que será empty)
+                if (!snap) {
+                    // Intento desesperado: buscar por email en el campo email por si acaso
+                    const emailSnap = await db.collection('users').where('email', '==', uid).get();
+                    if (!emailSnap.empty) {
+                        const actualUid = emailSnap.docs[0].id;
+                        const s = await db.collection('users').doc(actualUid).collection('companies').get();
+                        if (!s.empty) {
+                            snap = s;
+                            workingUid = actualUid;
+                        }
+                    }
+                }
+
+                if (!snap || snap.empty) {
+                    console.warn("[Billing] No se encontraron empresas para este cliente. Añadiendo opción virtual de Empresa Principal.");
+                    select.innerHTML = '<option value="comp_main">🏠 Empresa Principal (Automática)</option>';
+                    select.value = "comp_main";
+                    refreshUnbilledList();
+                } else {
+                    console.log(`[Billing] Éxito. Usando UID: ${workingUid}. Encontradas: ${snap.size}`);
+                    // Guardamos el workingUid en el select para que refreshUnbilledList lo use
+                    select.dataset.workingUid = workingUid;
+
+                    let html = '<option value="ALL">-- TODAS LAS EMPRESAS --</option>';
+                    let firstId = "";
+                    snap.forEach(doc => {
+                        html += `<option value="${doc.id}">${doc.data().name || 'Empresa sin nombre'}</option>`;
+                        if (!firstId) firstId = doc.id;
+                    });
+                    select.innerHTML = html;
+
+                    if (snap.size === 1) {
+                        select.value = firstId;
+                    } else {
+                        select.value = "ALL";
+                    }
+
+                    refreshUnbilledList();
+                }
+            } catch (e) {
+                console.error("Error crítico cargando empresas:", e);
+                select.innerHTML = '<option value="">Error de conexión</option>';
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#FF3B30;">Error al acceder a la nube: ${e.message}</td></tr>`;
+            }
+        }
 
         // Buscador de clientes en el modal de factura
         document.getElementById('inv-client-search').oninput = (e) => {
@@ -1619,76 +1938,101 @@
         };
 
         async function refreshUnbilledList() {
-            const uid = document.getElementById('inv-client-select').value;
+            const selectComp = document.getElementById('inv-company-select');
+            const selectedUid = document.getElementById('inv-client-select').value;
+            const uidInSelect = selectComp.dataset.workingUid; // El UID real detectado al cargar empresas
+            const compId = selectComp.value;
             const from = document.getElementById('inv-date-from').value;
             const to = document.getElementById('inv-date-to').value;
             const tbody = document.getElementById('unbilled-tickets-body');
 
-            if (!uid) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona un cliente.</td></tr>'; return; }
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Escaneando albaranes en la nube...</td></tr>';
+            if (!selectedUid) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Selecciona un cliente para comenzar.</td></tr>';
+                return;
+            }
+            // En modo inteligente, si no hay empresa seleccionada pero hay client, buscamos igual
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Sincronizando con los listados globales...</td></tr>';
 
             try {
-                // Pre-load tariffs if empty
                 if (Object.keys(tariffsCache).length === 0) {
-                    try {
-                        const tSnap = await db.collectionGroup('tariffs').get();
-                        tSnap.forEach(d => { tariffsCache[d.id] = d.data().items || {}; });
-                    } catch (te) { console.warn("Error cargando tarifas en caché:", te); }
+                    const tSnap = await db.collectionGroup('tariffs').get();
+                    tSnap.forEach(d => { tariffsCache[d.id] = d.data().items || {}; });
                 }
 
-                const uData = userMap[uid] || {};
-                const targetIdNum = String(uData.idNum || '').trim().toLowerCase();
+                const uData = userMap[selectedUid] || {};
+                const targetIdNum = String(uData.idNum || '').replace(/^0+/, '').trim().toLowerCase();
+                const targetName = String(uData.name || '').trim().toLowerCase();
+                const targetEmail = String(uData.email || '').trim().toLowerCase();
+                const targetUid = uData.uid || uidInSelect || selectedUid;
 
-                // Optimizamos: Si el usuario tiene muchos tickets, collectionGroup es lo mejor.
+                // ESCANEO GLOBAL (Igual que en Informes para que coincidan 100%)
                 const snap = await db.collectionGroup('tickets').get();
+
                 let tickets = [];
-                let matchCount = 0;
                 let filteredByDate = 0;
                 let filteredByBilled = 0;
+                let matchCount = 0;
 
                 snap.forEach(doc => {
                     const t = doc.data();
-                    if (t.invoiceId) { filteredByBilled++; return; }
 
-                    // EXTRAER IDENTIDAD DEL PROPIETARIO
-                    // 1. De la ruta: users/{uid}/...
-                    const pathParts = doc.ref.path.split('/');
-                    const pathUid = (pathParts[0] === 'users' && pathParts.length >= 2) ? pathParts[1] : null;
+                    // 1. EXTRAER IDENTIDAD Y COMPAÑÍA DEL ALBARÁN (Análisis de Ruta)
+                    const path = doc.ref.path;
+                    const parts = path.split('/');
+                    const pathUid = parts[1]; // users/{uid}/...
 
-                    // 2. De los campos del documento
+                    let pathCompId = 'comp_main'; // Default
+                    if (parts.length >= 6 && parts[2] === 'companies') {
+                        pathCompId = parts[3]; // users/{uid}/companies/{compId}/tickets/...
+                    }
+
                     const docUid = t.uid;
-                    const docClientIdNum = String(t.clientIdNum || '').trim().toLowerCase();
+                    const docClientIdNum = String(t.clientIdNum || '').replace(/^0+/, '').trim().toLowerCase();
+                    const docSender = String(t.sender || '').trim().toLowerCase();
 
-                    // VALIDAR SI PERTENECE AL CLIENTE SELECCIONADO
-                    const isOwner = (pathUid === uid) ||
-                        (docUid === uid) ||
-                        (targetIdNum && docClientIdNum === targetIdNum);
+                    // VALIDACIÓN MULTI-FACTOR (Identidad del propietario)
+                    const isOwner = (pathUid === targetUid) ||
+                        (docUid === targetUid) ||
+                        (pathUid === targetEmail) ||
+                        (targetIdNum && docClientIdNum === targetIdNum) ||
+                        (targetName && docSender.includes(targetName)) ||
+                        (t.senderAddress && t.senderAddress.toLowerCase().includes(uData.senderAddress?.toLowerCase() || '___NON_MATCHING___'));
 
                     if (!isOwner) return;
                     matchCount++;
 
-                    // Filtro de fecha
-                    const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
-                    if (isNaN(date.getTime())) {
-                        // Si la fecha es inválida, la ignoramos o la dejamos pasar si no hay filtro
-                        if (from || to) { filteredByDate++; return; }
-                    } else {
-                        const iso = date.toISOString().split('T')[0];
-                        if ((from && iso < from) || (to && iso > to)) {
-                            filteredByDate++;
-                            return;
+                    // 2. FILTRAR POR ESTADO DE FACTURACIÓN
+                    if (t.invoiceId && String(t.invoiceId).trim() !== "" && String(t.invoiceId).toLowerCase() !== "null") {
+                        filteredByBilled++;
+                        return;
+                    }
+
+                    // 3. FILTRAR POR EMPRESA (Lógica inteligente para 'Empresa Principal')
+                    const isMainCompSelected = (compId === "comp_main" || compId === "default" || !compId);
+                    const isMainPathComp = (pathCompId === "comp_main" || pathCompId === "default" || pathCompId === "tickets");
+
+                    if (compId && compId !== "ALL") {
+                        if (isMainCompSelected) {
+                            // Si seleccionamos la principal, aceptamos cualquier ID de "Principal"
+                            if (!isMainPathComp) return;
+                        } else {
+                            // Si seleccionamos una específica secundaría, debe coincidir exactamente
+                            if (pathCompId !== compId) return;
                         }
                     }
 
-                    // Extraer IDs auxiliares para el proceso de facturación final
-                    let compId = 'default';
-                    if (pathParts.length >= 4 && pathParts[2] === 'companies') compId = pathParts[3];
+                    // 4. FILTRAR POR FECHA
+                    const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : null);
+                    if (date && !isNaN(date.getTime())) {
+                        const iso = date.toISOString().split('T')[0];
+                        if ((from && iso < from) || (to && iso > to)) { filteredByDate++; return; }
+                    } else if (from || to) { filteredByDate++; return; }
 
                     tickets.push({
                         ...t,
                         docId: doc.id,
-                        compId: compId,
-                        uid: pathUid || docUid || uid
+                        compId: pathCompId,
+                        uid: pathUid || targetUid
                     });
                 });
 
@@ -1696,20 +2040,25 @@
 
                 if (tickets.length === 0) {
                     let msg = "No hay albaranes pendientes";
-                    if (matchCount > 0) msg += ` (se encontraron ${matchCount} pero ${filteredByDate} no coinciden con las fechas)`;
-                    else if (filteredByBilled > 0) msg += ` (se encontraron albaranes pero ya están todos facturados)`;
+                    let detail = "";
+                    if (matchCount === 0) {
+                        detail = `Se han analizado todos los albaranes de la nube, pero ninguno parece pertenecer a este cliente (${uData.name}).`;
+                    } else {
+                        detail = `${filteredByBilled} ya están facturados, ${filteredByDate} fuera de fecha o empresa seleccionada diferente.`;
+                    }
 
-                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#888;">${msg}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding: 30px;">
+                        <div style="font-weight:600; color:var(--text-dim);">${msg}</div>
+                        <div style="margin-top:10px; font-size:0.8rem; color:#888;">${detail}</div>
+                    </td></tr>`;
                 } else {
                     renderUnbilledTable();
                     updateInvoiceCalculations();
                 }
-
-                // Reset select all checkbox
                 document.getElementById('inv-select-all').checked = true;
             } catch (e) {
-                console.error("Error en refreshUnbilledList:", e);
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#FF3B30;">Error crítico: ${e.message}</td></tr>`;
+                console.error("Error en Billing Sync:", e);
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:red;">Error de sincronización: ${e.message}</td></tr>`;
             }
         }
         function renderUnbilledTable() {
@@ -2316,6 +2665,110 @@
             finally { hideLoading(); }
         };
 
+        // --- TAX MODELS LOGIC ---
+        let currentTaxData = { iva: 0, base: 0, irpf: 0, total: 0, count: 0 };
+
+        async function initTaxModelsView() {
+            const period = document.getElementById('tax-period-select').value;
+            const year = parseInt(document.getElementById('tax-year-input').value);
+
+            showLoading();
+            try {
+                const snap = await db.collection('invoices').get();
+                let filteredInvoices = [];
+
+                snap.forEach(doc => {
+                    const inv = doc.data();
+                    const d = (inv.createdAt && inv.createdAt.toDate) ? inv.createdAt.toDate() : new Date(inv.createdAt);
+                    if (d.getFullYear() !== year) return;
+
+                    if (period !== "ALL") {
+                        const month = d.getMonth() + 1; // 1-12
+                        const trimesters = { "1": [1, 2, 3], "2": [4, 5, 6], "3": [7, 8, 9], "4": [10, 11, 12] };
+                        if (!trimesters[period].includes(month)) return;
+                    }
+                    filteredInvoices.push(inv);
+                });
+
+                let totalBase = 0;
+                let totalIva = 0;
+                let totalIrpf = 0;
+                let totalNum = filteredInvoices.length;
+
+                filteredInvoices.forEach(inv => {
+                    totalBase += (inv.subtotal || 0);
+                    totalIva += (inv.iva || 0);
+                    totalIrpf += (inv.irpf || 0);
+                });
+
+                currentTaxData = { base: totalBase, iva: totalIva, irpf: totalIrpf, total: totalBase + totalIva - totalIrpf, count: totalNum };
+
+                // Update UI
+                document.getElementById('full-summary-303').innerHTML = `
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>Base Imponible Gravada (Ingresos):</span>
+                        <span style="text-align:right; font-weight:bold;">${totalBase.toFixed(2)}€</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>IVA Repercutido (21%):</span>
+                        <span style="text-align:right; font-weight:bold; color:#4CAF50;">+ ${totalIva.toFixed(2)}€</span>
+                    </div>
+                    <div style="margin-top:15px; text-align:right; font-size:1.1rem; color:#4CAF50;">
+                        IVA A LIQUIDAR: <strong>${totalIva.toFixed(2)}€</strong>
+                    </div>
+                `;
+
+                document.getElementById('full-summary-111').innerHTML = `
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>Número de perceptores (Facturas con IRPF):</span>
+                        <span style="text-align:right; font-weight:bold;">${filteredInvoices.filter(i => i.irpf > 0).length}</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>Base de las retenciones:</span>
+                        <span style="text-align:right; font-weight:bold;">${filteredInvoices.reduce((s, i) => s + (i.irpf > 0 ? i.subtotal : 0), 0).toFixed(2)}€</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>Retenciones practicadas (IRPF):</span>
+                        <span style="text-align:right; font-weight:bold; color:#FF9800;">${totalIrpf.toFixed(2)}€</span>
+                    </div>
+                    <div style="margin-top:15px; text-align:right; font-size:1.1rem; color:#FF9800;">
+                        TOTAL A INGRESAR: <strong>${totalIrpf.toFixed(2)}€</strong>
+                    </div>
+                `;
+
+            } catch (e) { console.error(e); }
+            finally { hideLoading(); }
+        }
+
+        window.exportTaxData = () => {
+            const period = document.getElementById('tax-period-select').value;
+            const year = document.getElementById('tax-year-input').value;
+            let csv = "CONCEPTO;VALOR\n";
+            csv += `Periodo;${period} Trimestre ${year}\n`;
+            csv += `Base Imponible;${currentTaxData.base.toFixed(2)}\n`;
+            csv += `IVA Repercutido;${currentTaxData.iva.toFixed(2)}\n`;
+            csv += `Retenciones IRPF;${currentTaxData.irpf.toFixed(2)}\n`;
+            csv += `Total Facturado (con IVA);${(currentTaxData.base + currentTaxData.iva).toFixed(2)}\n`;
+
+            const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `MODELO_TRIBUTARIO_${period}T_${year}.csv`;
+            link.click();
+        };
+
+        window.sendTaxesByEmail = () => {
+            const period = document.getElementById('tax-period-select').value;
+            const year = document.getElementById('tax-year-input').value;
+            const subject = encodeURIComponent(`Modelos Tributarios NOVAPACK - ${period}T ${year}`);
+            const body = encodeURIComponent(`Hola,\n\nAdjunto resumen tributario de NOVAPACK para el periodo ${period}T de ${year}:\n\n` +
+                `- Base Imponible: ${currentTaxData.base.toFixed(2)}€\n` +
+                `- IVA Repercutido: ${currentTaxData.iva.toFixed(2)}€\n` +
+                `- Retenciones IRPF: ${currentTaxData.irpf.toFixed(2)}€\n\n` +
+                `Saludos.`);
+            window.location.href = `mailto:?subject=${subject}&body=${body}`;
+        };
+
         function showLoading() {
             if (document.getElementById('loading-overlay'))
                 document.getElementById('loading-overlay').style.display = 'flex';
@@ -2479,6 +2932,15 @@
 
                     // 2. Detect prefixed format
                     if (!tid && text.startsWith("TICKET_ID:")) tid = text.split(":")[1];
+                    if (!tid && text.startsWith("TICKET_DATA:")) {
+                        try {
+                            const b64 = text.split(":")[1];
+                            const json = decodeURIComponent(escape(atob(b64)));
+                            const data = JSON.parse(json);
+                            if (data.id) tid = data.id;
+                            if (data.clientId) cid = data.clientId;
+                        } catch (e) { console.error("Error decoding QR Data", e); }
+                    }
                     if (!cid && text.startsWith("CLIENT_ID:")) cid = text.split(":")[1];
 
                     if (tid) {
@@ -2565,6 +3027,15 @@
             }
 
             if (!tid && text.startsWith("TICKET_ID:")) tid = text.split(":")[1];
+            if (!tid && text.startsWith("TICKET_DATA:")) {
+                try {
+                    const b64 = text.split(":")[1];
+                    const json = decodeURIComponent(escape(atob(b64)));
+                    const data = JSON.parse(json);
+                    if (data.id) tid = data.id;
+                    if (data.clientId) cid = data.clientId;
+                } catch (e) { }
+            }
             if (!cid && text.startsWith("CLIENT_ID:")) cid = text.split(":")[1];
 
             if (tid) {
@@ -2594,7 +3065,12 @@
                             document.getElementById('admin-t-province').value = tData.province || "";
                             adminTicketPackages = tData.packagesList || [];
                             renderAdminPackages();
-                            alert("Albarán y Cliente cargados: " + tid);
+
+                            if (tData.invoiceId || tData.invoiceNum) {
+                                alert("⚠️ ATENCIÓN: Este albarán (" + tid + ") está FACTURADO. No debe modificarse.");
+                            } else {
+                                alert("Albarán y Cliente cargados: " + tid);
+                            }
                         } else {
                             alert("Albarán detectado: " + tid + " (Ve a la sección 'Crear Albaranes' para ver/editar)");
                         }

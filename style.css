@@ -3,11 +3,18 @@
    Focus: Clean lines, Optimized space, Premium typography
 */
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Inter:wght@300;400;500&display=swap');
+@import url('https://db.onlinewebfonts.com/c/13f990d5baee565bea4d9ff96e201c84?family=Xenotron+Normal');
+
+/* Alias for compatibility */
+@font-face {
+    font-family: 'Xenotron';
+    src: local('Xenotron'), url('https://db.onlinewebfonts.com/t/13f990d5baee565bea4d9ff96e201c84.woff2') format('woff2');
+}
 
 :root {
     /* Brand Colors */
-    --brand-primary: #FF6600;
-    --brand-primary-glow: rgba(255, 102, 0, 0.2);
+    --brand-primary: #FF4D00;
+    --brand-primary-glow: rgba(255, 77, 0, 0.3);
     --brand-secondary: #0A0B0C;
     --brand-dark: #000000;
     --brand-accent: #FF751A;
@@ -23,7 +30,7 @@
     --text-main: #F2F4F7;
     --text-dim: #8E95A1;
     --text-muted: #525866;
-    --text-orange: #FF6600;
+    --text-orange: #FF4D00;
 
     /* UI Elements */
     --border-glass: rgba(255, 255, 255, 0.08);
@@ -287,10 +294,30 @@ select.form-control option {
 
 /* Status Badges - Compact */
 .status-badge {
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: var(--radius-full);
-    font-size: 0.6rem;
-    font-weight: 700;
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.status-badge.new {
+    background: rgba(0, 122, 255, 0.1);
+    color: #007AFF;
+    border: 1px solid rgba(0, 122, 255, 0.2);
+}
+
+.status-badge.printed {
+    background: rgba(52, 199, 89, 0.1);
+    color: #34C759;
+    border: 1px solid rgba(52, 199, 89, 0.2);
+}
+
+.status-badge.billed {
+    background: rgba(255, 59, 48, 0.15);
+    color: #FF3B30;
+    border: 1px solid #FF3B30;
+    box-shadow: 0 0 10px rgba(255, 59, 48, 0.1);
 }
 
 /* Table styling for Reports View */

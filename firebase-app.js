@@ -3,6 +3,7 @@ console.log("NOVAPACK CLOUD - ENGINE v2.2 ACTIVE");
 let currentUser = null;
 let userData = null; // Stored profile data (idNum, name, etc.)
 let currentCompanyId = 'default';
+let effectiveStorageUid = null;
 let companies = [];
 let editingId = null;
 let editingClientId = null;
@@ -180,7 +181,13 @@ const getCollection = (name) => {
         cid = targetContext.compId;
     }
 
-    const userRef = db.collection('users').doc(uid);
+    // Si tenemos un contexto de cliente legado (email), redirigimos la base
+    let baseUid = uid;
+    if (effectiveStorageUid && !targetContext) {
+        baseUid = effectiveStorageUid;
+    }
+
+    const userRef = db.collection('users').doc(baseUid);
 
     // Shared collections (global to the user, across all their companies)
     if (name === 'destinations') {
@@ -193,7 +200,20 @@ const getCollection = (name) => {
 
 // --- DATA ACCESS: COMPANIES ---
 async function loadCompanies() {
-    const snap = await db.collection('users').doc(currentUser.uid).collection('companies').get();
+    effectiveStorageUid = currentUser.uid;
+    let snap = await db.collection('users').doc(currentUser.uid).collection('companies').get();
+
+    // Legacy support: If no companies found under UID, check if they exist under Email (admin-created legacy path)
+    if (snap.empty && userData && userData.email) {
+        console.log("Buscando empresas en ruta legado (email)...");
+        const legacySnap = await db.collection('users').doc(userData.email).collection('companies').get();
+        if (!legacySnap.empty) {
+            console.log("Detectadas empresas en ruta legado (email). Usando para esta sesión.");
+            snap = legacySnap;
+            effectiveStorageUid = userData.email;
+        }
+    }
+
     companies = [];
     snap.forEach(doc => companies.push({ id: doc.id, ...doc.data() }));
 
@@ -209,9 +229,10 @@ async function loadCompanies() {
             startNum: 1,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
-        const newDoc = await db.collection('users').doc(currentUser.uid).collection('companies').add(defaultComp);
-        currentCompanyId = newDoc.id;
-        companies.push({ id: newDoc.id, ...defaultComp });
+        // Use fixed ID 'comp_main' for consistency with Admin Console
+        await db.collection('users').doc(currentUser.uid).collection('companies').doc('comp_main').set(defaultComp);
+        currentCompanyId = 'comp_main';
+        companies.push({ id: 'comp_main', ...defaultComp });
     } else {
         // Sync existing primary company with Admin settings (Ensures updates propagate)
         if (userData && companies.length > 0) {
@@ -392,10 +413,12 @@ function renderTicketItem(t, list) {
     const dateStr = d.toLocaleDateString();
     const pkgCount = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (t.packages || 1);
 
+    const isBilled = !!(t.invoiceId || t.invoiceNum);
+
     div.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
             <strong style="color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${t.id}</strong>
-            <span class="status-badge ${t.printed ? 'printed' : 'new'}" style="font-size:0.55rem; padding:1px 4px;">${t.printed ? 'IMP' : 'NUEVO'}</span>
+            <span class="status-badge ${isBilled ? 'billed' : (t.printed ? 'printed' : 'new')}" style="font-size:0.55rem; padding:1px 4px;">${isBilled ? '🔒 FACTURADO' : (t.printed ? 'IMP' : 'NUEVO')}</span>
         </div>
         <div style="font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${(t.receiver || "").toUpperCase()}</div>
         <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-dim); opacity:0.8;">
@@ -414,8 +437,24 @@ document.getElementById('create-ticket-form').onsubmit = handleFormSubmit;
 
 async function loadEditor(t) {
     editingId = t.id;
+    // Más robusto: Si tiene ID de factura o Número de factura, está bloqueado
+    const isBilled = !!(t.invoiceId || t.invoiceNum);
+
+    // Base UI State
     document.getElementById('editor-title').textContent = "Visualizando Albarán";
     document.getElementById('editor-status').textContent = `ID: ${t.id}`;
+    document.getElementById('action-delete').style.display = 'inline-block';
+
+    const submitBtn = document.querySelector('#create-ticket-form button[type="submit"]');
+    if (submitBtn) submitBtn.style.display = 'block';
+
+    const form = document.getElementById('create-ticket-form');
+    let inputs = form.querySelectorAll('input, select, textarea');
+    inputs.forEach(inp => inp.disabled = false);
+
+    const addPkgBtn = document.getElementById('btn-add-package');
+    if (addPkgBtn) addPkgBtn.style.display = 'inline-block';
+
     document.getElementById('editor-actions').classList.remove('hidden');
 
     // Form data
@@ -444,12 +483,49 @@ async function loadEditor(t) {
     // Actions
     document.getElementById('action-print').onclick = () => printTicket(t);
     document.getElementById('action-label').onclick = () => printLabel(t);
-    document.getElementById('action-delete').onclick = () => deleteTicket(t.id);
+    document.getElementById('action-delete').onclick = () => {
+        if (isBilled) {
+            alert("Este albarán ya ha sido facturado por administración y no puede eliminarse.");
+            return;
+        }
+        deleteTicket(t.id);
+    };
     document.getElementById('action-sms-pickup').onclick = () => sendPickupSMS(t);
     document.getElementById('action-sms-pickup').style.display = 'inline-block';
 
+    // Final lock state if billed (Must be after rows are created)
+    if (isBilled) {
+        document.getElementById('editor-title').innerHTML = `<span style="color:#FF3B30; font-weight:900;">🔒 ALBARÁN FACTURADO (SÓLO LECTURA)</span>`;
+        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold;">FACTURA: ${t.invoiceNum || 'ASIGNADA'}</span>`;
+
+        // Bloqueo físico mediante CSS (Inapelable)
+        form.style.pointerEvents = 'none';
+        form.style.opacity = '0.7';
+        form.style.filter = 'grayscale(0.5)';
+
+        document.getElementById('action-delete').style.display = 'none';
+        if (submitBtn) submitBtn.style.display = 'none';
+        if (addPkgBtn) addPkgBtn.style.display = 'none';
+
+        // Desactivar todos los inputs por si acaso el CSS no basta
+        const allInputs = form.querySelectorAll('input, select, textarea');
+        allInputs.forEach(inp => {
+            inp.disabled = true;
+            inp.style.backgroundColor = 'rgba(0,0,0,0.05)';
+        });
+
+        // Hide all remove buttons in rows
+        const removeButtons = document.querySelectorAll('.btn-remove-pkg');
+        removeButtons.forEach(btn => btn.style.display = 'none');
+    } else {
+        // Restaurar estado si no está facturado
+        form.style.pointerEvents = 'auto';
+        form.style.opacity = '1';
+        form.style.filter = 'none';
+    }
+
     // UI Refresh
-    loadTickets(document.getElementById('ticket-search').value);
+    renderTicketsList();
 }
 
 async function resetEditor() {
@@ -457,6 +533,22 @@ async function resetEditor() {
     document.getElementById('create-ticket-form').reset();
     document.getElementById('editor-title').textContent = "Nuevo Albarán";
     document.getElementById('action-sms-pickup').style.display = 'none';
+    document.getElementById('action-delete').style.display = 'none';
+
+    const form = document.getElementById('create-ticket-form');
+    form.style.pointerEvents = 'auto';
+    form.style.opacity = '1';
+    form.style.filter = 'none';
+    form.querySelectorAll('input, select, textarea').forEach(inp => {
+        inp.disabled = false;
+        inp.style.backgroundColor = '';
+    });
+
+    const submitBtn = document.querySelector('#create-ticket-form button[type="submit"]');
+    if (submitBtn) submitBtn.style.display = 'block';
+
+    const addPkgBtn = document.getElementById('btn-add-package');
+    if (addPkgBtn) addPkgBtn.style.display = 'inline-block';
 
     showLoading();
     const nextId = await getNextId();
@@ -794,6 +886,14 @@ async function handleFormSubmit(e) {
     try {
         let ticketId = editingId;
         if (editingId) {
+            const currentDoc = await getCollection('tickets').doc(editingId).get();
+            const currentData = currentDoc.data();
+            const isBilled = !!(currentData.invoiceId || currentData.invoiceNum);
+            if (isBilled) {
+                alert("Este albarán ya ha sido facturado por administración y no puede modificarse.");
+                hideLoading();
+                return;
+            }
             await getCollection('tickets').doc(editingId).update(data);
         } else {
             ticketId = await getNextId();
@@ -870,11 +970,23 @@ async function checkAndSendAutoShiftSMS(ticket) {
 }
 
 async function deleteTicket(id) {
-    if (confirm(`¿Estás seguro de eliminar el albarán ${id} permanentemente de la nube?`)) {
-        showLoading();
-        await getCollection('tickets').doc(id).delete();
-        await resetEditor();
-        hideLoading();
+    try {
+        const doc = await getCollection('tickets').doc(id).get();
+        const data = doc.data();
+        const isBilled = !!(data.invoiceId || data.invoiceNum);
+        if (isBilled) {
+            alert("Este albarán no puede eliminarse porque ya ha sido facturado por administración.");
+            return;
+        }
+
+        if (confirm(`¿Estás seguro de eliminar el albarán ${id} permanentemente de la nube?`)) {
+            showLoading();
+            await getCollection('tickets').doc(id).delete();
+            await resetEditor();
+            hideLoading();
+        }
+    } catch (e) {
+        alert("Error al intentar eliminar: " + e.message);
     }
 }
 
@@ -1259,6 +1371,7 @@ function renderQRCodesInPrintArea(ticketData = null) {
     const elements = document.querySelectorAll('#print-area .ticket-qr-code');
     elements.forEach(el => {
         const id = el.dataset.id;
+        el.innerHTML = ''; // Clear previous
 
         let qrValue = "TICKET_ID:" + id;
 
@@ -1276,26 +1389,24 @@ function renderQRCodesInPrintArea(ticketData = null) {
                     sp: ticketData.senderPhone || '',
                     t: ticketData.timeSlot || 'MAÑANA',
                     st: ticketData.shippingType || 'Pagados',
-                    c: ticketData.cod || '0.00',
-                    n: ticketData.notes || '',
-                    pkgs: ticketData.packagesList || []
+                    cod: ticketData.cod || '0.00'
                 };
-                // Encode as Base64 to safely store Spanish characters and complex objects
                 const jsonStr = JSON.stringify(compactData);
                 const base64 = btoa(unescape(encodeURIComponent(jsonStr)));
                 qrValue = "TICKET_DATA:" + base64;
-            } catch (e) {
-                console.error("Error encoding QR full data", e);
-            }
+            } catch (e) { console.error("Error encoding QR", e); }
         }
+
+        const isLabel = el.closest('.label-item');
+        const size = isLabel ? 128 : 140;
 
         new QRCode(el, {
             text: qrValue,
-            width: 80,
-            height: 80,
+            width: size,
+            height: size,
             colorDark: "#000000",
             colorLight: "#ffffff",
-            correctLevel: 0 // Level L for higher data density
+            correctLevel: QRCode.CorrectLevel.L
         });
     });
 }
@@ -1312,7 +1423,6 @@ function generateTicketHTML(t, footerLabel) {
                 <td style="border:1px solid #000; padding:2px; text-align:center;">${p.qty}</td>
                 <td style="border:1px solid #000; padding:2px; text-align:center;">${p.weight} kg</td>
                 <td style="border:1px solid #000; padding:2px; text-align:center;">${p.size || 'Bulto'}</td>
-                <td style="border:1px solid #000; padding:2px; text-align:center;">${t.shippingType}</td>
                 ${hasCod ? `<td style="border:1px solid #000; padding:2px; text-align:center;">${t.cod} €</td>` : ''}
             </tr>
         `;
@@ -1341,7 +1451,6 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-weight:bold; font-size:1.1rem; line-height:1.1;">ALBARÁN: <span style="color:#FF6600;">${t.id}</span></div>
                         <div style="font-size:0.75rem; color:#444;">${dStr}</div>
                         <div style="font-size:1.1rem; font-weight:900; color:#000; margin-top:2px; letter-spacing:0.5px; border:1px solid #000; padding:1px 5px; display:inline-block;">${t.timeSlot || 'MAÑANA'}</div>
-                        <div style="font-size:0.8rem; font-weight:900; color:#000; margin-top:1px;">PORTES: ${t.shippingType.toUpperCase()}</div>
                     </div>
                 </div>
             </div>
@@ -1367,7 +1476,6 @@ function generateTicketHTML(t, footerLabel) {
                         <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">BULTOS</th>
                         <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">PESO</th>
                         <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">TIPO / TAMAÑO</th>
-                        <th style="padding:4px; border:1px solid #000; font-size:0.65rem;">PORTES</th>
                         ${hasCod ? '<th style="padding:4px; border:1px solid #000; background:#FF6600; font-size:0.65rem;">REEMBOLSO</th>' : ''}
                     </tr>
                 </thead>
