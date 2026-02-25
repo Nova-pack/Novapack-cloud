@@ -1235,9 +1235,6 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-size: 0.95rem; font-weight: 900; text-transform:uppercase; color: #000; margin-top: 2px;">
                             PORTES: ${t.shippingType.toUpperCase()}
                         </div>
-                        <div style="font-size: 1.1rem; font-weight: 900; color: #000; text-transform:uppercase; border-top:1px solid #FF6600; margin-top:2px; padding-top:2px;">
-                            ${t.timeSlot || 'MAÑANA'}
-                        </div>
                      </div>
                 </div>
 

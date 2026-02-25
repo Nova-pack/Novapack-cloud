@@ -1333,7 +1333,6 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-size:0.55rem; font-weight:bold; letter-spacing:1px; color:#666;">ZONA DE REPARTO</div>
                         <div style="font-size:1.2rem; font-weight:900;">${t.province || 'GENÉRICA'}</div>
                         <div style="font-size:0.9rem; font-weight:bold; text-transform:uppercase; margin-top:2px; color:#000;">PORTES: ${t.shippingType.toUpperCase()}</div>
-                        <div style="font-size:1rem; font-weight:900; color:#000; border-top:1px solid #FF6600; margin-top:2px;">${t.timeSlot || 'MAÑANA'}</div>
                     </div>
                 </div>
                 <div style="flex:1.4; display:flex; justify-content:flex-end; align-items:center; gap:12px;">
