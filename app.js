@@ -1154,13 +1154,14 @@ function renderQRCodesInPrintArea() {
             const qrSize = isLabel ? 100 : 140;
 
             // Use M correction level for better balance between data capacity and readability
+            // Use the prefixed format for better scanner compatibility
             new QRCode(container, {
-                text: JSON.stringify(data),
+                text: "TICKET_ID:" + t.id,
                 width: qrSize,
                 height: qrSize,
                 colorDark: "#000000",
                 colorLight: "#ffffff",
-                correctLevel: 1 // 1 is Level M (best for most cases)
+                correctLevel: 1 // Level M
             });
         } catch (e) {
             console.error("QR Error", e);
@@ -1240,7 +1241,10 @@ function generateTicketHTML(t, footerLabel) {
                 <!-- Right: Ticket Info -->
                 <div style="flex: 1; text-align: right;">
                     <div style="font-size: 14pt; font-weight: bold; color: #000;">Albarán: <span style="color: #FF6600;">${t.id}</span></div>
-                    <div style="font-size: 0.85rem; color:#444;">${date}</div>
+                    <div style="font-size: 1.1rem; font-weight: 900; color: #000; text-transform: uppercase; margin: 3px 0; border: 2px solid #000; display: inline-block; padding: 2px 8px; border-radius: 4px; background: #FFF;">
+                         ${t.shippingType}
+                    </div>
+                    <div style="font-size: 0.85rem; color:#444; margin-top:2px;">${date}</div>
                     ${t.timeSlot ? `
                      <div style="margin-top: 4px; border: 1px solid #FF6600; padding: 2px 5px; background:#FFF; display: inline-block; border-radius: 3px;">
                         <span style="font-size: 0.6rem; font-weight: 700; color:#555;">RECOGIDA:</span>

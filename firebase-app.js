@@ -771,6 +771,8 @@ async function handleFormSubmit(e) {
     const fullAddr = street + (number ? " Nº " + number : "");
 
     const data = {
+        uid: currentUser.uid,
+        clientIdNum: userData ? userData.idNum : '---',
         sender: document.getElementById('ticket-sender').value,
         senderAddress: document.getElementById('ticket-sender-address').value,
         senderPhone: document.getElementById('ticket-sender-phone').value,
@@ -1263,7 +1265,14 @@ function renderQRCodesInPrintArea() {
             clientId: userData ? userData.idNum : '---',
             tariffId: userData ? userData.tariffId || '---' : '---'
         };
-        new QRCode(el, { text: JSON.stringify(data), width: 80, height: 80, colorDark: "#000000", colorLight: "#ffffff" });
+        new QRCode(el, {
+            text: "TICKET_ID:" + id,
+            width: 80,
+            height: 80,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: 1
+        });
     });
 }
 
