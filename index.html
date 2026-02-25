@@ -201,6 +201,26 @@
         const errorMsg = document.getElementById('error-msg');
         const loader = document.getElementById('loader');
 
+        let isRedirecting = false;
+        const redirectUser = async (user) => {
+            if (isRedirecting) return;
+            isRedirecting = true;
+            console.log("Sesión detectada, redirigiendo...");
+            try {
+                const adminDoc = await db.collection('config').doc('admin').get();
+                const isAdmin = adminDoc.exists && adminDoc.data().uid === user.uid;
+                console.log("¿Es Admin?", isAdmin);
+
+                const target = isAdmin ? 'admin.html' : 'app.html';
+                if (window.location.pathname.indexOf(target) === -1) {
+                    window.location.href = target;
+                }
+            } catch (e) {
+                console.error("Error al verificar admin:", e);
+                window.location.href = 'app.html';
+            }
+        };
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const email = document.getElementById('email').value;
@@ -212,23 +232,9 @@
             try {
                 console.log("Intentando iniciar sesión para:", email);
                 const userCredential = await auth.signInWithEmailAndPassword(email, password);
-                const user = userCredential.user;
-                console.log("Login exitoso, verificando rango...");
-
-                // Redirección directa tras login (evita esperar al onAuthStateChanged)
-                try {
-                    const adminDoc = await db.collection('config').doc('admin').get();
-                    if (adminDoc.exists && adminDoc.data().uid === user.uid) {
-                        window.location.href = 'admin.html';
-                    } else {
-                        window.location.href = 'app.html';
-                    }
-                } catch (dbError) {
-                    console.error("Firestore Error (Config):", dbError);
-                    // Si falla Firestore, vamos a app.html por defecto
-                    window.location.href = 'app.html';
-                }
+                // Auth state change will handle redirect
             } catch (error) {
+                isRedirecting = false; // Reset on error
                 console.error("Firebase Login Error:", error);
                 if (error.code === 'auth/configuration-not-found') {
                     errorMsg.innerText = 'Error: Problema de configuración en Firebase.';
@@ -239,7 +245,6 @@
                 } else {
                     errorMsg.innerText = 'Error: ' + error.message;
                 }
-            } finally {
                 loader.style.display = 'none';
             }
         });
@@ -247,23 +252,7 @@
         // Verificación de sesión persistente
         auth.onAuthStateChanged(async (user) => {
             if (user) {
-                console.log("Sesión detectada, redirigiendo...");
-                try {
-                    const adminDoc = await db.collection('config').doc('admin').get();
-                    const isAdmin = adminDoc.exists && adminDoc.data().uid === user.uid;
-                    console.log("¿Es Admin?", isAdmin);
-
-                    if (isAdmin) {
-                        console.log("Redirigiendo a Panel Admin...");
-                        window.location.href = 'admin.html';
-                    } else {
-                        console.log("Redirigiendo a App Cliente...");
-                        window.location.href = 'app.html';
-                    }
-                } catch (e) {
-                    console.error("Error al verificar admin:", e);
-                    window.location.href = 'app.html';
-                }
+                await redirectUser(user);
             }
         });
     </script>

@@ -245,6 +245,7 @@
         <div class="nav-item" id="nav-reports">📊 Listados Globales</div>
         <div class="nav-item" id="nav-tariffs">💰 Tarifas Clientes</div>
         <div class="nav-item" id="nav-phones">📱 Teléfonos</div>
+        <div class="nav-item" id="nav-billing">📄 Facturación</div>
         <div class="nav-item" id="nav-config">⚙️ Configuración</div>
         <div style="flex:1"></div>
         <div class="nav-item" id="btn-logout">🚪 Cerrar Sesión</div>
@@ -429,7 +430,158 @@
                 </table>
             </div>
         </div>
-        <!-- Tarifas View -->
+
+        <!-- Facturación View -->
+        <div id="view-billing" style="display:none">
+            <div class="header">
+                <h1>Sistema de Facturación y Contabilidad</h1>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-outline" id="btn-billing-config">📂 DATOS FISCALES NOVAPACK</button>
+                    <button class="btn btn-primary" id="btn-generate-invoice-view">+ GENERAR FACTURA</button>
+                </div>
+            </div>
+
+            <div class="card" id="billing-config-section"
+                style="display:none; border-left: 4px solid var(--brand-primary); margin-bottom:30px;">
+                <h3 style="margin-top:0; color:var(--brand-primary)">Datos Fiscales de la Empresa (NOVAPACK)</h3>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                    <div class="form-group">
+                        <label>Razón Social / Nombre Fiscal</label>
+                        <input type="text" id="fiscal-name" placeholder="Ej: NOVAPACK LOGISTICA S.L.">
+                    </div>
+                    <div class="form-group">
+                        <label>CIF / NIF</label>
+                        <input type="text" id="fiscal-cif" placeholder="Ej: B12345678">
+                    </div>
+                    <div class="form-group">
+                        <label>Dirección Fiscal Completa</label>
+                        <input type="text" id="fiscal-address" placeholder="Calle Ejemplo 123, 29000 Málaga">
+                    </div>
+                    <div class="form-group">
+                        <label>Email de Facturación</label>
+                        <input type="email" id="fiscal-email" placeholder="facturacion@novapack.info">
+                    </div>
+                    <div class="form-group">
+                        <label>Tipo de IVA por Defecto (%)</label>
+                        <input type="number" id="fiscal-iva" value="21">
+                    </div>
+                    <div class="form-group">
+                        <label>Retención IRPF (%) - (Transportistas Autónomos)</label>
+                        <input type="number" id="fiscal-irpf" value="0">
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="btn-save-fiscal">💾 GUARDAR DATOS FISCALES</button>
+            </div>
+
+            <!-- Invoices List -->
+            <div class="card" style="margin-bottom:30px;">
+                <h3 style="margin-top:0;">Registro de Facturas Emitidas</h3>
+                <table class="user-list">
+                    <thead>
+                        <tr>
+                            <th>Nº FACTURA</th>
+                            <th>FECHA</th>
+                            <th>CLIENTE</th>
+                            <th>BASE IMP.</th>
+                            <th>IVA</th>
+                            <th>IRPF</th>
+                            <th>TOTAL</th>
+                            <th>ACCIONES</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoice-table-body">
+                        <!-- Loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tax Models Summary (303/111) -->
+            <div class="card" style="background: #1a1d21; border-top: 4px solid #4CAF50;">
+                <h3 style="margin-top:0; color:#4CAF50;">Resumen para Modelos Tributarios (AEAT)</h3>
+                <p style="font-size:0.8rem; color:#888; margin-bottom:20px;">Cálculos estimados para la presentación de
+                    los modelos 303 (IVA) y 111 (Retenciones) según facturación emitida.</p>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                    <div>
+                        <h4 style="margin-bottom:10px;">Modelo 303 - IVA (Transporte)</h4>
+                        <div id="summary-303" style="font-size:0.9rem;">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="margin-bottom:10px;">Modelo 111 - Retenciones (IRPF)</h4>
+                        <div id="summary-111" style="font-size:0.9rem;">
+                            <!-- Loaded via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Invoice Modal -->
+        <div class="modal" id="modal-generate-invoice">
+            <div class="modal-content" style="max-width: 900px;">
+                <h2 style="margin-top:0">Generar Nueva Factura de Transporte</h2>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
+                    <div>
+                        <label>Seleccionar Cliente</label>
+                        <select id="inv-client-select" class="form-control"></select>
+                    </div>
+                    <div>
+                        <label>Desde Fecha</label>
+                        <input type="date" id="inv-date-from">
+                    </div>
+                    <div>
+                        <label>Hasta Fecha</label>
+                        <input type="date" id="inv-date-to">
+                    </div>
+                </div>
+
+                <div
+                    style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-glass); border-radius: 8px; margin-bottom: 20px;">
+                    <table class="user-list" style="margin:0;">
+                        <thead>
+                            <tr>
+                                <th style="width:30px;"><input type="checkbox" id="inv-select-all"></th>
+                                <th>FECHA</th>
+                                <th>ALBARÁN</th>
+                                <th>DESTINATARIO</th>
+                                <th>BULTOS</th>
+                                <th>P. TARIFA</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unbilled-tickets-body">
+                            <!-- Loaded via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card"
+                    style="background:rgba(255,102,0,0.05); display:grid; grid-template-columns: repeat(4, 1fr); gap:15px;">
+                    <div><label>SUBTOTAL</label>
+                        <div id="inv-calc-subtotal" style="font-weight:900; font-size:1.2rem;">0.00€</div>
+                    </div>
+                    <div><label>IVA (21%)</label>
+                        <div id="inv-calc-iva" style="font-weight:900; font-size:1.2rem; color: #4CAF50;">0.00€</div>
+                    </div>
+                    <div><label>IRPF (REMANENTE)</label>
+                        <div id="inv-calc-irpf" style="font-weight:900; font-size:1.2rem; color: #FF3B30;">0.00€</div>
+                    </div>
+                    <div><label>TOTAL FACTURA</label>
+                        <div id="inv-calc-total"
+                            style="font-weight:900; font-size:1.5rem; color: var(--brand-primary);">0.00€</div>
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:15px; margin-top:20px;">
+                    <button class="btn btn-primary" id="btn-create-invoice-final" style="flex:2; padding:15px;">🚀
+                        GENERAR Y REGISTRAR FACTURA</button>
+                    <button class="btn btn-outline" id="btn-close-inv-modal" style="flex:1;">CANCELAR</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tariff View -->
         <div id="view-tariffs" style="display:none">
             <div class="header">
                 <h1>Tarifas por Artículo (Personalizadas)</h1>
@@ -653,6 +805,8 @@
         const viewTariffs = document.getElementById('view-tariffs');
         const viewPhones = document.getElementById('view-phones');
         const viewConfig = document.getElementById('view-config');
+        const viewBilling = document.getElementById('view-billing');
+        const navBilling = document.getElementById('nav-billing');
 
         // Switching Views
         const showView = (viewId) => {
@@ -661,17 +815,20 @@
             viewTariffs.style.display = viewId === 'tariffs' ? 'block' : 'none';
             viewPhones.style.display = viewId === 'phones' ? 'block' : 'none';
             viewConfig.style.display = viewId === 'config' ? 'block' : 'none';
+            viewBilling.style.display = viewId === 'billing' ? 'block' : 'none';
 
             navUsers.classList.toggle('active', viewId === 'users');
             navReports.classList.toggle('active', viewId === 'reports');
             navTariffs.classList.toggle('active', viewId === 'tariffs');
             navPhones.classList.toggle('active', viewId === 'phones');
             navConfig.classList.toggle('active', viewId === 'config');
+            navBilling.classList.toggle('active', viewId === 'billing');
 
             if (viewId === 'config') loadConfigInfo();
             if (viewId === 'phones') loadPhones();
             if (viewId === 'reports') initReportsView();
             if (viewId === 'tariffs') loadTariffClients();
+            if (viewId === 'billing') initBillingView();
         };
 
         navUsers.onclick = () => showView('users');
@@ -679,6 +836,7 @@
         navTariffs.onclick = () => showView('tariffs');
         navPhones.onclick = () => showView('phones');
         navConfig.onclick = () => showView('config');
+        navBilling.onclick = () => showView('billing');
 
         async function loadConfigInfo() {
             if (!auth.currentUser) return;
@@ -850,7 +1008,10 @@
                     const cid = uData.idNum || '---';
                     const tId = uData.tariffId;
 
-                    if (dIso < dFrom || dIso > dTo) return;
+                    const dIso = d.toISOString().split('T')[0];
+
+                    if (dFrom && dIso < dFrom) return;
+                    if (dTo && dIso > dTo) return;
                     if (fCID && cid !== fCID) return;
                     if (fProv && (!t.province || !t.province.toLowerCase().includes(fProv))) return;
 
@@ -1131,11 +1292,442 @@
 
         loadUsers();
         populateGlobalTariffsDatalist();
+
+        // --- BILLING / ACCOUNTING SYSTEM ---
+        let unbilledTickets = [];
+        let invCompanyData = null;
+
+        async function initBillingView() {
+            loadFiscalData();
+            loadInvoices();
+        }
+
+        async function loadFiscalData() {
+            const doc = await db.collection('config').doc('fiscal').get();
+            if (doc.exists) {
+                invCompanyData = doc.data();
+                document.getElementById('fiscal-name').value = invCompanyData.name || '';
+                document.getElementById('fiscal-cif').value = invCompanyData.cif || '';
+                document.getElementById('fiscal-address').value = invCompanyData.address || '';
+                document.getElementById('fiscal-email').value = invCompanyData.email || '';
+                document.getElementById('fiscal-iva').value = invCompanyData.iva || 21;
+                document.getElementById('fiscal-irpf').value = invCompanyData.irpf || 0;
+            }
+        }
+
+        document.getElementById('btn-save-fiscal').onclick = async () => {
+            const data = {
+                name: document.getElementById('fiscal-name').value.trim(),
+                cif: document.getElementById('fiscal-cif').value.trim(),
+                address: document.getElementById('fiscal-address').value.trim(),
+                email: document.getElementById('fiscal-email').value.trim(),
+                iva: parseFloat(document.getElementById('fiscal-iva').value) || 0,
+                irpf: parseFloat(document.getElementById('fiscal-irpf').value) || 0,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            await db.collection('config').doc('fiscal').set(data);
+            invCompanyData = data;
+            alert("Datos Fiscales NOVAPACK actualizados.");
+        };
+
+        document.getElementById('btn-billing-config').onclick = () => {
+            const section = document.getElementById('billing-config-section');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        };
+
+        document.getElementById('btn-generate-invoice-view').onclick = () => {
+            document.getElementById('modal-generate-invoice').style.display = 'flex';
+            populateInvoiceClientSelect();
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('inv-date-from').value = today;
+            document.getElementById('inv-date-to').value = today;
+        };
+
+        document.getElementById('btn-close-inv-modal').onclick = () => {
+            document.getElementById('modal-generate-invoice').style.display = 'none';
+        };
+
+        function populateInvoiceClientSelect() {
+            const select = document.getElementById('inv-client-select');
+            select.innerHTML = '<option value="">-- Seleccionar Cliente --</option>';
+            Object.values(userMap).forEach(u => {
+                if (u.role === 'admin') return;
+                const opt = document.createElement('option');
+                opt.value = u.uid;
+                opt.textContent = `[#${u.idNum}] ${u.name}`;
+                select.appendChild(opt);
+            });
+        }
+
+        document.getElementById('inv-client-select').onchange = refreshUnbilledList;
+        document.getElementById('inv-date-from').onchange = refreshUnbilledList;
+        document.getElementById('inv-date-to').onchange = refreshUnbilledList;
+
+        async function refreshUnbilledList() {
+            const uid = document.getElementById('inv-client-select').value;
+            const from = document.getElementById('inv-date-from').value;
+            const to = document.getElementById('inv-date-to').value;
+            const tbody = document.getElementById('unbilled-tickets-body');
+
+            if (!uid) { tbody.innerHTML = ''; return; }
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Buscando albaranes...</td></tr>';
+
+            try {
+                // Ensure tariffs loaded for prices
+                if (Object.keys(tariffsCache).length === 0) {
+                    const tSnap = await db.collectionGroup('tariffs').get();
+                    tSnap.forEach(d => { tariffsCache[d.id] = d.data().items || {}; });
+                }
+
+                // Query based on users/{uid}/companies/{compId}/tickets
+                const uData = userMap[uid];
+                const tSnap = await db.collection('users').doc(uid).collection('companies').get();
+                let tickets = [];
+
+                for (const cDoc of tSnap.docs) {
+                    const ticketSnap = await cDoc.ref.collection('tickets').get();
+                    ticketSnap.forEach(tDoc => {
+                        const t = tDoc.data();
+                        if (t.invoiceId) return; // Already billed
+                        const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
+                        const iso = date.toISOString().split('T')[0];
+                        if (iso >= from && iso <= to) {
+                            tickets.push({ ...t, docId: tDoc.id, compId: cDoc.id, uid: uid });
+                        }
+                    });
+                }
+
+                unbilledTickets = tickets;
+                renderUnbilledTable();
+                updateInvoiceCalculations();
+            } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="6">Error al cargar.</td></tr>'; }
+        }
+
+        function renderUnbilledTable() {
+            const tbody = document.getElementById('unbilled-tickets-body');
+            tbody.innerHTML = '';
+            unbilledTickets.forEach((t, i) => {
+                const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
+                const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+
+                // Price calc
+                const uData = userMap[t.uid] || {};
+                const activeTariff = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" + uData.tariffId] : (tariffsCache[t.uid] || {});
+                let price = 0;
+                if (t.packagesList) {
+                    t.packagesList.forEach(p => price += (parseInt(p.qty) || 1) * (activeTariff[p.size] || 0));
+                }
+                t.calculatedPrice = price;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="inv-ticket-check" data-index="${i}" checked onchange="updateInvoiceCalculations()"></td>
+                    <td>${date.toLocaleDateString()}</td>
+                    <td>${t.id}</td>
+                    <td>${t.receiver}</td>
+                    <td>${pkgs}</td>
+                    <td>${price.toFixed(2)}€</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        window.updateInvoiceCalculations = () => {
+            const checks = document.querySelectorAll('.inv-ticket-check');
+            let subtotal = 0;
+            checks.forEach(c => {
+                if (c.checked) {
+                    const idx = parseInt(c.dataset.index);
+                    subtotal += unbilledTickets[idx].calculatedPrice;
+                }
+            });
+
+            const ivaRate = parseFloat(document.getElementById('fiscal-iva').value) || 0;
+            const irpfRate = parseFloat(document.getElementById('fiscal-irpf').value) || 0;
+
+            const iva = subtotal * (ivaRate / 100);
+            const irpf = subtotal * (irpfRate / 100);
+            const total = subtotal + iva - irpf;
+
+            document.getElementById('inv-calc-subtotal').textContent = subtotal.toFixed(2) + '€';
+            document.getElementById('inv-calc-iva').textContent = iva.toFixed(2) + '€';
+            document.getElementById('inv-calc-irpf').textContent = irpf.toFixed(2) + '€';
+            document.getElementById('inv-calc-total').textContent = total.toFixed(2) + '€';
+
+            invoiceCalculations = { subtotal, iva, irpf, total, ivaRate, irpfRate };
+        };
+
+        document.getElementById('btn-create-invoice-final').onclick = async () => {
+            if (invoiceCalculations.total <= 0) { alert("Selecciona albaranes con valor."); return; }
+            if (!invCompanyData || !invCompanyData.cif) { alert("Primero configura los Datos Fiscales de NOVAPACK."); return; }
+
+            const checks = document.querySelectorAll('.inv-ticket-check:checked');
+            const selectedIndices = Array.from(checks).map(c => parseInt(c.dataset.index));
+            const selectedTickets = selectedIndices.map(i => unbilledTickets[i]);
+
+            const uid = document.getElementById('inv-client-select').value;
+            const clientData = userMap[uid];
+
+            showLoading();
+            try {
+                // Get next invoice number
+                const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
+                let nextNum = 1;
+                if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
+
+                const invoiceData = {
+                    number: nextNum,
+                    invoiceId: `FAC-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`,
+                    date: firebase.firestore.FieldValue.serverTimestamp(),
+                    clientId: uid,
+                    clientName: clientData.name,
+                    clientCIF: clientData.idNum || 'N/A',
+                    subtotal: invoiceCalculations.subtotal,
+                    iva: invoiceCalculations.iva,
+                    ivaRate: invoiceCalculations.ivaRate,
+                    irpf: invoiceCalculations.irpf,
+                    irpfRate: invoiceCalculations.irpfRate,
+                    total: invoiceCalculations.total,
+                    tickets: selectedTickets.map(t => t.id),
+                    senderData: invCompanyData
+                };
+
+                const invDoc = await db.collection('invoices').add(invoiceData);
+
+                // Update Tickets with invoiceId to mark as billed
+                const batch = db.batch();
+                selectedTickets.forEach(t => {
+                    const tRef = db.collection('users').doc(t.uid).collection('companies').doc(t.compId).collection('tickets').doc(t.docId);
+                    batch.update(tRef, { invoiceId: invDoc.id, invoiceNum: invoiceData.invoiceId });
+                });
+                await batch.commit();
+
+                alert(`Factura ${invoiceData.invoiceId} generada con éxito.`);
+                document.getElementById('btn-close-inv-modal').click();
+                loadInvoices();
+            } catch (e) { alert("Error: " + e.message); }
+            finally { hideLoading(); }
+        };
+
+        async function loadInvoices() {
+            const tbody = document.getElementById('invoice-table-body');
+            tbody.innerHTML = '<tr><td colspan="8">Cargando facturas...</td></tr>';
+
+            try {
+                const snap = await db.collection('invoices').orderBy('number', 'desc').get();
+                tbody.innerHTML = '';
+
+                let stats303 = {};
+                let stats111 = {};
+
+                if (snap.empty) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#888;">No hay facturas emitidas.</td></tr>';
+                }
+
+                snap.forEach(doc => {
+                    const inv = doc.data();
+                    const date = (inv.date && inv.date.toDate) ? inv.date.toDate() : new Date();
+
+                    // Quarters for AEAT Models
+                    const quarter = "Trimestre " + (Math.floor(date.getMonth() / 3) + 1) + " (" + date.getFullYear() + ")";
+                    if (!stats303[quarter]) stats303[quarter] = { base: 0, iva: 0 };
+                    if (!stats111[quarter]) stats111[quarter] = { base: 0, irpf: 0 };
+
+                    stats303[quarter].base += inv.subtotal;
+                    stats303[quarter].iva += inv.iva;
+                    stats111[quarter].base += inv.subtotal;
+                    stats111[quarter].irpf += inv.irpf;
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'user-row';
+                    tr.innerHTML = `
+                        <td style="font-weight:bold;">${inv.invoiceId}</td>
+                        <td>${date.toLocaleDateString()}</td>
+                        <td>${inv.clientName}</td>
+                        <td>${inv.subtotal.toFixed(2)}€</td>
+                        <td>${inv.iva.toFixed(2)}€ (${inv.ivaRate}%)</td>
+                        <td>${inv.irpf.toFixed(2)}€ (${inv.irpfRate}%)</td>
+                        <td style="font-weight:900; color:var(--brand-primary)">${inv.total.toFixed(2)}€</td>
+                        <td>
+                            <button class="btn btn-outline btn-sm" onclick="printInvoice('${doc.id}')" title="Imprimir Factura">🖨️</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${doc.id}')" title="Eliminar">🗑️</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                renderTaxSummary(stats303, stats111);
+            } catch (e) { console.error(e); }
+        }
+
+        function renderTaxSummary(s303, s111) {
+            const div303 = document.getElementById('summary-303');
+            const div111 = document.getElementById('summary-111');
+
+            div303.innerHTML = '';
+            div111.innerHTML = '';
+
+            Object.keys(s303).forEach(q => {
+                const data = s303[q];
+                div303.innerHTML += `
+                    <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:4px; margin-bottom:10px;">
+                        <strong>${q}</strong><br>
+                        Base Imponible: ${data.base.toFixed(2)}€ | 
+                        <span style="color:#4CAF50">IVA Devengado: ${data.iva.toFixed(2)}€</span>
+                    </div>
+                `;
+            });
+
+            Object.keys(s111).forEach(q => {
+                const data = s111[q];
+                div111.innerHTML += `
+                    <div style="background:rgba(255,255,255,0.03); padding:10px; border-radius:4px; margin-bottom:10px;">
+                        <strong>${q}</strong><br>
+                        Base Retenciones: ${data.base.toFixed(2)}€ | 
+                        <span style="color:#FF3B30">IRPF a Ingresar: ${data.irpf.toFixed(2)}€</span>
+                    </div>
+                `;
+            });
+        }
+
+        window.printInvoice = async (id) => {
+            showLoading();
+            const doc = await db.collection('invoices').doc(id).get();
+            const inv = doc.data();
+            hideLoading();
+
+            const date = (inv.date && inv.date.toDate) ? inv.date.toDate().toLocaleDateString() : 'N/A';
+
+            const win = window.open('', '_blank');
+            win.document.write(`
+                <html>
+                <head>
+                    <title>Factura ${inv.invoiceId}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 40px; color: #333; line-height: 1.6; }
+                        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #EEE; padding-bottom: 20px; margin-bottom: 40px; }
+                        .fiscal-info { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+                        .fiscal-box { border: 1px solid #EEE; padding: 20px; border-radius: 8px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+                        th { background: #F9F9F9; text-align: left; padding: 12px; border-bottom: 2px solid #EEE; }
+                        td { padding: 12px; border-bottom: 1px solid #EEE; }
+                        .totals { width: 300px; margin-left: auto; }
+                        .total-row { display: flex; justify-content: space-between; padding: 10px 0; }
+                        .total-final { font-size: 1.4rem; font-weight: bold; border-top: 2px solid #333; margin-top: 10px; }
+                        @media print { .no-print { display: none; } }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div>
+                            <h1 style="color:#FF6600; margin:0;">NOVAPACK LOGÍSTICA</h1>
+                            <p>Servicios de Paquetería Urgente</p>
+                        </div>
+                        <div style="text-align:right">
+                            <h2 style="margin:0;">FACTURA</h2>
+                            <p style="font-size:1.2rem; font-weight:bold;">${inv.invoiceId}</p>
+                            <p>Fecha: ${date}</p>
+                        </div>
+                    </div>
+
+                    <div class="fiscal-info">
+                        <div class="fiscal-box">
+                            <strong>EMISOR:</strong><br>
+                            ${inv.senderData.name}<br>
+                            CIF: ${inv.senderData.cif}<br>
+                            ${inv.senderData.address}<br>
+                            ${inv.senderData.email}
+                        </div>
+                        <div class="fiscal-box">
+                            <strong>RECEPTOR / CLIENTE:</strong><br>
+                            ${inv.clientName}<br>
+                            CIF/NIF: ${inv.clientCIF}<br>
+                        </div>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CONCEPTO / SERVICIOS DE TRANSPORTE</th>
+                                <th style="text-align:right">CANTIDAD</th>
+                                <th style="text-align:right">TOTAL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Relación de Albaranes: ${inv.tickets.join(', ')}</td>
+                                <td style="text-align:right">1</td>
+                                <td style="text-align:right">${inv.subtotal.toFixed(2)}€</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <div class="totals">
+                        <div class="total-row"><span>Base Imponible:</span> <span>${inv.subtotal.toFixed(2)}€</span></div>
+                        <div class="total-row"><span>IVA (${inv.ivaRate}%):</span> <span>+${inv.iva.toFixed(2)}€</span></div>
+                        ${inv.irpf > 0 ? ('<div class="total-row"><span>Retención IRPF (' + inv.irpfRate + '%):</span> <span>-' + inv.irpf.toFixed(2) + '€</span></div>') : ''}
+                        <div class="total-row total-final"><span>TOTAL:</span> <span>${inv.total.toFixed(2)}€</span></div>
+                    </div>
+
+                    <div style="margin-top:100px; font-size:0.8rem; color:#888; text-align:center;">
+                        Factura generada por el sistema NOVAPACK CLOUD. Registro mercantil de Málaga.
+                    </div>
+
+                    <button class="no-print" onclick="window.print()" style="padding:15px 30px; background:#FF6600; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold; margin-top:20px;">🖨️ IMPRIMIR FACTURA</button>
+                </body>
+                </html>
+            `);
+            win.document.close();
+        };
+
+        window.deleteInvoice = async (id) => {
+            if (!confirm("¿Eliminar factura y marcar albaranes como No Facturados?")) return;
+
+            showLoading();
+            try {
+                const doc = await db.collection('invoices').doc(id).get();
+                const inv = doc.data();
+
+                const batch = db.batch();
+                const uSnap = await db.collectionGroup('tickets').where('invoiceId', '==', id).get();
+                uSnap.forEach(tDoc => {
+                    batch.update(tDoc.ref, { invoiceId: firebase.firestore.FieldValue.delete(), invoiceNum: firebase.firestore.FieldValue.delete() });
+                });
+
+                batch.delete(db.collection('invoices').doc(id));
+                await batch.commit();
+
+                alert("Factura eliminada. Los albaranes vuelven a aparecer como 'No Facturados'.");
+                loadInvoices();
+            } catch (e) { alert("Error: " + e.message); }
+            finally { hideLoading(); }
+        };
+
+        function showLoading() { if (document.getElementById('loading-overlay')) document.getElementById('loading-overlay').style.display = 'flex'; }
+        function hideLoading() { if (document.getElementById('loading-overlay')) document.getElementById('loading-overlay').style.display = 'none'; }
     </script>
 
     <!-- Shared Global Datalists -->
     <datalist id="global-tariffs-datalist"></datalist>
     <datalist id="clients-datalist"></datalist>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay"
+        style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; justify-content:center; align-items:center; flex-direction:column; gap:20px;">
+        <div
+            style="width:50px; height:50px; border:5px solid var(--border-glass); border-top-color:var(--brand-primary); border-radius:50%; animation: spin 1s linear infinite;">
+        </div>
+        <div
+            style="font-family:'Outfit', sans-serif; letter-spacing:2px; font-weight:300; font-size:0.8rem; color:var(--brand-primary)">
+            PROCESANDO...</div>
+    </div>
+    <style>
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
 </body>
 
 </html>

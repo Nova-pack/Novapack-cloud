@@ -301,29 +301,35 @@ document.getElementById('btn-close-reports').onclick = () => document.getElement
 document.getElementById('btn-logout').onclick = () => auth.signOut();
 
 // --- TICKET SEARCH & LIST (Real-time Multi-station) ---
+let lastTicketsBatch = [];
 let ticketListener = null;
 
 function initTicketListener() {
     if (ticketListener) ticketListener(); // Unsubscribe prev
 
     console.log("Iniciando escucha en tiempo real para MULTIPUESTO...");
-    const query = getCollection('tickets').orderBy('createdAt', 'desc').limit(150);
+    // Aumentamos el límite un poco para dar más margen de búsqueda histórica
+    const query = getCollection('tickets').orderBy('createdAt', 'desc').limit(300);
 
     ticketListener = query.onSnapshot(snapshot => {
-        const tickets = [];
-        snapshot.forEach(doc => tickets.push({ id: doc.id, ...doc.data() }));
-        renderTicketsList(tickets);
-    }, err => console.error("Error en tiempo real:", err));
+        lastTicketsBatch = [];
+        snapshot.forEach(doc => lastTicketsBatch.push({ id: doc.id, ...doc.data() }));
+        renderTicketsList();
+    }, err => {
+        console.error("Error en tiempo real:", err);
+        // Si hay error (ej: permisos o desconexión), intentamos reconectar en 5s
+        setTimeout(initTicketListener, 5000);
+    });
 }
 
-function renderTicketsList(tickets) {
+function renderTicketsList() {
     const list = document.getElementById('tickets-list');
-    const searchQuery = document.getElementById('ticket-search').value.toLowerCase();
+    const searchQuery = document.getElementById('ticket-search').value.toLowerCase().trim();
     const dateFilter = document.getElementById('date-filter').value;
 
-    let filtered = tickets;
+    let filtered = [...lastTicketsBatch];
 
-    // Filtros locales para velocidad máxima
+    // 1. Filtro por Fecha
     if (dateFilter) {
         filtered = filtered.filter(t => {
             if (!t.createdAt) return false;
@@ -332,35 +338,38 @@ function renderTicketsList(tickets) {
         });
     }
 
+    // 2. Filtro por Búsqueda (ID o Destinatario)
     if (searchQuery) {
         filtered = filtered.filter(t =>
             (t.id || "").toLowerCase().includes(searchQuery) ||
-            (t.receiver || "").toLowerCase().includes(searchQuery)
+            (t.receiver || "").toLowerCase().includes(searchQuery) ||
+            (t.address || "").toLowerCase().includes(searchQuery)
         );
     }
 
     list.innerHTML = '';
     if (filtered.length === 0) {
-        list.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">No hay albaranes.</div>';
+        list.innerHTML = `<div style="text-align:center; padding:20px; color:#888;">
+            ${searchQuery || dateFilter ? 'No se encontraron resultados.' : 'No hay albaranes registrados.'}
+        </div>`;
         return;
     }
 
-    filtered.forEach(t => renderTicketItem(t, list));
+    // Renderizar solo los primeros 100 resultados para mantener el DOM fluido
+    filtered.slice(0, 100).forEach(t => renderTicketItem(t, list));
 }
 
 // Mantenemos loadTickets para compatibilidad de eventos pero redirigimos al render
 async function loadTickets() {
-    initTicketListener(); // Reiniciar si cambian filtros base o empresa
+    if (lastTicketsBatch.length === 0) {
+        initTicketListener();
+    } else {
+        renderTicketsList();
+    }
 }
 
-document.getElementById('ticket-search').oninput = () => {
-    // Aquí no necesitamos recargar de la nube, solo re-renderizar los datos ya recibidos
-    // Para simplificar llamamos a loadTickets que reinicia o actualiza
-    const currentList = [];
-    // En una implementación real, guardaríamos los tickets en una variable global
-    initTicketListener();
-};
-document.getElementById('date-filter').onchange = () => initTicketListener();
+document.getElementById('ticket-search').oninput = renderTicketsList;
+document.getElementById('date-filter').onchange = renderTicketsList;
 
 
 function renderTicketItem(t, list) {
@@ -469,20 +478,30 @@ async function resetEditor() {
 
 async function getNextId() {
     const comp = companies.find(c => c.id === currentCompanyId);
-    const prefix = (comp && comp.prefix) ? comp.prefix : "NP";
-    const startNum = (comp && comp.startNum) ? comp.startNum : 1;
+    if (!comp) return "NP01";
+    const prefix = comp.prefix || "NP";
+    const startNum = parseInt(comp.startNum) || 1;
 
-    const snapshot = await getCollection('tickets').orderBy('id', 'desc').limit(10).get();
-    let maxNum = startNum - 1;
-    snapshot.forEach(doc => {
-        const id = doc.id;
-        const match = id.match(/\d+/);
-        if (match) {
-            const num = parseInt(match[0]);
-            if (num > maxNum) maxNum = num;
-        }
-    });
-    return prefix + (maxNum + 1).toString().padStart(2, '0');
+    try {
+        const snapshot = await getCollection('tickets').orderBy('id', 'desc').limit(50).get();
+        let maxNum = startNum - 1;
+
+        snapshot.forEach(doc => {
+            const id = doc.id;
+            if (id.startsWith(prefix)) {
+                // Remove prefix and any non-numeric chars to get the number
+                const numPart = id.substring(prefix.length).match(/\d+/);
+                if (numPart) {
+                    const num = parseInt(numPart[0]);
+                    if (num > maxNum) maxNum = num;
+                }
+            }
+        });
+        return prefix + (maxNum + 1).toString().padStart(2, '0');
+    } catch (e) {
+        console.error("Error generating next ID:", e);
+        return prefix + startNum.toString().padStart(2, '0');
+    }
 }
 
 // --- COMPANY MANAGEMENT LOGIC ---
@@ -1146,24 +1165,53 @@ async function runReport() {
 
 document.getElementById('btn-run-report').onclick = runReport;
 
-document.getElementById('btn-export-csv').onclick = () => {
-    if (currentReportData.length === 0) { alert("No hay datos para exportar."); return; }
-    let csv = "ID;FECHA;CLIENTE;ZONA;BULTOS;PESO;TIPO;NOTAS\n";
-    currentReportData.forEach(t => {
-        const d = (t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt)).toLocaleDateString();
-        const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
-        const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
-        csv += `${t.id};${d};${t.receiver};${t.province || ''};${pkgs};${weight.toFixed(1)};${t.shippingType};${(t.notes || '').replace(/;/g, ',')}\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `reporte_novapack_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
+// Export CSV Logic
+function handleExportCSV() {
+    if (currentReportData.length === 0) {
+        alert("Primero genera un listado con datos para exportar.");
+        return;
+    }
+
+    try {
+        let csv = "ID;FECHA;REMITENTE;DESTINATARIO;ZONA;BULTOS;PESO;TURNO;PORTES;REEMBOLSO;NOTAS\n";
+        currentReportData.forEach(t => {
+            const d = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate() : new Date(t.createdAt);
+            const dStr = d.toLocaleDateString();
+            const pkgCount = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+            const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
+
+            const row = [
+                t.id || '',
+                dStr,
+                (t.sender || '').replace(/;/g, ','),
+                (t.receiver || '').replace(/;/g, ','),
+                t.province || '',
+                pkgCount,
+                weight.toFixed(2),
+                t.timeSlot || '',
+                t.shippingType || '',
+                t.cod || '0.00',
+                (t.notes || '').replace(/[\n\r;]/g, ' ')
+            ];
+            csv += row.join(';') + "\n";
+        });
+
+        const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `reporte_novapack_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Export Error:", e);
+        alert("Error al exportar CSV: " + e.message);
+    }
+}
+
+document.getElementById('btn-export-csv').onclick = handleExportCSV;
 
 // --- PRINTING LOGIC ---
 function renderQRCodesInPrintArea() {
