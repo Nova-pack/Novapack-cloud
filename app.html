@@ -16,6 +16,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <!-- QRCode.js -->
     <script src="libs/qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 
 <body>
@@ -123,12 +124,27 @@
                         <div style="display: flex; flex-direction: column; gap: 20px;">
                             <div
                                 style="background:rgba(255,255,255,0.03); padding:15px; border-radius:12px; border:1px solid var(--border-glass);">
-                                <label class="form-label" style="color:var(--brand-primary);">🔍 BÚSQUEDA RÁPIDA DE
-                                    CLIENTE</label>
+                                <label class="form-label"
+                                    style="color:var(--brand-primary); display:flex; justify-content:space-between;">
+                                    <span>🔍 BÚSQUEDA RÁPIDA DE CLIENTE</span>
+                                    <button type="button" id="btn-scan-qr"
+                                        style="background:none; border:none; cursor:pointer; font-size:1.2rem;"
+                                        title="Escanear QR Cliente">📷</button>
+                                </label>
                                 <div style="position:relative;">
                                     <input type="text" id="client-picker" class="form-control" autocomplete="off"
-                                        placeholder="Escribe para buscar...">
+                                        placeholder="Escribe o escanea QR...">
                                     <div id="client-picker-results" class="suggestions-dropdown hidden"></div>
+                                </div>
+                            </div>
+
+                            <!-- QR Scanner Modal -->
+                            <div id="qr-scanner-modal" class="modal" style="display:none; z-index:10001;">
+                                <div class="modal-content" style="max-width:400px; padding:15px;">
+                                    <h3 style="margin-top:0; color:var(--brand-primary);">Escaneando Cliente...</h3>
+                                    <div id="qr-reader" style="width:100%; border-radius:12px; overflow:hidden;"></div>
+                                    <button type="button" class="btn btn-outline" id="btn-close-scanner"
+                                        style="width:100%; margin-top:15px;">CANCELAR</button>
                                 </div>
                             </div>
 

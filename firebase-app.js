@@ -165,10 +165,22 @@ async function loadActiveTariff() {
     }
 }
 
+let targetContext = null; // { uid, compId, idNum, name, address, phone }
+
 // --- CLOUD HELPERS ---
 const getCollection = (name) => {
     if (!currentUser) return null;
-    const userRef = db.collection('users').doc(currentUser.uid);
+
+    let uid = currentUser.uid;
+    let cid = currentCompanyId;
+
+    // Si tenemos un contexto de cliente escaneado por QR, redirigimos los tickets (lectura/escritura)
+    if (targetContext && (name === 'tickets' || name === 'nextId')) {
+        uid = targetContext.uid;
+        cid = targetContext.compId;
+    }
+
+    const userRef = db.collection('users').doc(uid);
 
     // Shared collections (global to the user, across all their companies)
     if (name === 'destinations') {
@@ -176,7 +188,7 @@ const getCollection = (name) => {
     }
 
     // Company-specific collections
-    return userRef.collection('companies').doc(currentCompanyId).collection(name);
+    return userRef.collection('companies').doc(cid).collection(name);
 };
 
 // --- DATA ACCESS: COMPANIES ---
@@ -454,6 +466,25 @@ async function resetEditor() {
     // Set auto-date if not set
     if (!document.getElementById('date-filter').value) {
         document.getElementById('date-filter').value = new Date().toISOString().split('T')[0];
+    }
+
+    // Sender Info based on context
+    if (targetContext) {
+        document.getElementById('ticket-sender').value = targetContext.name;
+        document.getElementById('ticket-sender-address').value = targetContext.address;
+        document.getElementById('ticket-sender-phone').value = targetContext.phone || '';
+    } else {
+        const userDisplay = document.getElementById('user-display-name');
+        if (userDisplay && userData) {
+            userDisplay.textContent = `[#${userData.idNum || ''}] ${userData.name || currentUser.email}`;
+            userDisplay.style.color = '';
+        }
+        const comp = companies.find(c => c.id === currentCompanyId);
+        if (comp) {
+            document.getElementById('ticket-sender').value = comp.name;
+            document.getElementById('ticket-sender-address').value = comp.address;
+            document.getElementById('ticket-sender-phone').value = comp.phone || '';
+        }
     }
 
     // Packages
@@ -771,6 +802,14 @@ async function handleFormSubmit(e) {
 
             // Auto-SMS Alert on First Ticket of Shift
             await checkAndSendAutoShiftSMS(data);
+
+            // Si estábamos en contexto externo (QR), revertimos tras guardar
+            if (targetContext) {
+                console.log("Ticket guardado en contexto externo. Revirtiendo a contexto propio...");
+                targetContext = null;
+                await loadCompanies(); // Recargar mis propias empresas
+                await initTicketListener(); // Volver a escuchar mis tickets
+            }
         }
 
         // Save Client to Agenda if checked
@@ -1735,6 +1774,107 @@ async function sendPickupSMS(t) {
         .catch(e => alert("❌ Error SMS: " + e.message))
         .finally(hideLoading);
 }
+
+// --- QR SCANNER LOGIC ---
+let html5QrCode = null;
+
+async function startScanner() {
+    const modal = document.getElementById('qr-scanner-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+
+    if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+    }
+
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    try {
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            config,
+            async (decodedText) => {
+                console.log("QR Scanned:", decodedText);
+                if (decodedText.startsWith("CLIENT_ID:")) {
+                    const idNum = decodedText.split(":")[1];
+                    await stopScanner();
+                    setClientContext(idNum);
+                } else {
+                    alert("Código QR no reconocido como Cliente Novapack.");
+                }
+            }
+        );
+    } catch (err) {
+        console.error("Scanner Error:", err);
+        alert("No se pudo iniciar la cámara: " + err);
+        modal.style.display = 'none';
+    }
+}
+
+async function stopScanner() {
+    if (html5QrCode) {
+        try {
+            await html5QrCode.stop();
+        } catch (e) { console.warn(e); }
+    }
+    document.getElementById('qr-scanner-modal').style.display = 'none';
+}
+
+async function setClientContext(idNum) {
+    showLoading();
+    try {
+        const snap = await db.collection('users').where('idNum', '==', idNum).get();
+        if (snap.empty) { alert("ID de cliente no encontrado."); return; }
+
+        const userDoc = snap.docs[0];
+        const uData = userDoc.data();
+
+        const compSnap = await db.collection('users').doc(userDoc.id).collection('companies').get();
+        if (compSnap.empty) { alert("El cliente no tiene empresas configuradas."); return; }
+
+        const cDoc = compSnap.docs[0];
+        const cData = cDoc.data();
+
+        targetContext = {
+            uid: userDoc.id,
+            compId: cDoc.id,
+            idNum: idNum,
+            name: uData.name,
+            address: cData.address,
+            phone: cData.phone
+        };
+
+        // UI updates
+        const userDisplay = document.getElementById('user-display-name');
+        if (userDisplay) {
+            userDisplay.textContent = `🚩 [EXT: #${idNum}] ${uData.name}`;
+            userDisplay.style.color = 'var(--brand-primary)';
+        }
+
+        // Auto-fill sender info
+        document.getElementById('ticket-sender').value = uData.name;
+        document.getElementById('ticket-sender-address').value = cData.address;
+        document.getElementById('ticket-sender-phone').value = cData.phone;
+
+        // Refresh with THIS client context
+        initTicketListener();
+        resetEditor();
+
+    } catch (e) {
+        console.error(e);
+        alert("Error al cargar contexto de cliente.");
+    } finally {
+        hideLoading();
+    }
+}
+
+// Global Exports
+window.startScanner = startScanner;
+window.stopScanner = stopScanner;
+
+// Event Listeners for Scanner
+if (document.getElementById('btn-scan-qr')) document.getElementById('btn-scan-qr').onclick = startScanner;
+if (document.getElementById('btn-close-scanner')) document.getElementById('btn-close-scanner').onclick = stopScanner;
 
 // --- UTILS ---
 function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
