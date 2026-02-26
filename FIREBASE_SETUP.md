@@ -36,29 +36,34 @@ service cloud.firestore {
 
     // El admin tiene acceso total a todo
     match /{document=**} {
-      allow read, write: if request.auth != null && 
-        exists(/databases/$(database)/documents/config/admin) &&
-        get(/databases/$(database)/documents/config/admin).data.uid == request.auth.uid;
+      allow read, write: if request.auth != null && isAdmin();
     }
 
-    // Reglas para todos los usuarios (incluyendo Clientes)
+    // Reglas para Albaranes (Colección Global - Opción A)
+    match /tickets/{ticketId} {
+      allow read, update, delete: if request.auth != null && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if request.auth != null && (request.resource.data.uid == request.auth.uid || isAdmin());
+    }
+
+    // Reglas para Facturas (Colección Global - Opción A)
+    match /invoices/{invoiceId} {
+      allow read: if request.auth != null && (resource.data.clientId == request.auth.uid || isAdmin());
+      allow write: if request.auth != null && isAdmin(); // Solo admin crea/borra facturas
+    }
+
+    // Reglas heredadas para perfiles de usuario
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
     }
     
-    // Permitir leer la config del admin para detectar el botón de administración
-    match /config/admin {
+    match /config/{document=**} {
       allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
     }
 
-    // Permitir leer configuraciones globales si las hubiera
-    match /config/settings {
+    match /tariffs/{document=**} {
       allow read: if request.auth != null;
-    }
-
-    // Permitir leer la lista de teléfonos predefinidos
-    match /config/phones/list/{phoneId} {
-      allow read: if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
     }
   }
 }

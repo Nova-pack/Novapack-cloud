@@ -175,13 +175,19 @@ const getCollection = (name) => {
     let uid = currentUser.uid;
     let cid = currentCompanyId;
 
-    // Si tenemos un contexto de cliente escaneado por QR, redirigimos los tickets (lectura/escritura)
+    // Si tenemos un contexto de cliente escaneado por QR, redirigimos los albaranes (lectura/escritura)
     if (targetContext && (name === 'tickets' || name === 'nextId')) {
         uid = targetContext.uid;
         cid = targetContext.compId;
     }
 
-    // Si tenemos un contexto de cliente legado (email), redirigimos la base
+    // OPCIÓN A: Colecciones principales para datos operativos (Albaranes/Facturas)
+    // Esto permite al Administrador ver todo el Big Data en un solo lugar
+    if (name === 'tickets' || name === 'invoices') {
+        return db.collection(name);
+    }
+
+    // Si tenemos un contexto de cliente legado (email), redirigimos la base para datos viejos
     let baseUid = uid;
     if (effectiveStorageUid && !targetContext) {
         baseUid = effectiveStorageUid;
@@ -190,11 +196,11 @@ const getCollection = (name) => {
     const userRef = db.collection('users').doc(baseUid);
 
     // Shared collections (global to the user, across all their companies)
-    if (name === 'destinations') {
+    if (name === 'destinations' || name === 'nextId') {
         return userRef.collection(name);
     }
 
-    // Company-specific collections
+    // Company-specific collections (legacy/config)
     return userRef.collection('companies').doc(cid).collection(name);
 };
 
@@ -340,9 +346,22 @@ let ticketListener = null;
 function initTicketListener() {
     if (ticketListener) ticketListener(); // Unsubscribe prev
 
-    console.log("Iniciando escucha en tiempo real para MULTIPUESTO...");
-    // Aumentamos el límite un poco para dar más margen de búsqueda histórica
-    const query = getCollection('tickets').orderBy('createdAt', 'desc').limit(300);
+    // Contexto de seguridad: Al usar Opcion A, debemos filtrar por UID y Empresa
+    let uid = currentUser.uid;
+    let cid = currentCompanyId;
+    if (targetContext) {
+        uid = targetContext.uid;
+        cid = targetContext.compId;
+    }
+
+    console.log(`Iniciando escucha en tiempo real para ${cid} (MULTIPUESTO)...`);
+
+    // Al pasar a colección global, el filtro .where() es obligatorio por seguridad
+    const query = getCollection('tickets')
+        .where('uid', '==', uid)
+        .where('compId', '==', cid)
+        .orderBy('createdAt', 'desc')
+        .limit(300);
 
     ticketListener = query.onSnapshot(snapshot => {
         lastTicketsBatch = [];
@@ -605,12 +624,26 @@ async function getNextId() {
     const prefix = comp.prefix || "NP";
     const startNum = parseInt(comp.startNum) || 1;
 
+    let uid = currentUser.uid;
+    let cid = currentCompanyId;
+    if (targetContext) {
+        uid = targetContext.uid;
+        cid = targetContext.compId;
+    }
+
     try {
-        const snapshot = await getCollection('tickets').orderBy('id', 'desc').limit(50).get();
+        // En colección global, filtramos por empresa para no mezclar contadores de otros clientes
+        const snapshot = await getCollection('tickets')
+            .where('uid', '==', uid)
+            .where('compId', '==', cid)
+            .orderBy('id', 'desc')
+            .limit(50)
+            .get();
+
         let maxNum = startNum - 1;
 
         snapshot.forEach(doc => {
-            const id = doc.id;
+            const id = doc.data().id || doc.id;
             if (id.startsWith(prefix)) {
                 // Remove prefix and any non-numeric chars to get the number
                 const numPart = id.substring(prefix.length).match(/\d+/);
@@ -863,7 +896,8 @@ async function handleFormSubmit(e) {
     const fullAddr = street + (number ? " Nº " + number : "");
 
     const data = {
-        uid: currentUser.uid,
+        uid: targetContext ? targetContext.uid : currentUser.uid,
+        compId: targetContext ? targetContext.compId : currentCompanyId,
         clientIdNum: userData ? userData.idNum : '---',
         sender: document.getElementById('ticket-sender').value,
         senderAddress: document.getElementById('ticket-sender-address').value,
@@ -896,10 +930,14 @@ async function handleFormSubmit(e) {
             }
             await getCollection('tickets').doc(editingId).update(data);
         } else {
-            ticketId = await getNextId();
-            data.id = ticketId;
+            const businessId = await getNextId();
+            data.id = businessId; // e.g. NP01
             data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
             data.printed = false;
+
+            // Al ser colección global, usamos un ID de documento único para evitar colisiones
+            // Combinación del UID + CompanyID + BusinessID
+            ticketId = `${data.uid}_${data.compId}_${businessId}`;
             await getCollection('tickets').doc(ticketId).set(data);
 
             // Auto-SMS Alert on First Ticket of Shift

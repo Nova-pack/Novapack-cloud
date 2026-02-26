@@ -1327,8 +1327,8 @@
             try {
                 console.log("[Maintenance] Iniciando borrado masivo...");
 
-                // 1. Borrar todos los albaranes (Tickets)
-                const ticketsSnap = await db.collectionGroup('tickets').get();
+                // 1. Borrar todos los albaranes (Tickets) - Colección Global
+                const ticketsSnap = await db.collection('tickets').get();
                 console.log(`[Maintenance] Eliminando ${ticketsSnap.size} albaranes...`);
                 let batch = db.batch();
                 let count = 0;
@@ -1602,7 +1602,8 @@
                     tariffSnap.forEach(doc => { tariffsCache[doc.id] = doc.data().items || {}; });
                 }
 
-                const snap = await db.collectionGroup('tickets').get();
+                // Opcion A: Ahora todos los tickets estan en una sola coleccion global
+                const snap = await db.collection('tickets').get();
 
                 // Helper to find user data by any ID (email or UID)
                 const findUserData = (id) => {
@@ -1627,12 +1628,11 @@
                         return; // Omitimos si no tiene fecha y hay filtro de fecha
                     }
 
-                    // Identificación del propietario
-                    const path = doc.ref.path;
-                    const parts = path.split('/');
-                    const pathUid = parts[1]; // users/{uid}/...
+                    // Identificación del propietario (Ahora por campos explicitos, no por ruta)
+                    const pathUid = t.uid;
+                    const pathCompId = t.compId || 'default';
 
-                    const uData = findUserData(pathUid) || findUserData(t.uid) || {};
+                    const uData = findUserData(pathUid) || {};
                     const cid = uData.idNum || t.clientIdNum || '---';
                     const tId = uData.tariffId;
 
@@ -1656,7 +1656,7 @@
                         });
                     }
 
-                    reportsData.push({ ...t, uid: lookupId, compId: parts[3] || 'default', docId: doc.id, clientIdNum: cid, companyPrice });
+                    reportsData.push({ ...t, uid: lookupId, compId: pathCompId, docId: doc.id, clientIdNum: cid, companyPrice });
                 });
 
                 if (reportsData.length === 0) {
@@ -2153,8 +2153,8 @@
                 const targetEmail = String(uData.email || '').trim().toLowerCase();
                 const targetUid = uData.uid || uidInSelect || selectedUid;
 
-                // ESCANEO GLOBAL (Igual que en Informes para que coincidan 100%)
-                const snap = await db.collectionGroup('tickets').get();
+                // ESCANEO GLOBAL (Ahora directo a la coleccion tickets de Opcion A)
+                const snap = await db.collection('tickets').get();
 
                 let tickets = [];
                 let filteredByDate = 0;
@@ -2164,15 +2164,9 @@
                 snap.forEach(doc => {
                     const t = doc.data();
 
-                    // 1. EXTRAER IDENTIDAD Y COMPAÑÍA DEL ALBARÁN (Análisis de Ruta)
-                    const path = doc.ref.path;
-                    const parts = path.split('/');
-                    const pathUid = parts[1]; // users/{uid}/...
-
-                    let pathCompId = 'comp_main'; // Default
-                    if (parts.length >= 6 && parts[2] === 'companies') {
-                        pathCompId = parts[3]; // users/{uid}/companies/{compId}/tickets/...
-                    }
+                    // 1. EXTRAER IDENTIDAD Y COMPAÑÍA DEL ALBARÁN
+                    const pathUid = t.uid;
+                    const pathCompId = t.compId || 'comp_main';
 
                     const docUid = t.uid;
                     const docClientIdNum = String(t.clientIdNum || '').replace(/^0+/, '').trim().toLowerCase();
@@ -2369,8 +2363,8 @@
                 // Update Tickets with invoiceId to mark as billed
                 const batch = db.batch();
                 selectedTickets.forEach(t => {
-                    const tRef =
-                        db.collection('users').doc(t.uid).collection('companies').doc(t.compId).collection('tickets').doc(t.docId);
+                    // Ruta directa en Coleccion Global (Opcion A)
+                    const tRef = db.collection('tickets').doc(t.docId);
                     batch.update(tRef, { invoiceId: invDoc.id, invoiceNum: invoiceData.invoiceId });
                 });
                 await batch.commit();
