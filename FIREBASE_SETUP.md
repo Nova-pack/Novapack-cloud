@@ -72,6 +72,37 @@ Edita el archivo `firebase-config.js` y pega tus credenciales (las obtienes en l
 
 Ejecuta `firebase deploy` desde tu terminal para subir la aplicación a tu dominio de Firebase Hosting.
 
+## 6. Configurar Dominio Personalizado (`novapaack.com`)
+
+Dado que has solicitado instalar el dominio en **Firebase** y **GitHub**, a continuación encontrarás los pasos a seguir para cada plataforma e incorporar el dominio de manera segura.
+
+### A) Configuración en Firebase Hosting (Recomendado)
+
+Firebase alojará tu sitio de manera veloz con un certificado SSL (HTTPS) gratuito.
+
+1. Abre tu proyecto en **Firebase Console**.
+2. En el menú izquierdo, entra a **Hosting**.
+3. Haz clic en el botón **Agregar dominio personalizado** (Add custom domain).
+4. Introduce tu dominio: `novapaack.com` y haz clic en Continuar.
+5. Firebase te proporcionará registros **TXT** o **A** (como las IP `199.36.158.100`, etc.).
+6. Ve al panel de control de donde compraste tu dominio (GoDaddy, Namecheap, Hostinger, etc.) a la sección **Gestión de DNS**.
+7. Añade los registros **A** y **TXT** que te haya dado Firebase.
+8. Una vez guardados, espera algunas horas (hasta 24h) a que se propaguen. Firebase emitirá tu SSL automáticamente y tu app correrá en `https://novapaack.com`.
+
+### B) Configuración en GitHub (Si usas GitHub Pages)
+
+El archivo `CNAME` incluido en la raíz del proyecto ya facilita la integración.
+
+1. Ve a tu repositorio en **GitHub** de NOVAPACK CLOUD.
+2. Entra en **Settings** (Configuración) de tu repositorio.
+3. En la barra lateral izquierda, selecciona **Pages** (Páginas).
+4. Desplázate hasta **Custom domain** e introduce `novapaack.com`.
+5. Dale a **Save**.
+6. GitHub te solicitará crear registros **A** apuntando a sus IPs (como `185.199.108.153`...) en el lugar donde compraste tu dominio.
+7. Una vez añadidos los registros DNS, marca la casilla **Enforce HTTPS** en GitHub Pages para ofrecer tráfico seguro.
+
+*(Recuerda que los registros A (DNS) apuntarán a Firebase Hosting o GitHub Pages, por norma general **solo puedes optar por uno** para servir el contenido principal).*
+
 ---
 **Nota sobre creación de usuarios:**
 En esta versión, el admin registra al cliente en la base de datos Firestore. Para que el cliente pueda entrar con contraseña, debes crearlo manualmente en la pestaña de **Authentication** en la consola de Firebase con el mismo correo, o implementar una Firebase Cloud Function (opción recomendada para producción).
