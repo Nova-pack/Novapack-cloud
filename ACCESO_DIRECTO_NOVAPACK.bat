@@ -8,8 +8,8 @@ if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
 )
 
 if "%BROWSER_PATH%"=="" (
-    start "" "https://novapack-68f05.firebaseapp.com"
+    start "" "https://novapaack.com"
 ) else (
-    start "" "%BROWSER_PATH%" --app="https://novapack-68f05.firebaseapp.com" --start-maximized
+    start "" "%BROWSER_PATH%" --app="https://novapaack.com" --start-maximized
 )
 exit
