@@ -21,7 +21,7 @@
         'erp-tab-inicio',
         'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones', 'erp-tab-config',
         'erp-tab-maintenance', 'erp-tab-pod', 'erp-tab-pending-deletes', 'erp-tab-users',
-        'erp-tab-ticket-search'
+        'erp-tab-ticket-search', 'erp-tab-ficha-cliente'
     ];
 
     // --- TAB DEFINITIONS (built-in tabs that map to existing workspaces) ---
@@ -46,6 +46,7 @@
         'pending-deletes': { wsId: 'erp-tab-pending-deletes',    title: 'Anulaciones',       icon: 'notification_important', closeable: true },
         'users':           { wsId: 'erp-tab-users',              title: 'Gestión Clientes',  icon: 'group',              closeable: true },
         'ticket-search':   { wsId: 'erp-tab-ticket-search',      title: 'Buscar Albaranes',  icon: 'search',             closeable: true },
+        'ficha-cliente':   { wsId: 'erp-tab-ficha-cliente',      title: 'Ficha Cliente',     icon: 'person',             closeable: true },
     };
 
     // --- CORE API ---
@@ -402,7 +403,7 @@
             var tabContainerIds = [
                 'erp-tab-inicio', 'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones',
                 'erp-tab-config', 'erp-tab-maintenance', 'erp-tab-pod',
-                'erp-tab-pending-deletes', 'erp-tab-users'
+                'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente'
             ];
             tabContainerIds.forEach(function(id) {
                 var el = document.getElementById(id);

@@ -1,0 +1,672 @@
+// =============================================
+// NOVAPACK ERP — Ficha Maestra de Cliente v1.0
+// =============================================
+// Renders a full-screen, tabbed client card inside the ERP tab system.
+// Sub-tabs: PRINCIPAL | DATOS ECONÓMICOS | ALBARANES | FACTURACIÓN
+
+(function() {
+    'use strict';
+
+    let _fichaClientId = null;
+    let _fichaClientData = null;
+    let _fichaActiveSubTab = 'principal';
+    let _fichaTicketsCache = [];
+    let _fichaInvoicesCache = [];
+
+    // ============================================================
+    //  ENTRY POINT
+    // ============================================================
+    window.openFichaCliente = function(clientId) {
+        if (!clientId) return;
+        _fichaClientId = clientId;
+        _fichaClientData = (window.userMap && window.userMap[clientId]) ? { ...window.userMap[clientId], id: clientId } : null;
+
+        if (!_fichaClientData) {
+            alert('No se encontraron datos para este cliente.');
+            return;
+        }
+
+        // Open a dynamic tab in the ERP tab system
+        const tabTitle = `[#${_fichaClientData.idNum || '?'}] ${_fichaClientData.name || 'Cliente'}`;
+        if (typeof window.erpOpenTab === 'function') {
+            window.erpOpenTab('ficha-cliente', {
+                title: tabTitle,
+                icon: 'person',
+                closeable: true,
+                onLoad: () => _fichaRender()
+            });
+        }
+
+        // If tab was already open, re-render with new client
+        _fichaRender();
+    };
+
+    // ============================================================
+    //  MAIN RENDER
+    // ============================================================
+    function _fichaRender() {
+        const container = document.getElementById('erp-tab-ficha-cliente');
+        if (!container || !_fichaClientData) return;
+        const d = _fichaClientData;
+
+        // Payment terms label map
+        const paymentLabels = {
+            'contado': 'Contado', 'giro_30': 'Giro 30 días', 'giro_60': 'Giro 60 días',
+            'giro_90': 'Giro 90 días', 'giro_120': 'Giro 120 días',
+            'transferencia': 'Transferencia', 'recibo_sepa': 'Recibo SEPA'
+        };
+
+        container.innerHTML = `
+        <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; color:#d4d4d4; font-family:'Segoe UI',sans-serif;">
+            <!-- HEADER BAR -->
+            <div style="background:linear-gradient(135deg, #1a237e, #283593); padding:16px 24px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <div>
+                    <div style="font-size:1.3rem; font-weight:bold; color:#fff; display:flex; align-items:center; gap:10px;">
+                        <span class="material-symbols-outlined" style="font-size:1.5rem;">business</span>
+                        ${d.name || 'Sin Nombre'}
+                    </div>
+                    <div style="font-size:0.8rem; color:#9fa8da; margin-top:4px;">
+                        ID: #${d.idNum || 'N/A'} · NIF: ${d.nif || 'N/A'} · ${d.email || ''} · Forma Pago: <strong style="color:#FFD700;">${paymentLabels[d.paymentTerms] || 'Contado'}</strong>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button onclick="window._fichaSaveAll()" style="background:#4CAF50; border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px;">
+                        <span class="material-symbols-outlined" style="font-size:1rem;">save</span> Guardar Cambios
+                    </button>
+                </div>
+            </div>
+
+            <!-- SUB-TAB BAR -->
+            <div id="ficha-subtab-bar" style="display:flex; background:#252526; border-bottom:2px solid #007acc; flex-shrink:0;">
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'principal' ? 'active' : ''}" onclick="window._fichaSetSubTab('principal')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'principal' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'principal' ? '3px solid #007acc' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">person</span> PRINCIPAL
+                </div>
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'economico' ? 'active' : ''}" onclick="window._fichaSetSubTab('economico')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'economico' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'economico' ? '3px solid #FF9800' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">account_balance</span> DATOS ECONÓMICOS
+                </div>
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'albaranes' ? 'active' : ''}" onclick="window._fichaSetSubTab('albaranes')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'albaranes' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'albaranes' ? '3px solid #2196F3' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">inventory_2</span> ALBARANES
+                </div>
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'facturacion' ? 'active' : ''}" onclick="window._fichaSetSubTab('facturacion')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'facturacion' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'facturacion' ? '3px solid #4CAF50' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">receipt</span> FACTURACIÓN
+                </div>
+            </div>
+
+            <!-- SUB-TAB CONTENT -->
+            <div id="ficha-subtab-content" style="flex:1; overflow-y:auto; padding:20px 24px;">
+            </div>
+        </div>`;
+
+        // Render active sub-tab
+        _fichaRenderSubTab();
+    }
+
+    // ============================================================
+    //  SUB-TAB NAVIGATION
+    // ============================================================
+    window._fichaSetSubTab = function(tab) {
+        _fichaActiveSubTab = tab;
+        _fichaRender();
+    };
+
+    function _fichaRenderSubTab() {
+        switch (_fichaActiveSubTab) {
+            case 'principal': _fichaRenderPrincipal(); break;
+            case 'economico': _fichaRenderEconomico(); break;
+            case 'albaranes': _fichaRenderAlbaranes(); break;
+            case 'facturacion': _fichaRenderFacturacion(); break;
+        }
+    }
+
+    // ============================================================
+    //  HELPER: Field row builder
+    // ============================================================
+    function _field(label, id, value, opts = {}) {
+        const type = opts.type || 'text';
+        const width = opts.width || '100%';
+        const readonly = opts.readonly ? 'readonly style="opacity:0.6; cursor:not-allowed;"' : '';
+        const placeholder = opts.placeholder || '';
+        if (type === 'select' && opts.options) {
+            let optsHtml = opts.options.map(o => `<option value="${o.value}" ${o.value === value ? 'selected' : ''}>${o.label}</option>`).join('');
+            return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '150px'};">
+                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${label}</label>
+                <select id="${id}" style="width:${width}; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">${optsHtml}</select>
+            </div>`;
+        }
+        return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '150px'};">
+            <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${label}</label>
+            <input type="${type}" id="${id}" value="${(value || '').toString().replace(/"/g, '&quot;')}" placeholder="${placeholder}" ${readonly}
+                style="width:${width}; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+        </div>`;
+    }
+
+    function _sectionTitle(icon, text, color) {
+        return `<div style="display:flex; align-items:center; gap:8px; margin:20px 0 12px; padding-bottom:8px; border-bottom:1px solid #3c3c3c;">
+            <span class="material-symbols-outlined" style="color:${color}; font-size:1.1rem;">${icon}</span>
+            <span style="color:${color}; font-size:0.9rem; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${text}</span>
+        </div>`;
+    }
+
+    // ============================================================
+    //  SUB-TAB: PRINCIPAL
+    // ============================================================
+    function _fichaRenderPrincipal() {
+        const c = document.getElementById('ficha-subtab-content');
+        const d = _fichaClientData;
+        if (!c) return;
+
+        c.innerHTML = `
+        ${_sectionTitle('badge', 'Identificación', '#007acc')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Nº Cliente (ID)', 'fc-idnum', d.idNum, { flex: '0 0 100px', minWidth: '80px' })}
+            ${_field('Razón Social / Empresa', 'fc-name', d.name, { flex: 3 })}
+            ${_field('CIF / NIF', 'fc-nif', d.nif, { flex: 1 })}
+        </div>
+
+        ${_sectionTitle('mail', 'Contacto', '#4CAF50')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Email (Login)', 'fc-email', d.email, { type: 'email', readonly: true })}
+            ${_field('Email Administración (Facturas)', 'fc-admin-email', d.adminEmail, { type: 'email', placeholder: 'administracion@empresa.com' })}
+            ${_field('Teléfono', 'fc-phone', d.senderPhone || d.phone)}
+        </div>
+
+        ${_sectionTitle('location_on', 'Dirección Principal', '#FF9800')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Calle / Vía', 'fc-street', d.street, { flex: 3 })}
+            ${_field('Número', 'fc-number', d.number, { flex: '0 0 80px', minWidth: '60px' })}
+            ${_field('C. Postal', 'fc-cp', d.cp, { flex: '0 0 90px', minWidth: '70px' })}
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Localidad', 'fc-city', d.localidad)}
+            ${_field('Provincia', 'fc-province', d.province)}
+        </div>
+
+        ${_sectionTitle('account_tree', 'Relaciones', '#2196F3')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Filial Facturadora', 'fc-billing-company', d.billingCompanyId, {
+                type: 'select',
+                options: [{ value: '', label: '-- Central (por defecto) --' }].concat(
+                    typeof billingCompaniesMap !== 'undefined' ? Object.entries(billingCompaniesMap).map(([id, bc]) => ({ value: id, label: bc.name })) : []
+                )
+            })}
+            ${_field('Cliente Padre (Filial)', 'fc-parent-client', d.parentClientId || '', { placeholder: 'Sin padre (independiente)' })}
+            ${_field('Tarifa Global', 'fc-tariff', d.tariffId)}
+        </div>
+        `;
+    }
+
+    // ============================================================
+    //  SUB-TAB: DATOS ECONÓMICOS
+    // ============================================================
+    function _fichaRenderEconomico() {
+        const c = document.getElementById('ficha-subtab-content');
+        const d = _fichaClientData;
+        if (!c) return;
+
+        c.innerHTML = `
+        ${_sectionTitle('payments', 'Condiciones de Pago', '#FF9800')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Forma de Pago', 'fc-payment-terms', d.paymentTerms || 'contado', {
+                type: 'select',
+                options: [
+                    { value: 'contado', label: 'Contado' },
+                    { value: 'giro_30', label: 'Giro a 30 días' },
+                    { value: 'giro_60', label: 'Giro a 60 días' },
+                    { value: 'giro_90', label: 'Giro a 90 días' },
+                    { value: 'giro_120', label: 'Giro a 120 días' },
+                    { value: 'transferencia', label: 'Transferencia' },
+                    { value: 'recibo_sepa', label: 'Recibo domiciliado (SEPA)' }
+                ]
+            })}
+            ${_field('IBAN Bancario', 'fc-iban', d.iban, { placeholder: 'ES00 0000 0000 0000 0000 0000' })}
+        </div>
+
+        ${_sectionTitle('description', 'Mandato SEPA', '#E040FB')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Referencia SEPA', 'fc-sepa-ref', d.sepaRef)}
+            ${_field('Fecha Mandato SEPA', 'fc-sepa-date', d.sepaDate, { type: 'date' })}
+        </div>
+
+        ${_sectionTitle('sell', 'Tarifas y Cuota Plana', '#FFD700')}
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+            ${_field('Tarifa Global Asignada', 'fc-tariff-eco', d.tariffId, { placeholder: 'Sin tarifa asignada' })}
+            ${_field('Cuota Plana Activa', 'fc-flatrate', d.isFlatRate ? 'Sí' : 'No', { readonly: true })}
+            ${_field('Importe Cuota Plana (€)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number' })}
+        </div>
+
+        ${_sectionTitle('account_balance_wallet', 'Saldo y Estado de Cuenta', '#4CAF50')}
+        <div id="fc-balance-container" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:20px;">
+            <div style="background:linear-gradient(135deg, #1a237e, #283593); border-radius:10px; padding:18px; text-align:center;">
+                <div style="font-size:0.65rem; color:#9fa8da; text-transform:uppercase; letter-spacing:1px;">Facturado Total</div>
+                <div id="fc-total-facturado" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+            </div>
+            <div style="background:linear-gradient(135deg, #1b5e20, #2e7d32); border-radius:10px; padding:18px; text-align:center;">
+                <div style="font-size:0.65rem; color:#a5d6a7; text-transform:uppercase; letter-spacing:1px;">Cobrado</div>
+                <div id="fc-total-cobrado" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+            </div>
+            <div style="background:linear-gradient(135deg, #b71c1c, #c62828); border-radius:10px; padding:18px; text-align:center;">
+                <div style="font-size:0.65rem; color:#ef9a9a; text-transform:uppercase; letter-spacing:1px;">Pendiente</div>
+                <div id="fc-total-pendiente" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+            </div>
+        </div>
+        `;
+
+        // Load balance data asynchronously
+        _fichaLoadBalance();
+    }
+
+    async function _fichaLoadBalance() {
+        try {
+            const snap = await db.collection('invoices')
+                .where('clientId', '==', _fichaClientId)
+                .orderBy('date', 'desc')
+                .limit(5000)
+                .get();
+
+            let totalFacturado = 0, totalCobrado = 0, totalPendiente = 0;
+            snap.forEach(doc => {
+                const inv = doc.data();
+                const total = inv.total || 0;
+                totalFacturado += total;
+                if (inv.paid) totalCobrado += total;
+                else totalPendiente += total;
+            });
+
+            const fmt = (n) => n.toFixed(2) + '€';
+            const el1 = document.getElementById('fc-total-facturado');
+            const el2 = document.getElementById('fc-total-cobrado');
+            const el3 = document.getElementById('fc-total-pendiente');
+            if (el1) el1.textContent = fmt(totalFacturado);
+            if (el2) el2.textContent = fmt(totalCobrado);
+            if (el3) el3.textContent = fmt(totalPendiente);
+        } catch (e) {
+            console.error('[Ficha] Error loading balance:', e);
+        }
+    }
+
+    // ============================================================
+    //  SUB-TAB: ALBARANES
+    // ============================================================
+    function _fichaRenderAlbaranes() {
+        const c = document.getElementById('ficha-subtab-content');
+        if (!c) return;
+
+        c.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+                <span class="material-symbols-outlined" style="color:#2196F3; font-size:1.2rem;">inventory_2</span>
+                <span style="color:#2196F3; font-size:0.9rem; font-weight:bold;">ALBARANES DEL CLIENTE</span>
+                <span id="fc-tickets-count" style="color:#888; font-size:0.8rem;"></span>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <select id="fc-tickets-filter" onchange="window._fichaFilterTickets()" style="background:#2d2d30; border:1px solid #3c3c3c; color:#ccc; padding:6px 10px; font-size:0.8rem; border-radius:4px;">
+                    <option value="all">Todos</option>
+                    <option value="pending">Pendientes de facturar</option>
+                    <option value="billed">Ya facturados</option>
+                </select>
+                <button onclick="window._fichaFacturarSeleccionados()" style="background:#4CAF50; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:4px;">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem;">receipt</span> Facturar Seleccionados
+                </button>
+            </div>
+        </div>
+        <div id="fc-tickets-table" style="overflow-y:auto; max-height:calc(100vh - 350px);">
+            <div style="text-align:center; padding:40px; color:#888;">Cargando albaranes...</div>
+        </div>`;
+
+        _fichaLoadTickets();
+    }
+
+    async function _fichaLoadTickets() {
+        try {
+            const d = _fichaClientData;
+            const idNumStr = String(d.idNum || '').trim();
+            const authUid = d.authUid || d.id || _fichaClientId;
+
+            // Query tickets by clientIdNum or uid
+            let q1 = db.collection('tickets');
+            if (idNumStr) q1 = q1.where('clientIdNum', '==', idNumStr);
+            else q1 = q1.where('uid', '==', authUid);
+            const snap1 = await q1.limit(3000).get();
+
+            // Also query debidos assigned
+            let q2 = db.collection('tickets').where('shippingType', '==', 'Debidos');
+            if (idNumStr) q2 = q2.where('billToClientIdNum', '==', idNumStr);
+            else q2 = q2.where('billToUid', '==', authUid);
+            const snap2 = await q2.limit(3000).get();
+
+            const seen = new Set();
+            _fichaTicketsCache = [];
+            [snap1, snap2].forEach(snap => {
+                snap.forEach(doc => {
+                    if (seen.has(doc.id)) return;
+                    seen.add(doc.id);
+                    _fichaTicketsCache.push({ docId: doc.id, ...doc.data() });
+                });
+            });
+
+            // Sort by date desc
+            _fichaTicketsCache.sort((a, b) => {
+                const da = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                const db2 = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                return db2 - da;
+            });
+
+            _fichaRenderTicketsTable(_fichaTicketsCache);
+        } catch (e) {
+            const t = document.getElementById('fc-tickets-table');
+            if (t) t.innerHTML = `<div style="color:#f44; padding:20px;">Error: ${e.message}</div>`;
+        }
+    }
+
+    window._fichaFilterTickets = function() {
+        const filter = document.getElementById('fc-tickets-filter').value;
+        let filtered = _fichaTicketsCache;
+        if (filter === 'pending') {
+            filtered = _fichaTicketsCache.filter(t => !t.invoiceId || t.invoiceId === '' || t.invoiceId === 'null');
+        } else if (filter === 'billed') {
+            filtered = _fichaTicketsCache.filter(t => t.invoiceId && t.invoiceId !== '' && t.invoiceId !== 'null');
+        }
+        _fichaRenderTicketsTable(filtered);
+    };
+
+    function _fichaRenderTicketsTable(tickets) {
+        const container = document.getElementById('fc-tickets-table');
+        const countEl = document.getElementById('fc-tickets-count');
+        if (!container) return;
+        if (countEl) countEl.textContent = `(${tickets.length} albaranes)`;
+
+        if (tickets.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">No hay albaranes para mostrar.</div>';
+            return;
+        }
+
+        let html = `
+        <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+            <thead style="position:sticky; top:0; z-index:1;">
+                <tr style="background:#2d2d30; color:#9cdcfe; font-size:0.7rem;">
+                    <th style="padding:8px 6px; text-align:center; width:30px;"><input type="checkbox" id="fc-tickets-all" onchange="document.querySelectorAll('.fc-ticket-chk').forEach(c=>c.checked=this.checked)" style="scale:1.2;"></th>
+                    <th style="padding:8px 6px; text-align:left;">Fecha</th>
+                    <th style="padding:8px 6px; text-align:left;">Nº Albarán</th>
+                    <th style="padding:8px 6px; text-align:left;">Destinatario</th>
+                    <th style="padding:8px 6px; text-align:left;">Ciudad</th>
+                    <th style="padding:8px 6px; text-align:center;">Bultos</th>
+                    <th style="padding:8px 6px; text-align:center;">Kg</th>
+                    <th style="padding:8px 6px; text-align:center;">Tipo</th>
+                    <th style="padding:8px 6px; text-align:center;">Estado</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        tickets.forEach(t => {
+            const date = t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().toLocaleDateString('es-ES') : 'N/A';
+            const isBilled = t.invoiceId && t.invoiceId !== '' && t.invoiceId !== 'null';
+            const statusHtml = isBilled
+                ? `<span style="color:#4CAF50; font-size:0.7rem;">✅ Facturado</span>`
+                : `<span style="color:#FF9800; font-size:0.7rem;">⏳ Pendiente</span>`;
+            const typeColor = t.shippingType === 'Debidos' ? '#E040FB' : '#2196F3';
+            const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (t.packages || 1);
+
+            html += `
+            <tr style="border-bottom:1px solid #2d2d30;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                <td style="padding:6px; text-align:center;">${!isBilled ? `<input type="checkbox" class="fc-ticket-chk" value="${t.docId}" style="scale:1.1;">` : ''}</td>
+                <td style="padding:6px; color:#ccc;">${date}</td>
+                <td style="padding:6px; color:#FFD700; font-weight:bold;">${t.id || t.docId || '-'}</td>
+                <td style="padding:6px; color:#fff;">${t.receiver || t.receiverName || '-'}</td>
+                <td style="padding:6px; color:#888;">${t.city || t.receiverCity || '-'}</td>
+                <td style="padding:6px; text-align:center; color:#ccc;">${pkgs}</td>
+                <td style="padding:6px; text-align:center; color:#ccc;">${t.weight || t.kilos || '-'}</td>
+                <td style="padding:6px; text-align:center; color:${typeColor}; font-size:0.7rem; font-weight:bold;">${t.shippingType || 'Pagados'}</td>
+                <td style="padding:6px; text-align:center;">${statusHtml}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    }
+
+    window._fichaFacturarSeleccionados = function() {
+        const checks = document.querySelectorAll('.fc-ticket-chk:checked');
+        if (checks.length === 0) {
+            alert('Selecciona al menos un albarán pendiente para facturar.');
+            return;
+        }
+
+        // Switch to Factura tab and load client
+        if (typeof window.erpOpenTab === 'function') {
+            window.erpOpenTab('factura');
+        }
+
+        // Select client in billing picker
+        setTimeout(() => {
+            const select = document.getElementById('adv-client-picker');
+            const searchInput = document.getElementById('adv-client-search');
+            if (select) {
+                select.value = _fichaClientId;
+                if (searchInput) searchInput.value = `[#${_fichaClientData.idNum || '?'}] ${_fichaClientData.name || ''}`;
+                if (typeof window.advLoadClientDetails === 'function') {
+                    window.advLoadClientDetails(_fichaClientId);
+                }
+            }
+        }, 500);
+
+        alert(`Se van a facturar ${checks.length} albaranes. Se ha abierto la pestaña de Facturación con el cliente seleccionado.`);
+    };
+
+    // ============================================================
+    //  SUB-TAB: FACTURACIÓN
+    // ============================================================
+    function _fichaRenderFacturacion() {
+        const c = document.getElementById('ficha-subtab-content');
+        if (!c) return;
+
+        c.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+                <span class="material-symbols-outlined" style="color:#4CAF50; font-size:1.2rem;">receipt</span>
+                <span style="color:#4CAF50; font-size:0.9rem; font-weight:bold;">FACTURAS EMITIDAS</span>
+                <span id="fc-invoices-count" style="color:#888; font-size:0.8rem;"></span>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button onclick="window._fichaNewInvoice()" style="background:#007acc; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:4px;">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem;">add</span> Nueva Factura
+                </button>
+            </div>
+        </div>
+
+        <div id="fc-invoices-summary" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:15px;">
+        </div>
+
+        <div id="fc-invoices-table" style="overflow-y:auto; max-height:calc(100vh - 400px);">
+            <div style="text-align:center; padding:40px; color:#888;">Cargando facturas...</div>
+        </div>`;
+
+        _fichaLoadInvoices();
+    }
+
+    async function _fichaLoadInvoices() {
+        try {
+            const snap = await db.collection('invoices')
+                .where('clientId', '==', _fichaClientId)
+                .orderBy('date', 'desc')
+                .limit(500)
+                .get();
+
+            _fichaInvoicesCache = [];
+            let totalFacturado = 0, totalCobrado = 0, totalPendiente = 0;
+
+            snap.forEach(doc => {
+                const inv = { docId: doc.id, ...doc.data() };
+                _fichaInvoicesCache.push(inv);
+                const total = inv.total || 0;
+                totalFacturado += total;
+                if (inv.paid) totalCobrado += total;
+                else totalPendiente += total;
+            });
+
+            // Summary cards
+            const summary = document.getElementById('fc-invoices-summary');
+            if (summary) {
+                const fmt = (n) => n.toFixed(2) + '€';
+                summary.innerHTML = `
+                    <div style="background:rgba(26,35,126,0.3); border:1px solid #3949ab; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:0.65rem; color:#9fa8da; text-transform:uppercase;">Facturado</div>
+                        <div style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">${fmt(totalFacturado)}</div>
+                        <div style="font-size:0.7rem; color:#7986cb;">${_fichaInvoicesCache.length} facturas</div>
+                    </div>
+                    <div style="background:rgba(27,94,32,0.3); border:1px solid #43a047; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:0.65rem; color:#a5d6a7; text-transform:uppercase;">Cobrado</div>
+                        <div style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">${fmt(totalCobrado)}</div>
+                    </div>
+                    <div style="background:rgba(183,28,28,0.3); border:1px solid #e53935; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:0.65rem; color:#ef9a9a; text-transform:uppercase;">Pendiente</div>
+                        <div style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">${fmt(totalPendiente)}</div>
+                    </div>`;
+            }
+
+            // Count
+            const countEl = document.getElementById('fc-invoices-count');
+            if (countEl) countEl.textContent = `(${_fichaInvoicesCache.length} facturas)`;
+
+            // Table
+            const container = document.getElementById('fc-invoices-table');
+            if (!container) return;
+
+            if (_fichaInvoicesCache.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">No hay facturas emitidas para este cliente.</div>';
+                return;
+            }
+
+            let html = `
+            <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+                <thead style="position:sticky; top:0; z-index:1;">
+                    <tr style="background:#2d2d30; color:#9cdcfe; font-size:0.7rem;">
+                        <th style="padding:8px 6px; text-align:left;">Nº Factura</th>
+                        <th style="padding:8px 6px; text-align:left;">Fecha</th>
+                        <th style="padding:8px 6px; text-align:right;">Base</th>
+                        <th style="padding:8px 6px; text-align:right;">IVA</th>
+                        <th style="padding:8px 6px; text-align:right;">Total</th>
+                        <th style="padding:8px 6px; text-align:center;">Estado</th>
+                        <th style="padding:8px 6px; text-align:center;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            _fichaInvoicesCache.forEach(inv => {
+                const date = inv.date && inv.date.toDate ? inv.date.toDate().toLocaleDateString('es-ES') : (inv.date ? new Date(inv.date).toLocaleDateString('es-ES') : 'N/A');
+                const statusHtml = inv.paid
+                    ? '<span style="color:#4CAF50; font-weight:bold;">✅ Cobrada</span>'
+                    : '<span style="color:#ff6b6b; font-weight:bold;">⏳ Pendiente</span>';
+
+                html += `
+                <tr style="border-bottom:1px solid #2d2d30;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                    <td style="padding:6px; color:#FFD700; font-weight:bold;">${inv.invoiceId || '-'}</td>
+                    <td style="padding:6px; color:#ccc;">${date}</td>
+                    <td style="padding:6px; text-align:right; color:#ccc;">${(inv.subtotal || 0).toFixed(2)}€</td>
+                    <td style="padding:6px; text-align:right; color:#81C784;">${(inv.iva || 0).toFixed(2)}€</td>
+                    <td style="padding:6px; text-align:right; color:#fff; font-weight:bold;">${(inv.total || 0).toFixed(2)}€</td>
+                    <td style="padding:6px; text-align:center; font-size:0.7rem;">${statusHtml}</td>
+                    <td style="padding:6px; text-align:center; white-space:nowrap;">
+                        ${typeof window.printInvoice === 'function' ? `<button onclick="window.printInvoice('${inv.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Imprimir PDF">🖨️</button>` : ''}
+                        ${typeof window.emailInvoice === 'function' ? `<button onclick="window.emailInvoice('${inv.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Enviar por email">📧</button>` : ''}
+                        ${!inv.paid ? `<button onclick="window._fichaMarkPaid('${inv.docId}')" style="background:#4CAF50; border:none; color:#fff; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Marcar cobrada">💰</button>` : ''}
+                    </td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        } catch (e) {
+            const t = document.getElementById('fc-invoices-table');
+            if (t) t.innerHTML = `<div style="color:#f44; padding:20px;">Error: ${e.message}</div>`;
+        }
+    }
+
+    window._fichaNewInvoice = function() {
+        if (typeof window.erpOpenTab === 'function') window.erpOpenTab('factura');
+        setTimeout(() => {
+            const select = document.getElementById('adv-client-picker');
+            const searchInput = document.getElementById('adv-client-search');
+            if (select) {
+                select.value = _fichaClientId;
+                if (searchInput) searchInput.value = `[#${_fichaClientData.idNum || '?'}] ${_fichaClientData.name || ''}`;
+                if (typeof window.advLoadClientDetails === 'function') window.advLoadClientDetails(_fichaClientId);
+            }
+        }, 500);
+    };
+
+    window._fichaMarkPaid = async function(invoiceDocId) {
+        if (!confirm('¿Marcar esta factura como COBRADA?')) return;
+        try {
+            await db.collection('invoices').doc(invoiceDocId).update({ paid: true, paidDate: new Date() });
+            // Generate payment journal entry if contabilidad exists
+            if (typeof window.generatePaymentJournalEntry === 'function') {
+                const invDoc = await db.collection('invoices').doc(invoiceDocId).get();
+                if (invDoc.exists) window.generatePaymentJournalEntry(invDoc.data(), invoiceDocId);
+            }
+            alert('✅ Factura marcada como cobrada.');
+            _fichaLoadInvoices();
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    // ============================================================
+    //  SAVE ALL (from Principal + Económico)
+    // ============================================================
+    window._fichaSaveAll = async function() {
+        if (!_fichaClientId) return;
+
+        const getVal = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : null; };
+
+        const updates = {};
+        // Principal fields
+        if (getVal('fc-idnum') !== null) updates.idNum = getVal('fc-idnum');
+        if (getVal('fc-name') !== null) updates.name = getVal('fc-name');
+        if (getVal('fc-nif') !== null) updates.nif = getVal('fc-nif').toUpperCase();
+        if (getVal('fc-admin-email') !== null) updates.adminEmail = getVal('fc-admin-email').toLowerCase();
+        if (getVal('fc-phone') !== null) updates.senderPhone = getVal('fc-phone');
+        if (getVal('fc-street') !== null) updates.street = getVal('fc-street');
+        if (getVal('fc-number') !== null) updates.number = getVal('fc-number');
+        if (getVal('fc-cp') !== null) updates.cp = getVal('fc-cp');
+        if (getVal('fc-city') !== null) updates.localidad = getVal('fc-city');
+        if (getVal('fc-province') !== null) updates.province = getVal('fc-province');
+        if (getVal('fc-billing-company') !== null) updates.billingCompanyId = getVal('fc-billing-company');
+        if (getVal('fc-tariff') !== null) updates.tariffId = getVal('fc-tariff');
+
+        // Económico fields
+        if (getVal('fc-payment-terms') !== null) updates.paymentTerms = getVal('fc-payment-terms');
+        if (getVal('fc-iban') !== null) updates.iban = getVal('fc-iban');
+        if (getVal('fc-sepa-ref') !== null) updates.sepaRef = getVal('fc-sepa-ref');
+        if (getVal('fc-sepa-date') !== null) updates.sepaDate = getVal('fc-sepa-date');
+        if (getVal('fc-flatrate-amt') !== null) updates.flatRateAmount = parseFloat(getVal('fc-flatrate-amt')) || 0;
+
+        // Remove null entries
+        Object.keys(updates).forEach(k => { if (updates[k] === null) delete updates[k]; });
+
+        if (Object.keys(updates).length === 0) {
+            alert('No hay cambios que guardar.');
+            return;
+        }
+
+        try {
+            if (typeof showLoading === 'function') showLoading();
+            await db.collection('users').doc(_fichaClientId).update(updates);
+
+            // Update local cache
+            if (window.userMap && window.userMap[_fichaClientId]) {
+                Object.assign(window.userMap[_fichaClientId], updates);
+            }
+            _fichaClientData = { ..._fichaClientData, ...updates };
+
+            alert('✅ Ficha de cliente actualizada correctamente.');
+
+            // Re-render header with updated data
+            _fichaRender();
+        } catch (e) {
+            alert('Error guardando: ' + e.message);
+        } finally {
+            if (typeof hideLoading === 'function') hideLoading();
+        }
+    };
+
+})();
