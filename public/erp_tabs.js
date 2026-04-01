@@ -404,7 +404,10 @@
             var tabContainerIds = [
                 'erp-tab-inicio', 'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones',
                 'erp-tab-config', 'erp-tab-maintenance', 'erp-tab-pod',
-                'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central'
+                'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central',
+                'adv-history-workspace', 'adv-reports-workspace', 'adv-tariffs-workspace', 
+                'adv-clients-workspace', 'adv-providers-workspace', 'adv-manual-tickets-workspace', 
+                'adv-scanner-workspace'
             ];
             tabContainerIds.forEach(function(id) {
                 var el = document.getElementById(id);
