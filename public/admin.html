@@ -1238,7 +1238,6 @@
                         <button onclick="erpOpenTab('manual-tickets'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#4CAF50; font-weight:bold;"><span class="material-symbols-outlined">add_circle</span> + Nuevo Albarán</button>
                         <div class="dd-sep"></div>
                         <div class="dd-label">Herramientas Avanzadas</div>
-                        <button onclick="if(typeof window.advInitTicketSearch==='function') window.advInitTicketSearch(); erpOpenTab('ticket-search'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:var(--brand-primary); font-weight:bold;"><span class="material-symbols-outlined">search</span> Búsqueda de Albaranes</button>
                         <button onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#2196F3; font-weight:bold;"><span class="material-symbols-outlined">inventory_2</span> 📊 Albaranes Centralizado</button>
                         <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">qr_code_scanner</span> Escáner QR</button>
                         <button onclick="openBulkDeleteModal(); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#FF3B30;"><span class="material-symbols-outlined">delete_sweep</span> Eliminar por Lote</button>
@@ -12031,9 +12030,6 @@ window.importTarifas50 = async () => {
                 html += '<button onclick="advImportGlobalClient(' + gIdx + ')" style="background:#FF9800; border:none; color:#fff; padding:3px 10px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px; font-weight:bold;" title="Importar a mi agenda">📥 Importar</button>';
             } else {
                 html += '<button onclick="if(typeof openFichaCliente===\'function\') openFichaCliente(\'' + c.id + '\')" style="background:linear-gradient(135deg,#1a237e,#283593); border:none; color:#fff; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px; font-weight:bold;" title="Abrir Ficha Cliente">📂</button>';
-
-                html += '<button onclick="advSelectClientForInvoice(\'' + c.id + '\')" style="background:#007acc; border:none; color:#fff; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Facturar a este cliente">📋</button>';
-                html += '<button onclick="advEditClient(\'' + c.id + '\')" style="background:#FF9800; border:none; color:#fff; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Editar cliente">✏️</button>';
                 html += '<button onclick="advDeleteClient(\'' + c.id + '\', \'' + (c.name || '').replace(/'/g, '') + '\')" style="background:transparent; border:1px solid #f44; color:#f44; padding:3px 8px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Eliminar cliente">🗑️</button>';
             }
             html += '</td></tr>';
@@ -12237,7 +12233,6 @@ window.importTarifas50 = async () => {
     };
     
     // Quick action: select client and go back to invoice form
-    window.advSelectClientForInvoice = function(clientId) {
         const client = window._advClientsCache.find(c => c.id === clientId);
         if (!client) return;
         // Set the client picker if available
