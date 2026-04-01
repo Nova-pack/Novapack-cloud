@@ -1,6 +1,18 @@
 // Modulo de Facturación Avanzada (Factucont Style)
 // Este script asume que `admin.html` ya ha cargado firebase, variables globales (userMap, etc)
 
+// Calcula fecha de vencimiento según condiciones de pago del cliente
+function _calcDueDate(invoiceDate, paymentTerms) {
+    const d = new Date(invoiceDate);
+    const daysMap = {
+        'contado': 0, 'giro_30': 30, 'giro_60': 60,
+        'giro_90': 90, 'giro_120': 120, 'transferencia': 30, 'recibo_sepa': 30
+    };
+    const days = daysMap[paymentTerms] || 0;
+    d.setDate(d.getDate() + days);
+    return d;
+}
+
 let advCurrentClient = null;
 let advCurrentInvoiceId = null; // Track loaded or just-saved invoice
 let advUnbilledTicketsCache = [];
@@ -718,6 +730,9 @@ document.getElementById('btn-adv-save').onclick = async () => {
             irpf: advCurrentCalculations.irpf,
             irpfRate: advCurrentCalculations.irpfRate,
             total: advCurrentCalculations.total,
+            paid: false,
+            paymentTerms: advCurrentClient.paymentTerms || 'contado',
+            dueDate: _calcDueDate(finalDate, advCurrentClient.paymentTerms || 'contado'),
             tickets: ticketsIdArray, // Old array style for compatibility
             ticketsDetail: ticketsDetailArray,
             senderData: finalSenderData,

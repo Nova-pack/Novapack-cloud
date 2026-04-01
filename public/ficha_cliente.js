@@ -540,7 +540,8 @@
                 .get();
 
             _fichaInvoicesCache = [];
-            let totalFacturado = 0, totalCobrado = 0, totalPendiente = 0;
+            let totalFacturado = 0, totalCobrado = 0, totalPendiente = 0, totalVencidas = 0;
+            const now = new Date();
 
             snap.forEach(doc => {
                 const inv = { docId: doc.id, ...doc.data() };
@@ -548,7 +549,12 @@
                 const total = inv.total || 0;
                 totalFacturado += total;
                 if (inv.paid) totalCobrado += total;
-                else totalPendiente += total;
+                else {
+                    totalPendiente += total;
+                    // Check if overdue
+                    const dueDate = inv.dueDate && inv.dueDate.toDate ? inv.dueDate.toDate() : (inv.dueDate ? new Date(inv.dueDate) : null);
+                    if (dueDate && dueDate < now) totalVencidas++;
+                }
             });
 
             // Summary cards
@@ -568,6 +574,7 @@
                     <div style="background:rgba(183,28,28,0.3); border:1px solid #e53935; border-radius:8px; padding:12px; text-align:center;">
                         <div style="font-size:0.65rem; color:#ef9a9a; text-transform:uppercase;">Pendiente</div>
                         <div style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">${fmt(totalPendiente)}</div>
+                        ${totalVencidas > 0 ? `<div style="font-size:0.7rem; color:#ff1744; font-weight:bold; animation: pulse 1s infinite;">⚠️ ${totalVencidas} VENCIDA${totalVencidas > 1 ? 'S' : ''}</div>` : ''}
                     </div>`;
             }
 
@@ -590,6 +597,7 @@
                     <tr style="background:#2d2d30; color:#9cdcfe; font-size:0.7rem;">
                         <th style="padding:8px 6px; text-align:left;">Nº Factura</th>
                         <th style="padding:8px 6px; text-align:left;">Fecha</th>
+                        <th style="padding:8px 6px; text-align:left;">Vencimiento</th>
                         <th style="padding:8px 6px; text-align:right;">Base</th>
                         <th style="padding:8px 6px; text-align:right;">IVA</th>
                         <th style="padding:8px 6px; text-align:right;">Total</th>
@@ -601,14 +609,21 @@
 
             _fichaInvoicesCache.forEach(inv => {
                 const date = inv.date && inv.date.toDate ? inv.date.toDate().toLocaleDateString('es-ES') : (inv.date ? new Date(inv.date).toLocaleDateString('es-ES') : 'N/A');
+                const dueDate = inv.dueDate && inv.dueDate.toDate ? inv.dueDate.toDate() : (inv.dueDate ? new Date(inv.dueDate) : null);
+                const dueDateStr = dueDate ? dueDate.toLocaleDateString('es-ES') : 'Contado';
+                const isOverdue = !inv.paid && dueDate && dueDate < now;
                 const statusHtml = inv.paid
                     ? '<span style="color:#4CAF50; font-weight:bold;">✅ Cobrada</span>'
-                    : '<span style="color:#ff6b6b; font-weight:bold;">⏳ Pendiente</span>';
+                    : (isOverdue
+                        ? '<span style="color:#ff1744; font-weight:bold;">🔴 VENCIDA</span>'
+                        : '<span style="color:#ff6b6b; font-weight:bold;">⏳ Pendiente</span>');
+                const rowBg = isOverdue ? 'background:rgba(255,23,68,0.08);' : '';
 
                 html += `
-                <tr style="border-bottom:1px solid #2d2d30;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
+                <tr style="border-bottom:1px solid #2d2d30; ${rowBg}" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background='${isOverdue ? 'rgba(255,23,68,0.08)' : 'transparent'}'">
                     <td style="padding:6px; color:#FFD700; font-weight:bold;">${inv.invoiceId || '-'}</td>
                     <td style="padding:6px; color:#ccc;">${date}</td>
+                    <td style="padding:6px; color:${isOverdue ? '#ff1744' : '#888'}; font-weight:${isOverdue ? 'bold' : 'normal'};">${dueDateStr}</td>
                     <td style="padding:6px; text-align:right; color:#ccc;">${(inv.subtotal || 0).toFixed(2)}€</td>
                     <td style="padding:6px; text-align:right; color:#81C784;">${(inv.iva || 0).toFixed(2)}€</td>
                     <td style="padding:6px; text-align:right; color:#fff; font-weight:bold;">${(inv.total || 0).toFixed(2)}€</td>

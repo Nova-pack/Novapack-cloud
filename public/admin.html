@@ -7710,15 +7710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             };
 
-            window.emailInvoice = async (id) => {
-                const doc = await db.collection('invoices').doc(id).get();
-                const inv = doc.data();
-                const client = userMap[inv.clientId];
-                const email = client ? client.email : '';
-                const subject = encodeURIComponent(`Factura ${inv.invoiceId} - NOVAPACK LOGÍSTICA`);
-                const body = encodeURIComponent(`Hola ${inv.clientName}, \n\nLe adjuntamos el detalle de su factura ${inv.invoiceId} por importe de ${inv.total.toFixed(2)}€.\n\nForma de pago: Transferencia a ${inv.senderData ? inv.senderData.bank : 'la cuenta habitual'} \n\nGracias por confiar en NOVAPACK.`);
-                window.location.href = `mailto:${email}?subject = ${subject}& body=${body} `;
-            };
+            window.emailInvoice = async (id) => {\r\n                const doc = await db.collection('invoices').doc(id).get();\r\n                const inv = doc.data();\r\n                const client = userMap[inv.clientId];\r\n                // Prefer adminEmail for invoice communications\r\n                const email = client ? (client.adminEmail || client.email) : '';\r\n                const payTermsLabels = {'contado':'Contado','giro_30':'Giro 30 días','giro_60':'Giro 60 días','giro_90':'Giro 90 días','giro_120':'Giro 120 días','transferencia':'Transferencia','recibo_sepa':'Recibo SEPA'};\r\n                const payLabel = payTermsLabels[inv.paymentTerms] || 'Contado';\r\n                const dueStr = inv.dueDate && inv.dueDate.toDate ? inv.dueDate.toDate().toLocaleDateString('es-ES') : (inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-ES') : 'Contado');\r\n                const subject = encodeURIComponent(`Factura ${inv.invoiceId} - NOVAPACK LOGÍSTICA`);\r\n                const body = encodeURIComponent(`Hola ${inv.clientName}, \n\nLe adjuntamos el detalle de su factura ${inv.invoiceId} por importe de ${inv.total.toFixed(2)}€.\n\nForma de pago: ${payLabel}\nFecha de vencimiento: ${dueStr}\nDatos bancarios: ${inv.senderData ? inv.senderData.bank : 'la cuenta habitual'} \n\nGracias por confiar en NOVAPACK.`);\r\n                window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;\r\n            };
 
             window.downloadInvoicePDF = async (id) => {
                 showLoading();
