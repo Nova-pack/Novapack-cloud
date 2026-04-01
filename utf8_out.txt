@@ -1,0 +1,3 @@
+﻿[C-error] [2026-03-11T11:59:49.757Z]  @firebase/firestore: Firestore (9.6.1): Could not reach Cloud Firestore backend. Connection failed 1 times. Most recent error: FirebaseError: [code=unavailable]: The operation could not be completed
+This typically indicates that your device does not have a healthy Internet connection at the moment. The client will operate in offline mode until it is able to successfully connect to the backend.
+[C-error] Failed to load resource: the server responded with a status of 404 (File not found)

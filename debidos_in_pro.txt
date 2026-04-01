@@ -1,0 +1,114 @@
+--- offset 50799 ---
+255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">⏱️ Pendiente Facturar</button>
+                <button id="tab-billing-debidos" onclick="switchBillingTab('debidos')" style="background:transparent; border:1px solid transparent; color:#FF9800; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmou
+
+--- offset 50835 ---
+style.background='rgba(255,255,255,0.2)'">⏱️ Pendiente Facturar</button>
+                <button id="tab-billing-debidos" onclick="switchBillingTab('debidos')" style="background:transparent; border:1px solid transparent; color:#FF9800; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmouseover="this.style.background='rgba(
+
+--- offset 52643 ---
+content
+                document.getElementById('billing-tab-pending').style.display = 'none';
+                document.getElementById('billing-tab-debidos').style.display = 'none';
+                document.getElementById('billing-tab-issued').style.display = 'none';
+                document.getElementById('billing-tab-credit').style.display = 
+
+--- offset 53042 ---
+'billing-tab-fiscal').style.display = 'none';
+                
+                // Reset all tab buttons to transparent
+                ['pending','debidos','issued','credit','fiscal'].forEach(t => {
+                    const btn = document.getElementById('tab-billing-' + t);
+                    if(btn) btn.style.background = 'transparent';
+  
+
+--- offset 53746 ---
+rs
+                if(tabId === 'credit' && typeof initCreditNotesListView === 'function') initCreditNotesListView();
+                if(tabId === 'debidos' && typeof loadDebidosManager === 'function') loadDebidosManager();
+                if(tabId === 'issued' && typeof loadInvoices === 'function') {
+                    document.getElementById
+
+--- offset 57825 ---
+SCALES</button>
+            </div>
+        </div>
+
+        </div>
+
+        <!-- PESTAÑA EXTRA: PORTES DEBIDOS -->
+        <div id="billing-tab-debidos" style="display:none;">
+            <div class="card" style="background:#252526; border-color:#3c3c3c; box-shadow:none;" style="margin-bottom:30px;">
+                <div style="display:flex
+
+--- offset 58400 ---
+             <div style="display:flex; gap:10px; flex:1; max-width:400px; justify-content:flex-end;">
+                        <input type="text" id="debidos-search" placeholder="🔍 Buscar por remitente, destinatario..." style="background:#1e1e1e; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; flex:1;" oninput="if(typeof fil
+
+--- offset 59591 ---
+                           <th>ACCIONES</th>
+                            </tr>
+                        </thead>
+                        <tbody id="debidos-table-body">
+                            <tr><td colspan="5" style="text-align:center;">Cargando portes debidos...</td></tr>
+                        </tbody>
+                    </table>
+ 
+
+--- offset 59704 ---
+
+                        <tbody id="debidos-table-body">
+                            <tr><td colspan="5" style="text-align:center;">Cargando portes debidos...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Modal Asignación Debidos -->
+         
+
+--- offset 59929 ---
+ </table>
+                </div>
+            </div>
+            
+            <!-- Modal Asignación Debidos -->
+            <div id="modal-assign-debido" class="modal" style="display:none; align-items:center; justify-content:center;">
+                <div class="modal-content" style="max-width:500px; width:90%; padding:20px; background:#1e1e1e
+
+--- offset 60783 ---
+tyle="color:#d4d4d4; font-size:0.9rem;">
+                        Selecciona a qué cliente de tu agenda deseas facturar el Albarán <strong id="assign-debido-id" style="color:#fff;"></strong>. Al asignarlo, desaparecerá de esta lista y se añadirá a la facturación de ese cliente.
+                    </p>
+                    <input type="hidden" id=
+
+--- offset 60991 ---
+saparecerá de esta lista y se añadirá a la facturación de ese cliente.
+                    </p>
+                    <input type="hidden" id="assign-debido-ticket-id">
+                    
+                    <div class="form-group" style="margin-top:15px; position:relative;">
+                        <label>Buscar Cliente (Nombre, NIF, Número):
+
+--- offset 61255 ---
+tion:relative;">
+                        <label>Buscar Cliente (Nombre, NIF, Número):</label>
+                        <input type="text" id="assign-debido-search" placeholder="Ej: Perez S.L." autocomplete="off" style="width:100%;">
+                        <div id="assign-debido-dropdown" style="display:none; position:absolute; top:100%; left:0; 
+
+--- offset 61380 ---
+t type="text" id="assign-debido-search" placeholder="Ej: Perez S.L." autocomplete="off" style="width:100%;">
+                        <div id="assign-debido-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#252526; border:1px solid #444; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 4px 10px rgb
+
+--- offset 61689 ---
+o; z-index:100; box-shadow:0 4px 10px rgba(0,0,0,0.5);"></div>
+                    </div>
+                    
+                    <div id="assign-debido-selected-card" style="display:none; margin-top:15px; padding:15px; background:rgba(76, 175, 80, 0.1); border:1px solid #4CAF50; border-radius:4px;">
+                        <div style="font-we
+
+--- offset 61924 ---
+rgba(76, 175, 80, 0.1); border:1px solid #4CAF50; border-radius:4px;">
+                        <div style="font-weight:bold; color:#fff;" id="assign-debido-sel-name"></div>
+                        <div style="font-size:0.8rem; color:#aaa;" id="assign-debido-sel-nif"></div>
+                        <input type="hidden" id="assign-debido-sel-uid">

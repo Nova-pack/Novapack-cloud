@@ -1,0 +1,211 @@
+window.openManageCompaniesModal = async (uid) => {
+                currentAdminTargetUid = uid || adminTicketUID;
+                if (!currentAdminTargetUid) {
+                    alert("Por favor, selecciona un cliente primero.");
+                    return;
+                }
+                document.getElementById('modal-manage-companies').style.display = 'flex';
+                document.getElementById('company-form-area').style.display = 'none';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                document.getElementById('modal-manage-companies').scrollTop = 0;
+                loadCompaniesTable(currentAdminTargetUid);
+            };
+
+            window.openNewCompanyForm = () => {
+                document.getElementById('company-form-area').style.display = 'block';
+                document.getElementById('edit-company-id').value = '';
+                document.getElementById('comp-name').value = '';
+                document.getElementById('comp-prefix').value = '';
+                document.getElementById('comp-start-num').value = '1001';
+                document.getElementById('comp-street').value = '';
+                document.getElementById('comp-number').value = '';
+                document.getElementById('comp-city').value = '';
+                document.getElementById('comp-cp').value = '';
+                document.getElementById('comp-province').value = '';
+                document.getElementById('comp-phone').value = '';
+
+                // Populate sub-tariff select
+                const uData = userMap[currentAdminTargetUid] || {};
+                const select = document.getElementById('comp-subtariff-id');
+                select.innerHTML = '<option value="">-- Usar Tarifa Global --</option>';
+
+                const baseT = tariffsCache[currentAdminTargetUid] || (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]);
+                if (baseT && baseT.subTariff) {
+                    Object.keys(baseT.subTariff).forEach(id => {
+                        select.innerHTML += `<option value="${id}">${id}</option>`;
+                    });
+                }
+            };
+
+            window.saveCompany = async () => {
+                if (!currentAdminTargetUid) return;
+                const compId = document.getElementById('edit-company-id').value || 'comp_' + Date.now();
+                const name = document.getElementById('comp-name').value.trim();
+                const prefix = document.getElementById('comp-prefix').value.trim().toUpperCase();
+                const startNum = parseInt(document.getElementById('comp-start-num').value) || 1001;
+                const street = document.getElementById('comp-street').value.trim();
+                const num = document.getElementById('comp-number').value.trim();
+                const city = document.getElementById('comp-city').value.trim();
+                const cp = document.getElementById('comp-cp').value.trim();
+                const province = document.getElementById('comp-province').value.trim();
+                const phone = document.getElementById('comp-phone').value.trim();
+                const subTariffId = document.getElementById('comp-subtariff-id').value;
+
+                if (!name) { alert("El nombre de la sede es obligatorio."); return; }
+
+                const addressParts = [];
+                if (street) addressParts.push(street);
+                if (num) addressParts.push("NÂº " + num);
+                if (city) addressParts.push(city);
+                if (cp) addressParts.push(`(CP ${cp})`);
+                const fullAddress = addressParts.join(', ');
+
+                const data = {
+                    name, prefix, startNum, street, number: num, localidad: city, cp, province, phone,
+                    address: fullAddress,
+                    subTariffId: subTariffId || null,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                showLoading();
+                try {
+                    await db.collection('users').doc(currentAdminTargetUid).collection('companies').doc(compId).set(data, { merge: true });
+                    alert("âœ… Sede guardada correctamente.");
+                    document.getElementById('company-form-area').style.display = 'none';
+                    loadCompaniesTable(currentAdminTargetUid);
+                } catch (e) {
+                    alert("Error al guardar sede: " + e.message);
+                } finally {
+                    hideLoading();
+                }
+            };
+
+            async function loadCompaniesTable(uid) {
+                const tbody = document.getElementById('company-manage-list-body');
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Cargando sedes...</td></tr>';
+                try {
+                    const aliases = await getClientDocAliases(uid);
+                    let snap = null;
+                    for (const id of aliases) {
+                        const s = await db.collection('users').doc(id).collection('companies').get();
+                        if (!s.empty) { snap = s; break; }
+                    }
+
+                    tbody.innerHTML = '';
+                    if (!snap || snap.empty) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No hay sedes configuradas.</td></tr>';
+                        return;
+                    }
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                        <td><strong>${d.name}</strong></td>
+                        <td style="font-size:0.75rem; color:#888;">${d.address || '---'}</td>
+                        <td><span class="chip">${d.prefix || 'NP'} ${d.startNum || ''}</span></td>
+                        <td><span class="chip" style="background:var(--brand-primary); opacity:0.8;">${d.subTariffId || 'Principal'}</span></td>
+                        <td>
+                            <div style="display:flex; gap:5px;">
+                                <button class="btn btn-primary btn-sm" onclick="editCompany('${doc.id}')" title="Editar Sede">âœï¸</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteCompany('${doc.id}')" title="Eliminar Sede">ðŸ—‘ï¸</button>
+                            </div>
+                        </td>
+                    `;
+                        tbody.appendChild(tr);
+                    });
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:red; text-align:center;">Error: ' + e.message + '</td></tr>';
+                }
+            }
+
+            window.editCompany = async (compId) => {
+                const aliases = await getClientDocAliases(currentAdminTargetUid);
+                let docSnap = null;
+                for (const id of aliases) {
+                    const d = await db.collection('users').doc(id).collection('companies').doc(compId).get();
+                    if (d.exists) { docSnap = d; break; }
+                }
+                if (!docSnap || !docSnap.exists) { alert("Sede no encontrada."); return; }
+                const d = docSnap.data();
+                openNewCompanyForm();
+                document.getElementById('edit-company-id').value = compId;
+                document.getElementById('comp-name').value = d.name || '';
+                document.getElementById('comp-prefix').value = d.prefix || '';
+                document.getElementById('comp-start-num').value = d.startNum || '1001';
+                document.getElementById('comp-street').value = d.street || '';
+                document.getElementById('comp-number').value = d.number || '';
+                document.getElementById('comp-city').value = d.localidad || '';
+                document.getElementById('comp-cp').value = d.cp || '';
+                document.getElementById('comp-province').value = d.province || '';
+                document.getElementById('comp-phone').value = d.phone || '';
+                document.getElementById('comp-subtariff-id').value = d.subTariffId || '';
+            };
+
+            window.deleteCompany = async (compId) => {
+                if (!confirm("Â¿Eliminar esta sede?")) return;
+                showLoading();
+                try {
+                    const aliases = await getClientDocAliases(currentAdminTargetUid);
+                    for (const id of aliases) {
+                        await db.collection('users').doc(id).collection('companies').doc(compId).delete();
+                    }
+                    loadCompaniesTable(currentAdminTargetUid);
+                } catch (e) { alert("Error: " + e.message); }
+                finally { hideLoading(); }
+            };
+
+            // Agenda / Destinations logic for Admin
+            window.openManageDestinationsModal = async (uid) => {
+                currentAdminTargetUid = uid || adminTicketUID;
+                if (!currentAdminTargetUid) {
+                    alert("Por favor, selecciona un cliente primero.");
+                    return;
+                }
+                document.getElementById('modal-manage-destinations').style.display = 'flex';
+                resetAdminDestForm();
+                loadAdminDestinationsList(currentAdminTargetUid);
+            };
+
+            window.saveAdminDestination = async () => {
+                if (!currentAdminTargetUid) return;
+                const editId = document.getElementById('admin-dest-edit-id').value;
+                const name = document.getElementById('admin-dest-name').value.trim().toUpperCase();
+                const phone = document.getElementById('admin-dest-phone').value.trim();
+                const nif = document.getElementById('admin-dest-nif').value.trim();
+                const street = document.getElementById('admin-dest-street').value.trim();
+                const number = document.getElementById('admin-dest-number').value.trim();
+                const city = document.getElementById('admin-dest-locality').value.trim();
+                const cp = document.getElementById('admin-dest-cp').value.trim();
+                const province = document.getElementById('admin-dest-province').value.trim();
+                const notes = document.getElementById('admin-dest-notes').value.trim();
+
+                if (!name || !street) { alert("Nombre y calle son obligatorios."); return; }
+
+                const addrParts = [];
+                if (street) addrParts.push(street);
+                if (number) addrParts.push("NÂº " + number);
+                if (city) addrParts.push(city);
+                if (cp) addrParts.push(`(CP ${cp})`);
+                const fullAddress = addrParts.join(', ');
+
+                const destData = {
+                    name, phone, nif, notes,
+                    addresses: [{
+                        address: fullAddress,
+                        street, number, localidad: city, cp, province
+                    }],
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                showLoading();
+                try {
+                    if (editId) {
+                        await db.collection('users').doc(currentAdminTargetUid).collection('destinations').doc(editId).set(destData, { merge: true });
+                        alert("âœ… Destinatario actualizado.");
+                    } else {
+                        await db.collection('users').doc(currentAdminTargetUid).collection('destinations').add(destData);
+                        alert("âœ… Destinatario aÃ±adido a la agenda.");
+                    }
+                    resetAdminDestForm();
+                    loadAdminDestinationsList(currentAdminTargetUid);
+                } catch (e) { alert

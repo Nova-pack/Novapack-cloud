@@ -1,0 +1,26 @@
+adminManPackages = [{ qty: numBultos, size: 'Bulto' }];
+                    renderAdminPackagesList();
+
+                    // --- ALERTA DE ALBARÁN DUPLICADO / YA CARGADO ---
+                    if (qrData.id) {
+                        try {
+                            if(document.getElementById('admin-t-erp-id')) {
+                                document.getElementById('admin-t-erp-id').value = qrData.id;
+                            }
+                            db.collection('tickets').where('erpId', '==', qrData.id).limit(1).get().then(snap => {
+                                if (!snap.empty) {
+                                    alert("¡ATENCIÓN!\n\nEste albarán externo (Ref: " + qrData.id + ") YA SE ENCUENTRA REGISTRADO en la base de datos del cliente.\nSi lo guardas, vas a crear un duplicado exacto.");
+                                }
+                            });
+                        } catch (e) {
+                            console.warn("Fallo comprobando alertas de duplicación:", e);
+                        }
+                    }
+                 } else {
+                     searchId = searchId.toUpperCase();
+                     document.getElementById('admin-t-receiver').value = searchId;
+                     
+                     // MOSTRAR DEBUG VISUAL SI FALLA
+                     const debugBox = document.getElementById('admin-scanner-debug');
+                     if(debugBox) {
+                         debugBox.style.display

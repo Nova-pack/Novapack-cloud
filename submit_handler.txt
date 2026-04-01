@@ -1,0 +1,24 @@
+' + idContent);
+                 }
+            }
+
+            var el4 = document.getElementById('admin-manual-ticket-form'); if (el4) el4.onsubmit = async (e) => {
+                e.preventDefault();
+                if (!adminTicketUID || !adminTicketCompID || adminTicketCompID === "ALL") {
+                    alert("Por favor, selecciona una Sede/Empresa específica para el remitente.");
+                    return;
+                }
+                if (adminManPackages.length === 0) { alert("Añade al menos un bulto."); return; }
+
+                showLoading();
+                try {
+                    const uData = userMap[adminTicketUID] || {};
+                    const myIdNum = String(uData.idNum || '').trim();
+                    if (!myIdNum) throw new Error("El cliente no tiene un número de ID asignado.");
+
+                    const compData = adminCompaniesCache[adminTicketCompID] || {};
+
+                    // Generar ID correlativo buscando el más alto actual para esta empresa
+                    const businessId = await getNextId();
+
+                 

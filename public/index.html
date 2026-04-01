@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>novapaack.login</title>
+    <meta name="description"
+        content="Sistema profesional de gestión de albaranes y logística Novapack. Acceso inteligente para clientes y administración.">
+    <meta name="theme-color" content="#FF4D00">
+    <meta property="og:title" content="novapaack.login">
+    <meta property="og:description" content="Gestión eficiente de albaranes y etiquetas en la nube.">
+    <meta property="og:image" content="https://novapaack-68f05.web.app/icon.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://db.onlinewebfonts.com/c/13f990d5baee565bea4d9ff96e201c84?family=Xenotron+Normal');
+
+        @font-face {
+            font-family: 'Xenotron';
+            src: local('Xenotron'), url('https://db.onlinewebfonts.com/t/13f990d5baee565bea4d9ff96e201c84.woff2') format('woff2');
+        }
+
+        :root {
+            --brand-primary: #FF4D00;
+            --brand-secondary: #0D0D0D;
+            --bg-dark: #080808;
+            --glass: rgba(255, 255, 255, 0.05);
+            --border-glass: rgba(255, 255, 255, 0.1);
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-dark);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, #1a1a1a 0%, #080808 100%);
+        }
+
+        .login-card {
+            background: var(--glass);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: 24px;
+            border: 1px solid var(--border-glass);
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            animation: fadeIn 0.8s ease-out;
+            z-index: 10;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes logoPulse {
+            0% {
+                text-shadow: 0 0 5px rgba(255, 255, 255, 0.05);
+                opacity: 0.8;
+            }
+
+            50% {
+                text-shadow: 0 0 15px rgba(255, 77, 0, 0.4);
+                opacity: 1;
+            }
+
+            100% {
+                text-shadow: 0 0 5px rgba(255, 255, 255, 0.05);
+                opacity: 0.8;
+            }
+        }
+
+        .logo {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Xenotron', sans-serif;
+            font-size: 2.8rem;
+            /* Tamaño optimizado para evitar desbordamientos */
+            font-weight: 200;
+            margin-bottom: 2px;
+            color: white;
+            animation: logoPulse 5s infinite ease-in-out;
+            text-transform: uppercase;
+        }
+
+        .logo-text {
+            letter-spacing: 12px;
+            margin-right: -12px;
+            /* Anula el espacio fantasma tras la 'K' */
+        }
+
+        .logo-arrow {
+            color: var(--brand-primary);
+            font-family: sans-serif;
+            margin-left: 8px;
+            font-weight: 900;
+        }
+
+        .subtext {
+            text-align: center;
+            color: #555;
+            font-size: 0.65rem;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 6px;
+            padding-left: 6px;
+            /* Balancea el centrado del letter-spacing */
+            font-weight: 300;
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            color: #aaa;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-glass);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+            background: rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 15px rgba(255, 102, 0, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 16px;
+            background: var(--brand-primary);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 102, 0, 0.4);
+        }
+
+        #error-msg {
+            color: #ff4444;
+            text-align: center;
+            margin-top: 15px;
+            font-size: 0.85rem;
+            min-height: 1.2rem;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .loader-dots {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--brand-primary);
+            border-radius: 50%;
+            margin: 0 4px;
+            animation: bounce 0.6s infinite alternate;
+        }
+
+        .loader-dots:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loader-dots:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+            to {
+                transform: translateY(-8px);
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="logo">
+            <span class="logo-text">NOVAPACK</span>
+            <span class="logo-arrow">➤</span>
+        </div>
+        <div class="subtext">Cloud Management</div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="email">Username / Email</label>
+                <input type="email" id="email" placeholder="admin@novapack.com" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Clave de Acceso</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn">INICIAR SESIÓN</button>
+            <div id="error-msg"></div>
+            <div class="loader" id="loader">
+                <div class="loader-dots"></div>
+                <div class="loader-dots"></div>
+                <div class="loader-dots"></div>
+            </div>
+        </form>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script>
+        const form = document.getElementById('login-form');
+        const errorMsg = document.getElementById('error-msg');
+        const loader = document.getElementById('loader');
+
+        let isRedirecting = false;
+        const redirectUser = async (user) => {
+            if (isRedirecting) return;
+            isRedirecting = true;
+            console.log("Sesión detectada, redirigiendo...");
+            try {
+                const adminDoc = await db.collection('config').doc('admin').get();
+                const isAdmin = adminDoc.exists && adminDoc.data().uid === user.uid;
+                console.log("¿Es Admin?", isAdmin);
+
+                const basePath = isAdmin ? 'admin.html' : 'app.html';
+                const target = basePath + '?v=' + new Date().getTime();
+                if (window.location.pathname.indexOf(basePath) === -1) {
+                    window.location.replace(target);
+                }
+            } catch (e) {
+                console.error("Error al verificar admin:", e);
+                window.location.replace('app.html?v=' + new Date().getTime());
+            }
+        };
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            errorMsg.innerText = '';
+            loader.style.display = 'block';
+
+            try {
+                console.log("Intentando iniciar sesión para:", email);
+                const userCredential = await auth.signInWithEmailAndPassword(email, password);
+                // Auth state change will handle redirect
+            } catch (error) {
+                isRedirecting = false; // Reset on error
+                console.error("Firebase Login Error:", error);
+                if (error.code === 'auth/configuration-not-found') {
+                    errorMsg.innerText = 'Error: Problema de configuración en Firebase.';
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMsg.innerText = 'Error: El método Email/Password no está habilitado en Firebase.';
+                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMsg.innerText = 'Email o contraseña incorrectos.';
+                } else {
+                    errorMsg.innerText = 'Error: ' + error.message;
+                }
+                loader.style.display = 'none';
+            }
+        });
+
+        // Verificación de sesión persistente
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                await redirectUser(user);
+            }
+        });
+    </script>
+</body>
+
+</html>

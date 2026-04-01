@@ -1,0 +1,15 @@
+@echo off
+title novapaack.login
+set "BROWSER_PATH="
+if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
+    set "BROWSER_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+) else if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
+    set "BROWSER_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe"
+)
+
+if "%BROWSER_PATH%"=="" (
+    start "" "https://novapaack.com"
+) else (
+    start "" "%BROWSER_PATH%" --app="https://novapaack.com" --start-maximized
+)
+exit

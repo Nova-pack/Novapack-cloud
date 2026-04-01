@@ -1,0 +1,17 @@
+{
+    "name": "Novapack Repartidor",
+    "short_name": "Reparto",
+    "description": "App de Escáner y Rutas para Repartidores de Novapack",
+    "start_url": "/reparto.html",
+    "display": "standalone",
+    "background_color": "#121212",
+    "theme_color": "#FF4D00",
+    "icons": [
+        {
+            "src": "icon_new.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Novapack Reparto</title>
+    <meta name="description" content="App de reparto y escáner de entregas Novapack">
+    <meta name="theme-color" content="#FF4D00">
+    <link rel="manifest" href="manifest-repartidor.json">
+    <link rel="icon" href="icon_new.png">
+    <link rel="apple-touch-icon" href="icon_new.png">
+    <style>
+        @font-face {
+            font-family: 'Xenotron';
+            src: local('Xenotron'), url('https://db.onlinewebfonts.com/t/13f990d5baee565bea4d9ff96e201c84.woff2') format('woff2');
+        }
+    </style>
+    <link rel="stylesheet" href="reparto.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js" defer></script>
+
+    <!-- QR Scanner -->
+    <script src="libs/html5-qrcode.min.js" defer></script>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+
+    <!-- Firebase Config -->
+    <script src="firebase-config.js" defer></script>
+    <script src="sentry-config.js?v=1"></script>
+
+    <!-- ===== SENTRY ERROR MONITORING ===== -->
+    <script src="https://browser.sentry-cdn.com/8.49.0/bundle.min.js" crossorigin="anonymous"></script>
+    <script>
+        window.NOVAPACK_SENTRY_READY = false;
+        if (typeof Sentry !== 'undefined') {
+            Sentry.init({
+                dsn: window.NOVAPACK_SENTRY_DSN || "",
+                environment: location.hostname === 'localhost' ? 'development' : 'production',
+                release: 'novapack-cloud@2.0',
+                // Only send errors in production
+                enabled: location.hostname !== 'localhost',
+                // Sample 100% of errors (free tier allows 5000/month)
+                sampleRate: 1.0,
+                // Ignore common non-critical errors
+                ignoreErrors: [
+                    'ResizeObserver loop',
+                    'Loading chunk',
+                    'Network request failed',
+                    'AbortError',
+                    'cancelled',
+                ],
+                beforeSend(event) {
+                    // Tag with the current page for easy filtering
+                    const page = location.pathname.includes('admin') ? 'admin' :
+                                 location.pathname.includes('app') ? 'client' :
+                                 location.pathname.includes('reparto') ? 'driver' : 'unknown';
+                    event.tags = event.tags || {};
+                    event.tags.novapack_module = page;
+                    return event;
+                }
+            });
+            window.NOVAPACK_SENTRY_READY = true;
+            console.log("Sentry monitoring active (env: " + (location.hostname === 'localhost' ? 'dev' : 'prod') + ")");
+        }
+    </script>
+
+
+    <!-- App Logic -->
+    <script src="reparto.js" defer></script>
+</head>
+<body>
+
+<!-- ===== ELEGANT REPARTO SPLASH ===== -->
+<div id="reparto-intro">
+    <div class="intro-logo-rpt">NOVAPACK<span>➤</span></div>
+    <div class="intro-sub-rpt">🚚 RUTAS & ENTREGAS</div>
+    <div class="intro-bar-rpt"><div class="intro-bar-fill-rpt"></div></div>
+    <div class="intro-status-rpt">CONECTANDO CON BASE...</div>
+</div>
+<style>
+    #reparto-intro {
+        position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;
+        background:linear-gradient(135deg,#0a0a0a 0%,#1a0d00 100%);
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        transition: opacity 0.8s ease, visibility 0.8s;
+    }
+    #reparto-intro.fade-out { opacity:0; visibility:hidden; }
+    .intro-logo-rpt {
+        font-family:'Xenotron', sans-serif; font-size:3rem; color:#FF4D00;
+        font-weight:300; letter-spacing:10px;
+        animation: rptIntroScale 1.6s ease-out forwards;
+        text-shadow:0 0 25px rgba(255,77,0,0.3);
+    }
+    .intro-logo-rpt span { color:#FF3B30; font-family:sans-serif; font-weight:900; font-size:0.8em; margin-left:5px; filter:drop-shadow(0 0 5px rgba(255,59,48,0.5)); }
+    .intro-sub-rpt {
+        font-family:'Inter',sans-serif; font-weight:700; font-size:0.75rem; letter-spacing:6px;
+        color:rgba(255,77,0,0.6); text-transform:uppercase; margin-top:10px;
+        opacity:0; animation: rptFadeUp 0.8s ease 0.4s forwards;
+    }
+    .intro-bar-rpt {
+        width:160px; height:2px; background:rgba(255,255,255,0.08); border-radius:2px;
+        margin-top:25px; overflow:hidden;
+        opacity:0; animation: rptFadeUp 0.4s ease 0.7s forwards;
+    }
+    .intro-bar-fill-rpt {
+        width:0; height:100%; background:linear-gradient(90deg,#FF4D00,#FF6600);
+        border-radius:2px; animation: rptBarFill 1.8s ease 0.8s forwards;
+    }
+    .intro-status-rpt {
+        font-family:'Inter',sans-serif; font-size:0.6rem; color:#333; letter-spacing:4px;
+        margin-top:10px; text-transform:uppercase;
+        opacity:0; animation: rptFadeUp 0.4s ease 0.9s forwards;
+    }
+    @keyframes rptIntroScale {
+        0% { transform:scale(0.85); opacity:0; letter-spacing:16px; }
+        100% { transform:scale(1); opacity:1; letter-spacing:3px; }
+    }
+    @keyframes rptFadeUp {
+        from { opacity:0; transform:translateY(8px); }
+        to { opacity:1; transform:translateY(0); }
+    }
+    @keyframes rptBarFill {
+        0% { width:0; }
+        100% { width:100%; }
+    }
+</style>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var intro = document.getElementById('reparto-intro');
+        if (intro) {
+            setTimeout(function() {
+                intro.classList.add('fade-out');
+                setTimeout(function() { intro.style.display='none'; }, 800);
+            }, 2500);
+        }
+    });
+</script>
+
+<!-- ===== LOADING OVERLAY ===== -->
+<div class="loading-overlay" id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">SINCRONIZANDO</div>
+</div>
+
+<!-- ===== LOGIN VIEW ===== -->
+<div class="login-view" id="login-view">
+    <div class="login-card">
+        <div class="login-logo">NOVAPACK<span>➤</span></div>
+        <div class="login-sub">Cloud Management</div>
+        <div class="login-mode"><span>🚚 REPARTO</span></div>
+
+        <!-- Step 1: Phone number -->
+        <div id="login-step-phone">
+            <div class="form-group">
+                <label class="form-label">📱 Tu número de teléfono</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" value="+34" readonly class="form-control" style="width:60px; text-align:center; font-weight:800;">
+                    <input type="tel" id="phone-input" class="form-control" placeholder="600 123 456" style="flex:1;" autocomplete="tel">
+                </div>
+            </div>
+            <div id="recaptcha-container"></div>
+            <button class="btn btn-primary" id="btn-send-sms" style="margin-top:10px;">📲 ENVIAR CÓDIGO SMS</button>
+        </div>
+
+        <!-- Step 2: Verify code -->
+        <div id="login-step-code" style="display:none;">
+            <div class="form-group">
+                <label class="form-label">🔑 Código de verificación</label>
+                <input type="number" id="sms-code-input" class="form-control" placeholder="123456"
+                    style="text-align:center; font-size:1.5rem; font-weight:900; letter-spacing:10px;">
+            </div>
+            <button class="btn btn-primary" id="btn-verify-code">✅ VERIFICAR</button>
+            <button class="btn btn-outline" id="btn-back-phone" style="margin-top:8px;">← Cambiar número</button>
+        </div>
+
+        <div id="login-error" style="color:#FF3B30; text-align:center; margin-top:12px; font-size:0.85rem; min-height:1.2rem;"></div>
+    </div>
+</div>
+
+<!-- ===== DRIVER SELECTOR (shown after auth, before main app) ===== -->
+<div id="driver-selector-view" style="display:none;">
+    <div class="login-card" style="max-width:380px; text-align:center;">
+        <div class="login-logo">NOVAPACK<span>➤</span></div>
+        <div class="login-sub" style="margin-bottom:6px;">🚚 REPARTO</div>
+        <div id="driver-route-label" style="font-size:0.7rem; color:var(--brand); font-weight:800; letter-spacing:3px; margin-bottom:20px; text-transform:uppercase;"></div>
+        
+        <div style="font-size:0.75rem; color:#888; letter-spacing:2px; font-weight:700; margin-bottom:14px;">¿QUIÉN CONDUCE HOY?</div>
+        
+        <div id="driver-options" style="display:flex; flex-direction:column; gap:10px;"></div>
+    </div>
+</div>
+
+<style>
+    #driver-selector-view {
+        position:fixed; top:0; left:0; width:100%; height:100%; z-index:100;
+        background:linear-gradient(135deg, #0a0a0a 0%, #1a0d00 100%);
+        display:flex; align-items:center; justify-content:center;
+    }
+    .driver-option-btn {
+        width:100%; padding:16px 20px; border:2px solid rgba(255,77,0,0.3);
+        background:rgba(255,77,0,0.06); color:#fff; border-radius:12px;
+        font-size:0.95rem; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+        cursor:pointer; transition:all 0.2s ease;
+        display:flex; align-items:center; gap:12px;
+    }
+    .driver-option-btn:hover, .driver-option-btn:active {
+        background:rgba(255,77,0,0.2); border-color:#FF4D00;
+        transform:scale(1.02); box-shadow:0 4px 20px rgba(255,77,0,0.3);
+    }
+    .driver-option-btn .driver-icon {
+        font-size:1.4rem; width:36px; text-align:center;
+    }
+</style>
+
+<!-- ===== MAIN APP (hidden until login) ===== -->
+<div id="main-app" style="display:none;">
+
+    <!-- HEADER -->
+    <header class="app-header">
+        <div>
+            <div class="logo">NOVAPACK<span>➤</span></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+            <span id="driver-name" class="driver-badge">REPARTIDOR</span>
+            <button class="header-btn" id="btn-clean-route" title="Limpiar entregas completadas">🧹</button>
+            <button class="header-btn" id="btn-sort-route" title="Ordenar ruta por GPS">🧭</button>
+            <button class="header-btn" id="btn-refresh" title="Refrescar entregas">🔄</button>
+            <button class="header-btn danger" id="btn-logout" title="Cerrar sesión">⏻</button>
+        </div>
+    </header>
+
+    <!-- ===== VIEW: DELIVERIES ===== -->
+    <div class="view active" id="view-deliveries">
+        <!-- Filters -->
+        <div class="delivery-filters">
+            <div class="filter-chip" data-filter="all">📋 Todos</div>
+            <div class="filter-chip active" data-filter="pending">⏱️ Pendientes</div>
+            <div class="filter-chip" data-filter="delivered">✅ Entregados</div>
+            <div class="filter-chip" data-filter="morning">☀️ Mañana</div>
+            <div class="filter-chip" data-filter="afternoon">🌙 Tarde</div>
+        </div>
+
+        <!-- Stats -->
+        <div class="delivery-stats">
+            <div class="stat-box">
+                <div class="num" id="stat-total">0</div>
+                <div class="lbl">Total</div>
+            </div>
+            <div class="stat-box">
+                <div class="num" id="stat-pending" style="color:var(--warning);">0</div>
+                <div class="lbl">Pendientes</div>
+            </div>
+            <div class="stat-box">
+                <div class="num" id="stat-delivered" style="color:var(--success);">0</div>
+                <div class="lbl">Entregados</div>
+            </div>
+        </div>
+
+        <!-- Delivery List -->
+        <div class="delivery-list" id="delivery-list">
+            <div class="empty-state">
+                <div class="icon">📦</div>
+                <p>No hay entregas asignadas</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VIEW: SCANNER ===== -->
+    <div class="view" id="view-scanner">
+        <div class="scanner-container">
+            <div id="qr-reader"></div>
+
+            <!-- Manual ID entry -->
+            <div style="width:100%; max-width:400px; margin-top:16px;">
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="manual-id-input" class="form-control" placeholder="ID albarán o nombre...">
+                    <button class="btn btn-primary btn-sm" id="btn-manual-search" style="white-space:nowrap;">🔍</button>
+                </div>
+            </div>
+
+            <!-- Scan Result -->
+            <div class="scan-result" id="scan-result" style="display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:8px;">
+                    <h3 id="scan-ticket-id" style="color:var(--brand); margin:0; font-weight:800; font-size:0.9rem;">ALBARÁN: ---</h3>
+                    <span id="scan-ticket-status" class="dc-status pending">PENDIENTE</span>
+                </div>
+                <div id="scan-ticket-details" style="font-size:0.85rem; line-height:1.6; margin-bottom:12px;"></div>
+
+                <!-- Confirm Panel -->
+                <div class="confirm-panel" id="confirm-panel">
+                    <h3>📋 CONFIRMACIÓN DE ENTREGA</h3>
+                    <div class="form-group">
+                        <label class="form-label">👤 Nombre del receptor</label>
+                        <input type="text" id="confirm-receiver" class="form-control" placeholder="Quién recibe...">
+                    </div>
+                    <div class="signature-wrap">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <label class="form-label" style="margin:0;">✍️ Firma del receptor</label>
+                            <button class="btn btn-sm btn-outline" id="btn-clear-sig" style="padding:2px 10px; font-size:0.65rem; color:var(--danger);">Borrar</button>
+                        </div>
+                        <canvas id="sig-canvas" width="460" height="140"></canvas>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">📸 Foto <span style="color:var(--text-dim); text-transform:none;">(opcional)</span></label>
+                        <input type="file" id="confirm-photo" accept="image/*" capture="environment" style="display:none;">
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <button class="btn btn-sm btn-outline" id="btn-take-photo" style="flex:1;">📷 Tomar Foto</button>
+                            <span id="photo-status" style="font-size:0.75rem; color:var(--text-dim);">Sin foto</span>
+                        </div>
+                        <img id="photo-preview" class="photo-preview">
+                    </div>
+                </div>
+
+                <button class="btn btn-success" id="btn-confirm-delivery" style="margin-top:12px;">✅ REGISTRAR ENTREGA</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== VIEW: MAP ===== -->
+    <div class="view" id="view-map">
+        <div id="route-map"></div>
+    </div>
+
+    <!-- ===== SCAN FAB ===== -->
+    <button class="scan-fab" id="btn-scan-fab">📷</button>
+
+    <!-- ===== BOTTOM NAV ===== -->
+    <nav class="bottom-nav">
+        <button class="nav-btn active" data-view="view-deliveries">
+            <span class="icon">📋</span>
+            Entregas
+        </button>
+        <button class="nav-btn" data-view="view-scanner">
+            <span class="icon">📷</span>
+            Escáner
+        </button>
+        <button class="nav-btn" data-view="view-map">
+            <span class="icon">🗺️</span>
+            Mapa
+        </button>
+    </nav>
+
+    <!-- ===== DETAIL MODAL ===== -->
+    <div class="modal-overlay" id="detail-modal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <div id="modal-content">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== MODIFICATION MODAL ===== -->
+    <div class="modal-overlay" id="mod-modal">
+        <div class="modal-sheet">
+            <div class="modal-handle"></div>
+            <h3 style="color:var(--brand); font-size:1rem; font-weight:800; margin-bottom:16px;">✏️ SOLICITAR MODIFICACIÓN</h3>
+            <div id="mod-ticket-info" style="font-size:0.85rem; color:var(--text-dim); margin-bottom:14px; line-height:1.6;"></div>
+            <div class="form-group">
+                <label class="form-label">📍 Nueva dirección</label>
+                <input type="text" id="mod-address" class="form-control" placeholder="Dejar vacío si no cambia">
+            </div>
+            <div class="form-group">
+                <label class="form-label">📦 Nuevos bultos</label>
+                <input type="number" id="mod-packages" class="form-control" placeholder="Dejar vacío si no cambia" min="1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">📝 Observaciones para admin</label>
+                <textarea id="mod-notes" class="form-control" placeholder="Explica el motivo de la modificación..." rows="3" style="resize:none;"></textarea>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+                <button class="btn btn-primary" id="btn-mod-send">📤 ENVIAR SOLICITUD</button>
+                <button class="btn btn-outline" id="btn-mod-cancel" style="color:var(--text-dim);">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
+</div> <!-- /main-app -->
+
+<!-- ===== TOAST CONTAINER (outside main-app, always visible) ===== -->
+<div id="toast-container"></div>
+
+</body>
+</html>

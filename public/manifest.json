@@ -1,0 +1,17 @@
+{
+    "name": "novapaack.login",
+    "short_name": "Novapack",
+    "description": "Sistema de Gestión Logística Novapack",
+    "start_url": "index.html",
+    "display": "standalone",
+    "background_color": "#0A0B0C",
+    "theme_color": "#FF6600",
+    "icons": [
+        {
+            "src": "icon_new.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

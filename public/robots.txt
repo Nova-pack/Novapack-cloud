@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://novapaack-68f05.web.app/sitemap.xml

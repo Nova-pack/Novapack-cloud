@@ -1,0 +1,31 @@
+async function downloadFullBackupJSON() {
+                    if (!confirm("¿Desea descargar una copia de seguridad local de toda su base de datos?")) return;
+                    showLoading();
+                    try {
+                        const backupDate = new Date().toISOString();
+                        const data = {
+                            backup_info: {
+                                version: "Novapack Cloud v2.2",
+                                timestamp: backupDate,
+                                author: "Admin Cloud Console"
+                            },
+                            collections: {
+                                users: {},
+                                tickets: [],
+                                invoices: [],
+                                tariffs: [],
+                                articles: [],
+                                config: {}
+                            }
+                        };
+
+                        const usersSnap = await db.collection('users').get();
+                        for (const uDoc of usersSnap.docs) {
+                            const uData = uDoc.data();
+                            const compsSnap = await db.collection('users').doc(uDoc.id).collection('companies').get();
+                            uData.companies = compsSnap.docs.map(c => ({ id: c.id, ...c.data() }));
+                            data.collections.users[uDoc.id] = uData;
+                        }
+
+                        const tSnap = await db.collection('tickets').get();
+                       

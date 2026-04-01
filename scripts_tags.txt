@@ -1,0 +1,13 @@
+﻿Line 14: <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+Line 15: <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+Line 16: <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+Line 17: <script src="firebase-config.js?v=20260310c"></script>
+Line 18: <script src="libs/qrcode.min.js?v=20260310_BETA"></script>
+Line 19: <script src="libs/qrious.min.js?v=20260310_BETA"></script>
+Line 20: <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
+Line 21: <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
+Line 1573: <script>
+Line 1652: </script>
+Line 2007: <script>
+Line 5464: bulkWin.document.write('<html><head><style>' + css + '</style></head><body>' + labelsHTML.join('') + ' <script>window.onload=()=>{window.print();window.close();}<\/script></body></html>');
+Line 6168: </script>

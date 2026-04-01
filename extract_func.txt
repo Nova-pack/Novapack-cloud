@@ -1,0 +1,52 @@
+
+--- function processAdminScannedCode( in public/admin.html ---
+                   }
+                    }
+                };
+            }
+
+            async function processAdminScannedCode(idContent) {
+                 // Limpiar input
+                 if(document.getElementById('manual-id-admin')) document.getElementById('manual-id-admin').value = '';
+
+                 let qrData = null;
+                 let searchId = idContent;
+
+                 try {
+                     // 1. Limpiar el string de la pistola (algunas añaden sufijos o prefijos invisibles)
+                     let cleanContent = idContent.trim();
+                     console.log("Intentando parsear QR:", cleanContent);
+                     
+                     // 2. Intentar parsear como JSON si viene del QR extendido
+                     if (cleanContent.startsWith('{') || cleanContent.includes('{"id"')) {
+                         
+                         // Extraer solo la parte JSON si hay basura antes o después
+                         const jsonMatch = cleanContent.match(/\{.*\}/);
+                         if (jsonMatch) {
+                             cleanContent = jsonMatch[0];
+                         }
+
+                         qrData = JSON.parse(cleanContent);
+                         searchId = qrData.docId || qrData.id || cleanContent;
+                     }
+                 } catch (e) {
+                     console.warn("Error al intentar parsear el JSON. Procesando con fallbacks...", e);
+                 }
+                 
+                 // Fallback 1: Formato GESCO / Custom Pipe-Separated (ej: ID:xx|DEST:xx|ADDR:xx)
+                 // Relajamos las condiciones de entrada porque a veces hay espacios ocultos
+                 if (!qrData && idContent.toUpperCase().includes("DEST:")) {
+                     const manualParse = {};
+                     // Dividir por | (y limpiar caracteres invisibles/saltos de linea)
+                     const cleanPipeContent = idContent.replace(/[\r\n]+/g, "").trim();
+                     const parts = cleanPipeContent.split('|');
+                     
+                     parts.forEach(p => {
+                         const splitIdx = p.indexOf(':');
+                         if (splitIdx > -1) {
+                             const key = p.substring(0, splitIdx).trim().toUpperCase();
+                             const v = p.substring(splitIdx + 1).trim();
+                             
+                             // Mapeamos a nuestras variables internas Novapack
+                             if (key === 'ID') manualParse.id = v;
+                 

@@ -1,0 +1,15 @@
+async function updateMaintenanceStats() {
+                    try {
+                        const ticketsSnap = await db.collection('tickets').get();
+                        const invoicesSnap = await db.collection('invoices').get();
+                        const usersSnap = await db.collection('users').get();
+                        document.getElementById('stat-total-tickets').textContent = ticketsSnap.size;
+                        document.getElementById('stat-total-invoices').textContent = invoicesSnap.size;
+                        document.getElementById('stat-total-clients').textContent = usersSnap.size;
+                    } catch (e) {
+                        console.error("Error loading maintenance stats:", e);
+                    }
+                }
+
+                async function downloadFullBackupJSON() {
+   

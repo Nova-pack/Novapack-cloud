@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVAPACK CLOUD - EVO 6 ERP</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=20260318c_print">
+
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js" defer></script>
+
+    <!-- Local Libs -->
+    <script src="libs/qrcode.min.js?v=20260305c" defer></script>
+    <script src="libs/qrious.min.js?v=20260305c" defer></script>
+    <script src="libs/html5-qrcode.min.js?v=20260305c" defer></script>
+    
+    <!-- Core Application Logic -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="firebase-config.js?v=20260318d" defer></script>
+    <script src="sentry-config.js?v=1"></script>
+
+    <!-- ===== SENTRY ERROR MONITORING ===== -->
+    <script src="https://browser.sentry-cdn.com/8.49.0/bundle.min.js" crossorigin="anonymous"></script>
+    <script>
+        window.NOVAPACK_SENTRY_READY = false;
+        if (typeof Sentry !== 'undefined') {
+            Sentry.init({
+                dsn: window.NOVAPACK_SENTRY_DSN || "",
+                environment: location.hostname === 'localhost' ? 'development' : 'production',
+                release: 'novapack-cloud@2.0',
+                // Only send errors in production
+                enabled: location.hostname !== 'localhost',
+                // Sample 100% of errors (free tier allows 5000/month)
+                sampleRate: 1.0,
+                // Ignore common non-critical errors
+                ignoreErrors: [
+                    'ResizeObserver loop',
+                    'Loading chunk',
+                    'Network request failed',
+                    'AbortError',
+                    'cancelled',
+                ],
+                beforeSend(event) {
+                    // Tag with the current page for easy filtering
+                    const page = location.pathname.includes('admin') ? 'admin' :
+                                 location.pathname.includes('app') ? 'client' :
+                                 location.pathname.includes('reparto') ? 'driver' : 'unknown';
+                    event.tags = event.tags || {};
+                    event.tags.novapack_module = page;
+                    return event;
+                }
+            });
+            window.NOVAPACK_SENTRY_READY = true;
+            console.log("Sentry monitoring active (env: " + (location.hostname === 'localhost' ? 'dev' : 'prod') + ")");
+        }
+    </script>
+
+    <script src="phantom-engine.js?v=1" defer></script>
+    <script src="firebase-app.js?v=20260318z_excelM" defer></script>
+</head>
+
+<body>
+    <!-- Elegant Intro -->
+    <div id="app-intro">
+        <div class="intro-logo" style="font-family:'Xenotron', sans-serif;">NOVAPACK<span class="logo-arrow">➤</span>
+        </div>
+        <div class="intro-subtext">SISTEMA LOGÍSTICO CLOUD</div>
+        <div id="intro-welcome" class="intro-welcome">SINCRONIZANDO NUBE...</div>
+    </div>
+
+    <!-- Elegant Outro -->
+    <div id="app-outro" class="hidden">
+        <div class="intro-logo" style="font-family:'Xenotron', sans-serif;">NOVAPACK<span class="logo-arrow">➤</span>
+        </div>
+        <div class="outro-subtext">GRACIAS POR CONFÍAR EN NOVAPACK</div>
+    </div>
+
+    <!-- Dashboard View -->
+    <div id="dashboard-view" class="view-section">
+        <header class="toolbar">
+            <div style="width:100%; padding:0 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <button id="btn-mobile-menu" class="btn btn-sm btn-outline mobile-only"
+                        style="display:none;">☰</button>
+                    <div id="nav-home" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <h2 class="logo" style="margin:0; font-family:'Xenotron', sans-serif;">NOVAPACK<span
+                                class="logo-arrow">➤</span></h2>
+                        <!-- Context Actions -->
+                        <div id="editor-actions" class="hidden" style="display:flex; gap:8px;">
+                            <button id="action-new" class="btn btn-sm btn-primary" title="Crear Nuevo">+ NUEVO</button>
+                            <button id="action-print" class="btn btn-sm btn-outline">🖨️ IMPRIMIR</button>
+                            <button id="action-label" class="btn btn-sm btn-outline">🏷️ ETIQUETAS</button>
+                            <button id="action-delete" class="btn btn-sm btn-outline"
+                                style="border-color:#FF3B30; color:#FF3B30;">🗑️</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span id="user-display-name"
+                        style="color:var(--text-dim); font-size:0.8rem; margin-right:10px;"></span>
+                    <button id="nav-clients" class="btn btn-sm btn-secondary">👥 CLIENTES</button>
+                    <button id="nav-reports" class="btn btn-sm btn-secondary">📊 INFORMES</button>
+                    <button id="btn-open-scanner" class="btn btn-sm btn-secondary">📷 ESCÁNER</button>
+                    <button id="btn-logout" class="btn btn-sm btn-outline" style="border-color:#FF3B30; color:#FF3B30;"
+                        title="Salir" onclick="logout()">🚪 SALIR</button>
+
+                    <!-- Company Selector -->
+                    <div
+                        style="background: rgba(255,255,255,0.05); padding: 5px 15px; border-radius: 8px; border: 1px solid var(--border-glass); display: flex; align-items: center; gap: 12px; margin-left:10px;">
+                        <select id="company-selector"
+                            style="background: transparent; border: none; color: white; font-weight: 700; cursor: pointer; outline: none; font-size: 0.85rem; text-transform: uppercase;">
+                        </select>
+                        <button id="btn-manage-companies" title="Gestionar Empresas"
+                            style="background:none; border:none; color:var(--brand-primary); cursor:pointer; font-size:1.4rem; padding: 10px; margin: -10px; display:flex; align-items:center;">⚙️</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div id="dashboard-container" class="dashboard-container">
+            <!-- MODULE 1: TICKETS LIST -->
+            <div class="ticket-sidebar">
+                <div class="sidebar-header">
+                    <input type="text" id="ticket-search" class="form-control mb-4"
+                        placeholder="🔍 BUSCAR ALBARÁN O CLIENTE...">
+                    <input type="date" id="date-filter" class="form-control mb-4">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <button id="btn-print-morning" class="btn btn-sm btn-outline"
+                            style="justify-content: flex-start; padding-left: 15px;">☀️ ENVÍOS MAÑANA</button>
+                        <button id="btn-print-afternoon" class="btn btn-sm btn-outline"
+                            style="justify-content: flex-start; padding-left: 15px;">🌙 ENVÍOS TARDE</button>
+                        <button id="btn-reprint-morning" class="btn btn-sm btn-outline"
+                            style="justify-content: flex-start; padding-left: 15px; border-style: dashed; color:var(--text-dim);" title="Reimprime todos los albaranes de esta mañana (incluso los ya impresos)">🔃 REIMPRIMIR MAÑANA</button>
+                        <button id="btn-reprint-afternoon" class="btn btn-sm btn-outline"
+                            style="justify-content: flex-start; padding-left: 15px; border-style: dashed; color:var(--text-dim);" title="Reimprime todos los albaranes de esta tarde (incluso los ya impresos)">🔃 REIMPRIMIR TARDE</button>
+                        <button id="btn-print-labels-morning" class="btn btn-sm btn-primary"
+                            style="justify-content: flex-start; padding-left: 15px;">🏷️☀️ ETIQUETAS MAÑANA</button>
+                        <button id="btn-print-labels-afternoon" class="btn btn-sm btn-primary"
+                            style="justify-content: flex-start; padding-left: 15px;">🏷️🌙 ETIQUETAS TARDE</button>
+                    </div>
+                    <div
+                        style="margin-top: 10px; padding: 10px; background: rgba(255,102,0,0.05); border-radius: var(--radius-md); border: 1px solid var(--border-orange);">
+                        <label class="form-label"
+                            style="font-size: 0.65rem; color: var(--brand-primary); margin-bottom: 5px;">📄 IMPRIMIR
+                            MANIFIESTO</label>
+                        <div style="display: flex; flex-direction: column; gap: 6px;">
+                            <select id="select-manifest-slot" class="form-control"
+                                style="font-size: 0.85rem; height: 42px; width: 100%; font-weight: 700; background: rgba(0,0,0,0.3);">
+                                <option value="MAÑANA">☀️ TURNO DE MAÑANA</option>
+                                <option value="TARDE">🌙 TURNO DE TARDE</option>
+                                <option value="AMBOS">✨ MANIFIESTO DÍA COMPLETO</option>
+                            </select>
+                            <button id="btn-print-manifest-dropdown" class="btn btn-sm btn-primary"
+                                style="height: 40px; width: 100%; font-weight: 900; justify-content: center; font-size: 0.85rem;"
+                                title="Imprimir Manifiesto Seleccionado">📥 IMPRIMIR MANIFIESTO</button>
+                        </div>
+                    </div>
+                    <!-- Pickup Request Button -->
+                    <button id="btn-request-pickup" class="btn btn-sm" onclick="openPickupModal()"
+                        style="margin-top:10px; width:100%; padding:12px; font-weight:900; font-size:0.85rem; justify-content:center; background:linear-gradient(135deg,#4CAF50,#FF6600); color:white; border:none; border-radius:8px; cursor:pointer; letter-spacing:1px;">
+                        📦 SOLICITAR RECOGIDA
+                    </button>
+                </div>
+                <div id="tickets-list" class="ticket-list-scroll"></div>
+            </div>
+
+            <!-- MODULE 2 & 3: EDITOR (Unified form with 2 columns) -->
+            <div class="ticket-editor">
+                <div class="card editor-card" style="margin: 0 auto;">
+                    <div
+                        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem; border-bottom:1px solid var(--border-glass); padding-bottom:15px;">
+                        <h2 id="editor-title" style="margin:0; font-size:1.5rem; color: var(--brand-primary);">NUEVO
+                            ALBARÁN</h2>
+                        <div style="display:flex; align-items:center; gap:15px;">
+                            <button id="btn-import-excel" class="btn btn-sm" style="background:#f0f9f4; color:#21a366; border:1px solid #21a366; font-weight:800;" title="Importar Excel Masivo">📥 IMPORTAR EXCEL</button>
+                            <input type="file" id="input-excel-upload" accept=".xlsx, .xls, .csv" style="display:none;">
+                            <div style="text-align:right;">
+                                <span id="editor-status"
+                                    style="font-size:0.85rem; color:var(--text-dim); font-weight: 600; display:block;">BORRADOR</span>
+                                <span id="editor-id-display"
+                                    style="font-size:0.75rem; color:var(--brand-primary); font-weight: 800;"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    
+                    <!-- ALERT BOX FOR PENDING MODIFICATIONS -->
+                    <div id="pending-confirmation-alert" class="hidden" style="margin-bottom: 20px; padding: 20px; background: rgba(255, 165, 0, 0.15); border: 2px solid #FFA500; border-radius: 8px; text-align: center;">
+                        <h3 style="color: #FFA500; margin-top:0;">⚠️ ATENCIÓN: ALBARÁN MODIFICADO POR LA COMPAÑÍA</h3>
+                        <p id="pending-changes-text" style="color: white; font-size: 0.9rem; margin-bottom: 15px;">Se han detectado cambios en el peso o bultos de este albarán. Por favor, revisa los datos y acepta la modificación para continuar.</p>
+                        <button type="button" class="btn" style="background: #FFA500; color: black; font-weight: 900; padding: 10px 20px; pointer-events: auto !important; position: relative; z-index: 9999;" onclick="acceptTicketModification()">✅ ACEPTAR MODIFICACIÓN</button>
+                    </div>
+
+<div id="create-ticket-form"
+                        style="display: grid; grid-template-columns: 1fr 320px; gap: 20px; height: auto;">
+                        <!-- COLUMN 2: CLIENT & PACKAGES -->
+                        <div style="display: flex; flex-direction: column; gap: 20px;">
+                            <div
+                                style="background:rgba(255,255,255,0.02); padding:10px; border-radius:var(--radius-md); border:1px solid var(--border-glass);">
+                                <label class="form-label" style="color:var(--brand-primary);">🔍 BÚSQUEDA RÁPIDA DE
+                                    CLIENTE</label>
+                                <div style="position:relative;">
+                                    <input type="text" id="client-picker" class="form-control" autocomplete="off"
+                                        placeholder="Escribe para buscar...">
+                                    <div id="client-picker-results" class="hidden"
+                                        style="position:absolute; top:100%; left:0; width:100%; max-height:200px; overflow-y:auto; z-index:1000;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card" style="background: rgba(0,0,0,0.2);">
+                                <h3 class="form-label"
+                                    style="color:var(--brand-primary); border-bottom:1px solid var(--border-glass); padding-bottom:10px; margin-bottom:15px;">
+                                    📍 DESTINATARIO</h3>
+                                <div style="margin-bottom: 12px;">
+                                    <input type="text" id="ticket-receiver" class="form-control"
+                                        placeholder="NOMBRE DEL CLIENTE"
+                                        style="font-weight:900; font-size:1.1rem; border-color:var(--brand-primary);">
+                                    <div id="suggestions-box" class="hidden"></div>
+                                </div>
+                                <div
+                                    style="display: grid; grid-template-columns: 3fr 1fr; gap: 10px; margin-bottom: 12px;">
+                                    <input type="text" id="ticket-address" class="form-control"
+                                        placeholder="DIRECCIÓN">
+                                    <input type="text" id="ticket-number" class="form-control" placeholder="Nº">
+                                </div>
+                                <div
+                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom:12px;">
+                                    <input type="text" id="ticket-localidad" class="form-control"
+                                        placeholder="LOCALIDAD">
+                                    <input type="text" id="ticket-cp" class="form-control" placeholder="C.P." required maxlength="5">
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px;">
+                                    <select id="ticket-province" class="form-control">
+                                        <option value="">-- PROVINCIA --</option>
+                                    </select>
+                                    <input type="text" id="ticket-phone" class="form-control" placeholder="TELÉFONO">
+                                </div>
+                                <div style="margin-top: 15px;">
+                                    <label class="form-label"
+                                        style="display: flex; align-items: center; gap: 8px; text-transform:none; cursor:pointer;">
+                                        <input type="checkbox" id="save-destination-check" checked
+                                            style="width:16px; height:16px;"> GUARDAR EN AGENDA NUBE
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="card" style="background: rgba(0,0,0,0.2);">
+                                <div
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                                    <h3 class="form-label" style="color:var(--brand-primary); margin:0;">📦 BULTOS /
+                                        MERCANCÍA</h3>
+                                    <button type="button" id="btn-add-package" class="btn btn-sm btn-primary">+
+                                        AÑADIR</button>
+                                </div>
+                                <div id="packages-list" style="min-height: 100px;"></div>
+                                <div style="text-align:right; font-size:1.1rem; margin-top:15px; font-weight: 800;">
+                                    TOTALES: <span id="display-total-packages"
+                                        style="color:var(--brand-primary);">0</span>
+                                    <input type="hidden" id="ticket-packages-count" value="0">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- COLUMN 3: SENDER & OPTIONS -->
+                        <div style="display: flex; flex-direction: column; gap: 15px;">
+                            <div
+                                style="background: rgba(0,0,0,0.1); padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border-glass);">
+                                <h3 class="form-label" style="font-size:0.7rem;">REMITENTE</h3>
+                                <input type="text" id="ticket-sender" class="form-control" readonly
+                                    style="margin-bottom:5px; font-size:0.8rem;">
+                                <input type="text" id="ticket-sender-address" class="form-control" readonly
+                                    style="margin-bottom:5px; font-size:0.8rem;">
+                                <input type="text" id="ticket-sender-phone" class="form-control" readonly
+                                    style="font-size:0.8rem;">
+                            </div>
+
+                            <div class="card" style="border-color:var(--brand-primary);">
+                                <label class="form-label" style="color:var(--brand-primary); font-weight: 700;">⏰ TURNO
+                                    RECOGIDA *</label>
+                                <select id="ticket-time-slot" class="form-control"
+                                    style="font-weight:700; border-color:var(--brand-primary);">
+                                    <option value="">-- SELECCIONAR --</option>
+                                    <option value="MAÑANA">☀️ MAÑANA</option>
+                                    <option value="TARDE">🌙 TARDE</option>
+                                </select>
+                            </div>
+
+                            <div class="card">
+                                <label class="form-label">💰 PORTES / PAGO</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <select id="ticket-shipping-type" class="form-control">
+                                        <option value="Pagados">PAGADOS</option>
+                                        <option value="Debidos">DEBIDOS</option>
+                                    </select>
+                                    <input type="number" id="ticket-cod" class="form-control" step="0.01"
+                                        placeholder="0.00 € REEMB.">
+                                </div>
+                            </div>
+
+                            <div class="card" style="flex:1;">
+                                <label class="form-label">📝 OBSERVACIONES</label>
+                                <textarea id="ticket-notes" class="form-control" style="min-height: 80px;"></textarea>
+                                <input type="hidden" id="ticket-weight-total" value="0.00">
+                            </div>
+
+                            <div style="display: flex; gap: 10px; width: 100%;">
+                                <button type="button" id="btn-cancel-ticket" class="btn btn-outline"
+                                    style="flex: 0.8; padding: 15px 5px; font-size: 0.9rem; font-weight: 800; border-radius: 12px; justify-content: center; color:var(--text-dim); border-color:var(--border-glass); white-space: nowrap;">
+                                    ❌ CANCELAR
+                                </button>
+                                <button type="button" id="btn-save-ticket-run" onclick="handleFormSubmit(event)" class="btn btn-primary"
+                                    style="flex: 2; padding: 15px 10px; font-size: 1.1rem; font-weight: 900; border-radius: 12px; justify-content: center;">
+                                    💾 GUARDAR
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Sidebar New Button for consistency with JS -->
+        <button id="btn-sidebar-new" style="display:none;"></button>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:10000; backdrop-filter:blur(5px);">
+        <div style="color:var(--brand-primary); font-size:3rem; animation: pulse 1s infinite;">➤</div>
+        <div style="color:white; margin-top:15px; letter-spacing:4px; font-weight:200;">SINCRONIZANDO...</div>
+    </div>
+    <style>
+        @keyframes pulse {
+            0% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+
+            100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+        }
+    </style>
+
+    <!-- Clients View -->
+    <div id="clients-view" class="view-section hidden">
+        <header class="toolbar">
+            <div style="width:100%; padding:0 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:20px;">
+                    <h2 class="logo" style="margin:0; cursor:pointer;" onclick="location.reload()">NOVAPACK<span
+                            class="logo-arrow">➤</span></h2>
+                    <h3 style="margin:0; color:var(--brand-primary); font-family:var(--font-heading);">AGENDA DE
+                        CLIENTES NUBE</h3>
+                </div>
+                <button id="btn-close-clients" class="btn btn-sm btn-outline">VOLVER AL PANEL</button>
+            </div>
+        </header>
+        <div style="display: flex; min-height: calc(100dvh - 65px);">
+            <div
+                style="width: 350px; border-right: 1px solid var(--border-glass); padding: 20px; display: flex; flex-direction: column;">
+                <input type="text" id="client-view-search" class="form-control mb-4" placeholder="🔍 BUSCAR CLIENTE...">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <label style="font-size:0.75rem;"><input type="checkbox" id="client-select-all"> SELECCIONAR
+                        TODO</label>
+                    <button id="btn-delete-selected-clients" class="btn btn-xs btn-danger"
+                        style="display:none;"></button>
+                </div>
+                <div id="clients-view-list" style="flex:1; border:1px solid var(--border-glass); border-radius:8px;">
+                </div>
+            </div>
+            <div style="flex: 1; padding: 40px;">
+                <div id="client-editor-container" class="card" style="max-width: 800px; margin: 0 auto;">
+                    <form id="client-editor-form">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-glass); padding-bottom:10px;">
+                            <h3 id="client-form-title"
+                                style="margin:0; color:var(--brand-primary); font-family:var(--font-heading);">DATOS DEL
+                                CLIENTE</h3>
+                            <div style="display:flex; gap:8px;">
+                                <button type="button" class="btn btn-xs btn-outline" onclick="exportClientAgenda()">📥
+                                    EXPORTAR</button>
+                                <button type="button" class="btn btn-xs btn-outline"
+                                    onclick="document.getElementById('import-agenda-file').click()">📤 IMPORTAR</button>
+                                <input type="file" id="import-agenda-file" hidden accept=".json"
+                                    onchange="importClientAgenda(event)">
+                                <button type="button" class="btn btn-xs" style="background:#f0f9f4; color:#21a366; border:1px solid #21a366; font-weight:800;"
+                                    onclick="document.getElementById('import-agenda-excel').click()">📥 IMPORTAR EXCEL</button>
+                                <input type="file" id="import-agenda-excel" hidden accept=".xlsx,.xls,.csv"
+                                    onchange="importClientAgendaFromExcel(event)">
+                                <button type="button" id="btn-client-new" class="btn btn-xs btn-outline"
+                                    style="border-color:var(--brand-primary); color:var(--brand-primary);">+
+                                    NUEVO</button>
+                            </div>
+                        </div>
+                        <input type="hidden" id="client-edit-id">
+                        <div style="display:grid; grid-template-columns: 2fr 1fr; gap:15px; margin-bottom:15px;">
+                            <div>
+                                <label class="form-label">Nombre o Razón Social</label>
+                                <input type="text" id="client-edit-name" class="form-control" required
+                                    placeholder="NOMBRES APELLIDOS...">
+                            </div>
+                            <div>
+                                <label class="form-label">DNI / CIF</label>
+                                <input type="text" id="client-edit-nif" class="form-control">
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:20px;">
+                            <div>
+                                <label class="form-label">Teléfono Principal</label>
+                                <input type="text" id="client-edit-phone" class="form-control">
+                            </div>
+                            <div>
+                                <label class="form-label">Email</label>
+                                <input type="email" id="client-edit-email" class="form-control">
+                            </div>
+                        </div>
+
+                        <div class="card" style="background:rgba(0,0,0,0.2); margin-bottom:20px;">
+                            <div
+                                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                                <h4 class="form-label" style="margin:0;">📍 DIRECCIONES RECURRENTES</h4>
+                                <button type="button" id="btn-add-address-row" class="btn btn-xs btn-primary">+
+                                    AÑADIR</button>
+                            </div>
+                            <div id="client-edit-addresses-container">
+                                <!-- Populated by JS -->
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-4">
+                            <label class="form-label">NOTAS INTERNAS</label>
+                            <textarea id="client-edit-notes" class="form-control" style="min-height:80px;"></textarea>
+                        </div>
+
+                        <div style="display:flex; gap:10px; width:100%;">
+                            <button type="button" id="btn-client-delete" class="btn btn-outline hidden" style="color:#ff4444; border-color:#ff4444; flex:0.4; padding:15px; font-weight:900;" onclick="deleteEditingClient()">🗑️ ELIMINAR</button>
+                            <button type="button" id="btn-client-save" class="btn btn-primary"
+                                style="flex:1; padding:15px; font-weight:900;">💾 GUARDAR EN AGENDA NUBE</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports View -->
+    <div id="reports-view" class="view-section hidden">
+        <header class="toolbar">
+            <div style="width:100%; padding:0 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <h2 class="logo">NOVAPACK<span class="logo-arrow">➤</span> <span
+                        style="font-family:var(--font-heading); font-size:1.2rem; color:white; margin-left:10px;">HISTÓRICO</span>
+                </h2>
+                <button id="btn-close-reports" class="btn btn-sm btn-outline">CERRAR</button>
+            </div>
+        </header>
+        <div style="padding: 20px;">
+            <div class="card mb-4" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                <div style="flex:1; min-width: 200px;">
+                    <label class="form-label">CLIENTE</label>
+                    <input type="text" id="report-client" class="form-control" placeholder="Todos...">
+                </div>
+                <div>
+                    <label class="form-label">DESDE</label>
+                    <input type="date" id="report-date-start" class="form-control">
+                </div>
+                <div>
+                    <label class="form-label">HASTA</label>
+                    <input type="date" id="report-date-end" class="form-control">
+                </div>
+                <button id="btn-run-report" class="btn btn-primary">🔍 BUSCAR</button>
+                <button id="btn-export-csv" class="btn btn-secondary">📥 CSV</button>
+                <button id="btn-print-report" class="btn btn-secondary">🖨️ IMPRIMIR</button>
+            </div>
+            <div class="card" style="overflow-x: auto;">
+                <table style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>ALBARÁN</th>
+                            <th>FECHA</th>
+                            <th>CLIENTE</th>
+                            <th>PROVINCIA</th>
+                            <th>BULTOS</th>
+                            <th>ESTADO</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-results"></tbody>
+                </table>
+            </div>
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding:0 10px;">
+                <div id="report-empty" style="display:none; color:var(--text-dim); font-size:0.9rem;">No se han
+                    encontrado albaranes en este rango.</div>
+                <div style="font-weight:700; font-family:var(--font-heading); font-size:1.1rem;">TOTAL ALBARANES: <span
+                        id="report-total-count" style="color:var(--brand-primary);">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scanner View -->
+    <div id="scanner-view" class="view-section hidden">
+        <header class="toolbar">
+            <div style="width:100%; padding:0 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <h2 class="logo">NOVAPACK<span class="logo-arrow">➤</span> <span
+                        style="font-family:var(--font-heading); font-size:1.2rem; color:white; margin-left:10px;">ESCÁNER</span>
+                </h2>
+                <button id="btn-close-scanner" class="btn btn-sm btn-outline">CERRAR</button>
+            </div>
+        </header>
+        <div
+            style="padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 80vh;">
+            <div id="app-qr-reader"
+                style="width: 100%; max-width: 500px; border-radius: 20px; overflow: hidden; border: 2px solid var(--brand-primary); background: #000; box-shadow: 0 0 30px var(--brand-primary-glow);">
+            </div>
+            <div id="app-scanned-result" class="card hidden" style="margin-top: 20px; max-width: 500px; width: 100%;">
+                <div
+                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid var(--border-glass); padding-bottom:10px;">
+                    <h3 id="app-scanned-id"
+                        style="color:var(--brand-primary); margin:0; font-family:var(--font-heading);">ALBARÁN: ---</h3>
+                </div>
+                <div id="app-scanned-details" style="font-size:0.9rem; line-height:1.6; margin-bottom:20px;"></div>
+
+                <!-- DELIVERY CONFIRMATION PANEL -->
+                <div id="delivery-confirm-panel" style="border:2px solid var(--brand-primary); border-radius:12px; padding:15px; margin-bottom:15px; background:rgba(255,102,0,0.05);">
+                    <h3 style="color:var(--brand-primary); margin:0 0 12px 0; font-size:1rem; text-align:center;">📋 CONFIRMACIÓN DE ENTREGA</h3>
+
+                    <!-- Receiver Name -->
+                    <div style="margin-bottom:12px;">
+                        <label style="font-size:0.75rem; text-transform:uppercase; color:#888; font-weight:700; display:block; margin-bottom:4px;">👤 Nombre del receptor</label>
+                        <input type="text" id="delivery-receiver-name" class="form-control" placeholder="Quién recibe..." style="font-weight:700; font-size:1rem;">
+                    </div>
+
+                    <!-- Signature Canvas -->
+                    <div style="margin-bottom:12px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <label style="font-size:0.75rem; text-transform:uppercase; color:#888; font-weight:700;">✍️ Firma del receptor</label>
+                            <button type="button" onclick="clearSignature()" style="background:transparent; border:1px solid #555; color:#FF3B30; padding:2px 10px; font-size:0.7rem; cursor:pointer; border-radius:4px;">Borrar</button>
+                        </div>
+                        <canvas id="signature-canvas" width="460" height="150" style="width:100%; height:150px; background:white; border-radius:8px; border:1px solid #555; cursor:crosshair; touch-action:none;"></canvas>
+                    </div>
+
+                    <!-- Photo Capture -->
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:0.75rem; text-transform:uppercase; color:#888; font-weight:700; display:block; margin-bottom:4px;">📸 Foto del paquete entregado <span style="color:#666; text-transform:none;">(opcional)</span></label>
+                        <input type="file" id="delivery-photo" accept="image/*" capture="environment" style="display:none;">
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <button type="button" onclick="document.getElementById('delivery-photo').click()" class="btn btn-sm btn-outline" style="flex:1; justify-content:center; padding:10px;">📷 Tomar Foto</button>
+                            <span id="delivery-photo-status" style="font-size:0.8rem; color:#888;">Sin foto</span>
+                        </div>
+                        <img id="delivery-photo-preview" style="display:none; width:100%; max-height:200px; object-fit:cover; border-radius:8px; margin-top:8px; border:1px solid #555;">
+                    </div>
+                </div>
+
+                <button id="btn-mark-app-scanned" class="btn btn-primary"
+                    style="width:100%; padding:15px; font-weight:900;">✅ REGISTRAR ENTREGA</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company Modal -->
+    <div id="company-modal" class="modal hidden">
+        <div class="modal-content card">
+            <div
+                style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--border-glass); padding-bottom:10px;">
+                <h2 id="company-form-title"
+                    style="margin:0; color:var(--brand-primary); font-family:var(--font-heading);">GESTIONAR EMPRESAS
+                </h2>
+                <button id="btn-close-company-modal" class="btn btn-sm btn-outline">✖</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1.5fr; gap:30px;">
+                <!-- List Side -->
+                <div style="border-right:1px solid var(--border-glass); padding-right:20px;">
+                    <h3 class="form-label" style="margin-bottom:15px;">TUS EMPRESAS</h3>
+                    <div id="company-list-container"
+                        style="max-height: 500px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Form Side -->
+                <div id="company-form">
+                    <input type="hidden" id="comp-edit-id">
+                    <div class="form-group mb-2">
+                        <label class="form-label">Nombre Fiscal <span style="font-size:0.7rem; color:var(--brand-primary);">(Solo Lectura)</span></label>
+                        <input type="text" id="comp-name" class="form-control" readonly style="opacity:0.8; cursor:not-allowed;" title="Contacta con el administrador para modificaciones">
+                    </div>
+                    <div class="form-group mb-2">
+                        <label class="form-label">CIF / NIF <span style="font-size:0.7rem; color:var(--brand-primary);">(Solo Lectura)</span></label>
+                        <input type="text" id="comp-nif" class="form-control" readonly style="opacity:0.8; cursor:not-allowed;">
+                    </div>
+                    <div class="form-group mb-2">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                            <label class="form-label" style="margin:0;">IBAN Bancario <span style="font-size:0.7rem; color:var(--brand-primary);">(Solo Lectura)</span></label>
+                            <span id="comp-bank-name" style="color:var(--brand-primary); font-size:0.75rem; font-weight:bold;"></span>
+                        </div>
+                        <input type="text" id="comp-iban" class="form-control" placeholder="ES00 0000 0000 0000 0000 0000" style="text-transform:uppercase;" readonly style="opacity:0.8; cursor:not-allowed;">
+                    </div>
+                    <div class="form-group mb-2" style="background:rgba(255,255,255,0.02); padding:10px; border-radius:8px; border:1px dashed var(--border-glass);">
+                        <label class="form-label">Nº ID Facturación / Cliente <small style="text-transform:none; color:var(--text-dim); font-weight:normal;">(Opcional)</small></label>
+                        <input type="number" id="comp-id-num" class="form-control" placeholder="Ej: 109">
+                        <div style="font-size:0.65rem; color:var(--brand-primary); margin-top:5px; line-height:1.4;">
+                            ℹ️ Si dispones de un software de impresión o ERP externo, incluye la etiqueta <b>|CLI:número</b> (ej: <b>CLI:109</b>) al final de tu código de barras/QR para autorrellenar el remitente automáticamente.
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 3fr 1fr; gap:10px;" class="mb-2">
+                        <div>
+                            <label class="form-label">Calle / Vía</label>
+                            <input type="text" id="comp-street" class="form-control" required>
+                        </div>
+                        <div>
+                            <label class="form-label">Nº</label>
+                            <input type="text" id="comp-number" class="form-control">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;" class="mb-2">
+                        <div>
+                            <label class="form-label">Localidad</label>
+                            <input type="text" id="comp-city" class="form-control" required>
+                        </div>
+                        <div>
+                            <label class="form-label">C.P.</label>
+                            <input type="text" id="comp-cp" class="form-control" required>
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1.2fr 1fr; gap:10px;" class="mb-3">
+                        <div style="position:relative;">
+                            <label class="form-label">Provincia (Zona)</label>
+                            <select id="comp-province" class="form-control" required>
+                                <option value="">-- PROVINCIA --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Teléfono Remitente</label>
+                            <input type="text" id="comp-phone" class="form-control" required>
+                        </div>
+                    </div>
+
+                    <div
+                        style="background:rgba(255,102,0,0.03); padding:15px; border-radius:12px; border:1px solid var(--border-orange); margin-bottom:20px;">
+                        <h4
+                            style="font-size:0.7rem; color:var(--brand-primary); text-transform:uppercase; margin-bottom:12px; font-weight:900;">
+                            ⚙️ OPERACIONES CLOUD</h4>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                            <div>
+                                <label class="form-label" style="color:var(--text-dim);">Prefijo Albarán</label>
+                                <input type="text" id="comp-prefix" class="form-control" value="NP" maxlength="6"
+                                    style="text-transform:uppercase; font-weight:700;">
+                            </div>
+                            <div>
+                                <label class="form-label" style="color:var(--text-dim);">Nº Siguiente</label>
+                                <input type="number" id="comp-start-num" class="form-control" value="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:10px;">
+                        <button type="button" id="btn-save-company-form" onclick="handleCompanyFormSubmit(event)" class="btn btn-primary" style="flex:1; padding:12px; font-weight:900;">💾
+                            GUARDAR CAMBIOS</button>
+                        <button type="button" id="btn-cancel-comp-edit" class="btn btn-outline hidden">CANCELAR</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Turno Excel -->
+    <div id="modal-excel-turn" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; justify-content:center; align-items:center;">
+        <div class="modal-content" style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:30px; width:90%; max-width:400px; text-align:center; position:relative;">
+            <button type="button" onclick="document.getElementById('modal-excel-turn').style.display='none'" style="position:absolute; top:15px; right:15px; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">&times;</button>
+            <h3 style="color:var(--brand-primary); margin-top:0;">📥 IMPORTAR EXCEL</h3>
+            <p style="color:#CCC; font-size:0.9rem; margin-bottom:25px;">¿En qué turno quieres insertar todo el bloque de albaranes que vas a subir?</p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn btn-primary" style="padding:15px; font-weight:bold; font-size:1.1rem; justify-content:center;" onclick="window.pendingExcelTurn = 'MAÑANA'; document.getElementById('modal-excel-turn').style.display='none'; document.getElementById('input-excel-upload').click();">☀️ TURNO DE MAÑANA</button>
+                <button class="btn btn-outline" style="padding:15px; font-weight:bold; font-size:1.1rem; justify-content:center;" onclick="window.pendingExcelTurn = 'TARDE'; document.getElementById('modal-excel-turn').style.display='none'; document.getElementById('input-excel-upload').click();">🌙 TURNO DE TARDE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Datalist for predefined phones -->
+    <datalist id="predefined-phones"></datalist>
+
+    <!-- Pickup Request Modal -->
+    <div id="modal-pickup" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center;">
+        <div class="modal-content" style="background:var(--bg-dark); border:2px solid #4CAF50; border-radius:16px; padding:25px; width:95%; max-width:500px; position:relative;">
+            <button type="button" onclick="document.getElementById('modal-pickup').style.display='none'" style="position:absolute; top:12px; right:15px; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">&times;</button>
+            <h2 style="margin:0 0 20px 0; color:#4CAF50; font-family:var(--font-heading); text-align:center;">📦 SOLICITAR RECOGIDA</h2>
+            
+            <div style="background:rgba(76,175,80,0.08); padding:15px; border-radius:10px; border:1px solid rgba(76,175,80,0.3); margin-bottom:20px;">
+                <h4 style="margin:0 0 10px 0; color:#4CAF50; font-size:0.75rem; text-transform:uppercase; letter-spacing:2px;">📍 DATOS DE RECOGIDA (tu empresa)</h4>
+                <div style="font-size:0.9rem; line-height:1.8; color:#ddd;">
+                    <div><strong>Nombre:</strong> <span id="pickup-sender-name">—</span></div>
+                    <div><strong>Dirección:</strong> <span id="pickup-sender-address">—</span></div>
+                    <div><strong>Teléfono:</strong> <span id="pickup-sender-phone">—</span></div>
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:15px;">
+                <label class="form-label" style="color:#4CAF50;">🏷️ DESTINO DE LA MERCANCÍA</label>
+                <input type="text" id="pickup-destination" class="form-control" placeholder="¿A dónde va la mercancía? (ciudad, dirección...)" style="font-weight:700;">
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
+                <div class="form-group">
+                    <label class="form-label">⏰ TURNO</label>
+                    <select id="pickup-turn" class="form-control" style="font-weight:700;">
+                        <option value="MAÑANA">☀️ MAÑANA</option>
+                        <option value="TARDE">🌙 TARDE</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">📦 BULTOS APROX.</label>
+                    <input type="number" id="pickup-packages" class="form-control" value="1" min="1" style="font-weight:700; text-align:center;">
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom:20px;">
+                <label class="form-label">📝 OBSERVACIONES</label>
+                <textarea id="pickup-notes" class="form-control" placeholder="Detalles adicionales para el repartidor..." rows="2" style="resize:none;"></textarea>
+            </div>
+
+            <button type="button" onclick="submitPickupRequest()" class="btn" style="width:100%; padding:15px; font-weight:900; font-size:1rem; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; border:none; border-radius:10px; cursor:pointer;">
+                🚚 ENVIAR SOLICITUD DE RECOGIDA
+            </button>
+        </div>
+    </div>
+
+    <!-- Print Area -->
+    <div id="print-area"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const intro = document.getElementById('app-intro');
+            if (intro) {
+                setTimeout(() => {
+                    intro.classList.add('fade-out');
+                    setTimeout(() => {
+                        intro.style.display = 'none';
+                    }, 800);
+                }, 3000);
+            }
+
+            // CP Auto-complete
+            const cpInput = document.getElementById('ticket-cp');
+            if (cpInput) {
+                cpInput.addEventListener('input', async (e) => {
+                    const cp = e.target.value.trim();
+                    if(cp.length === 5 && !isNaN(cp)) {
+                        try {
+                            const res = await fetch(`https://api.zippopotam.us/es/${cp}`);
+                            if(res.ok) {
+                                const data = await res.json();
+                                const place = data.places[0];
+                                const locInput = document.getElementById('ticket-localidad');
+                                if (locInput) {
+                                    locInput.value = `${place['place name']}`;
+                                    locInput.style.borderColor = "var(--success)";
+                                    setTimeout(() => locInput.style.borderColor = "", 2000);
+                                }
+                                
+                                const provSelect = document.getElementById('ticket-province');
+                                if (provSelect && !provSelect.value) {
+                                    const prefix = cp.substring(0, 2);
+                                    let aP = "";
+                                    if(prefix==="29") aP="MALAGA"; else if(prefix==="18") aP="GRANADA"; else if(prefix==="14") aP="CORDOBA"; else if(prefix==="41") aP="SEVILLA"; else if(prefix==="23") aP="JAEN"; else if(prefix==="04") aP="ALMERIA"; else if(prefix==="21") aP="HUELVA"; else if(prefix==="11") aP="CADIZ"; else if(prefix==="28") aP="MADRID";
+                                    
+                                    if(aP && Array.from(provSelect.options).some(o => o.value === aP)) {
+                                        provSelect.value = aP;
+                                        provSelect.style.borderColor = "var(--success)";
+                                        setTimeout(() => provSelect.style.borderColor = "", 2000);
+                                    }
+                                }
+                            }
+                        } catch(err) { console.log(err); }
+                    }
+                });
+            }
+
+            // Localidad → CP Auto-complete (reverse lookup using PhantomDirectory)
+            function buildLocalidadCPMap() {
+                if (!window.isPhantomLoaded || !window.PhantomDirectory) return {};
+                const map = {};
+                for (const c of window.PhantomDirectory) {
+                    if (c.localidad && c.cp) {
+                        const key = c.localidad.trim().toUpperCase();
+                        if (!map[key]) map[key] = c.cp.trim();
+                    }
+                }
+                return map;
+            }
+
+            function attachLocalidadAutocomplete(localidadId, cpId, provinceId) {
+                const locInput = document.getElementById(localidadId);
+                if (!locInput) return;
+
+                let debounce = null;
+                locInput.addEventListener('input', () => {
+                    clearTimeout(debounce);
+                    debounce = setTimeout(() => {
+                        const val = locInput.value.trim().toUpperCase();
+                        if (val.length < 3) return;
+
+                        const map = buildLocalidadCPMap();
+                        // Exact match first
+                        let cp = map[val];
+                        // Fuzzy: try matching start
+                        if (!cp) {
+                            const match = Object.keys(map).find(k => k.startsWith(val));
+                            if (match) cp = map[match];
+                        }
+
+                        if (cp) {
+                            const cpInput = document.getElementById(cpId);
+                            if (cpInput && !cpInput.value.trim()) {
+                                cpInput.value = cp;
+                                cpInput.style.borderColor = 'var(--success)';
+                                setTimeout(() => cpInput.style.borderColor = '', 2000);
+                            }
+                            // Also set province from CP prefix
+                            if (provinceId) {
+                                const provSelect = document.getElementById(provinceId);
+                                if (provSelect && !provSelect.value) {
+                                    const prefix = cp.substring(0, 2);
+                                    const provMap = {'29':'MALAGA','18':'GRANADA','14':'CORDOBA','41':'SEVILLA','23':'JAEN','04':'ALMERIA','21':'HUELVA','11':'CADIZ','28':'MADRID','08':'BARCELONA','46':'VALENCIA','30':'MURCIA','03':'ALICANTE','06':'BADAJOZ','10':'CACERES','50':'ZARAGOZA','33':'ASTURIAS','48':'VIZCAYA','20':'GUIPUZKOA','39':'CANTABRIA','47':'VALLADOLID','15':'A CORUÑA','36':'PONTEVEDRA','27':'LUGO','32':'OURENSE','07':'BALEARES','35':'LAS PALMAS','38':'TENERIFE','01':'ALAVA','31':'NAVARRA','26':'LA RIOJA','45':'TOLEDO','13':'CIUDAD REAL','02':'ALBACETE','16':'CUENCA','19':'GUADALAJARA','05':'AVILA','09':'BURGOS','34':'PALENCIA','24':'LEON','37':'SALAMANCA','40':'SEGOVIA','42':'SORIA','49':'ZAMORA','12':'CASTELLON','43':'TARRAGONA','25':'LLEIDA','17':'GIRONA','22':'HUESCA','44':'TERUEL'};
+                                    const prov = provMap[prefix];
+                                    if (prov && Array.from(provSelect.options).some(o => o.value === prov)) {
+                                        provSelect.value = prov;
+                                        provSelect.style.borderColor = 'var(--success)';
+                                        setTimeout(() => provSelect.style.borderColor = '', 2000);
+                                    }
+                                }
+                            }
+                        }
+                    }, 400);
+                });
+            }
+
+            // Attach to ticket form
+            attachLocalidadAutocomplete('ticket-localidad', 'ticket-cp', 'ticket-province');
+            // Attach to company form
+            attachLocalidadAutocomplete('comp-city', 'comp-cp', 'comp-province');
+        });
+        window.addEventListener('beforeunload', () => {
+            const outro = document.getElementById('app-outro');
+            if (outro) outro.classList.remove('hidden');
+        });
+    </script>
+    <script>
+    // --- DELIVERY CONFIRMATION: SIGNATURE CANVAS + PHOTO ---
+    (function() {
+        const canvas = document.getElementById('signature-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+        let lastX = 0, lastY = 0;
+
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            if (e.touches && e.touches[0]) {
+                return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+            }
+            return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+        }
+
+        function startDraw(e) {
+            e.preventDefault();
+            drawing = true;
+            const p = getPos(e);
+            lastX = p.x; lastY = p.y;
+        }
+        function draw(e) {
+            if (!drawing) return;
+            e.preventDefault();
+            const p = getPos(e);
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(p.x, p.y);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            lastX = p.x; lastY = p.y;
+        }
+        function stopDraw() { drawing = false; }
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDraw);
+        canvas.addEventListener('mouseleave', stopDraw);
+        canvas.addEventListener('touchstart', startDraw, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDraw);
+
+        // Photo preview
+        const photoInput = document.getElementById('delivery-photo');
+        if (photoInput) {
+            photoInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                const preview = document.getElementById('delivery-photo-preview');
+                const status = document.getElementById('delivery-photo-status');
+                if (file && preview) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        preview.src = ev.target.result;
+                        preview.style.display = 'block';
+                        if (status) status.textContent = '✅ ' + file.name;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+    })();
+
+    window.clearSignature = function() {
+        const canvas = document.getElementById('signature-canvas');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    };
+
+    window.resetDeliveryConfirmation = function() {
+        const nameInput = document.getElementById('delivery-receiver-name');
+        if (nameInput) nameInput.value = '';
+        clearSignature();
+        const preview = document.getElementById('delivery-photo-preview');
+        if (preview) { preview.style.display = 'none'; preview.src = ''; }
+        const photoInput = document.getElementById('delivery-photo');
+        if (photoInput) photoInput.value = '';
+        const status = document.getElementById('delivery-photo-status');
+        if (status) status.textContent = 'Sin foto';
+    };
+
+    window.isSignatureEmpty = function() {
+        const canvas = document.getElementById('signature-canvas');
+        if (!canvas) return true;
+        const blank = document.createElement('canvas');
+        blank.width = canvas.width;
+        blank.height = canvas.height;
+        return canvas.toDataURL() === blank.toDataURL();
+    };
+
+    window.getSignatureDataURL = function() {
+        const canvas = document.getElementById('signature-canvas');
+        return canvas ? canvas.toDataURL('image/png') : null;
+    };
+    </script>
+</body>
+
+</html>
+

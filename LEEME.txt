@@ -1,0 +1,57 @@
+============================================================
+           NOVAPACK - GESTOR DE ENVÍOS (V.5 SMS)
+                INSTRUCCIONES DE USO Y SOPORTE
+============================================================
+
+1. INSTALACIÓN INICIAL
+======================
+   * Copie la carpeta completa "Novapack_instablable evo5 SMS" a su ordenador.
+   * Ejecute el archivo "Iniciar_Novapack.bat" o "index.html" para entrar.
+   * Se recomienda usar Google Chrome o Microsoft Edge para una mejor experiencia.
+
+2. CONFIGURACIÓN DE LA PASARELA SMS
+===================================
+   Para que el sistema envíe avisos automáticos de recogida:
+   
+   A. CONFIGURAR URL:
+      1. Entre en "⚙️ Gestionar Empresas" (icono de engranaje).
+      2. Elija la "Opción 7: Configurar Pasarela SMS".
+      3. Pegue la URL proporcionada por su proveedor de SMS.
+         Asegúrese de que la URL contenga los campos:
+         - {TELEFONO} para el número del destinatario.
+         - {MENSAJE} para el texto del envío.
+      
+   B. GUARDAR RESPALDO DE CLAVES:
+      1. En el mismo menú, elija la "Opción 9: Guardar Configuración SMS".
+      2. El sistema creará un archivo llamado 'pasarela_sms.txt'.
+      3. Guárdelo en la carpeta "CLAVES SMS" de su ESCRITORIO para tenerlo siempre a mano.
+
+   C. PRUEBA DE FUNCIONAMIENTO:
+      1. Use la "Opción 8: Probar Pasarela SMS" para enviar un mensaje de prueba al repartidor.
+
+3. COPIAS DE SEGURIDAD (BACKUPS)
+================================
+   La seguridad de sus datos es lo más importante. Tiene tres formas de proteger su información:
+
+   A. RESPALDO AL SALIR (RECOMENDADO):
+      * Al pulsar el botón "SALIR" (rojo), el programa genera automáticamente un archivo de copia de seguridad con la fecha actual y lo descarga a su ordenador.
+
+   B. CARPETA DE SINCRONIZACIÓN:
+      1. En el menú de sincronización, pulse "Configurar Carpeta de Backup".
+      2. Seleccione una carpeta (ej: en Dropbox, OneDrive o un Pendrive).
+      3. El sistema podrá detectar cambios y sincronizar datos entre distintos ordenadores que apunten a esa misma carpeta.
+
+   C. EXPORTACIÓN MANUAL:
+      * En cualquier momento, puede usar el botón "Exportar Datos" (📦↓) para generar un archivo .JSON con todos sus albaranes y clientes.
+
+4. RESTAURACIÓN DE DATOS
+========================
+   Si cambia de ordenador o necesita recuperar datos:
+   1. Pulse el botón "Importar Datos" (📦↑).
+   2. Seleccione el archivo de copia de seguridad (.json) más reciente.
+   3. El sistema integrará todos los albaranes y clientes automáticamente.
+
+5. NOTAS TÉCNICAS
+=================
+   * Marca de Agua: Aparece en el fondo de los Albaranes con la Zona de Reparto para facilitar el triaje manual. En las Etiquetas se ha eliminado para que el código de barras/QR sea 100% legible.
+   * Códigos QR: Incorporan todos los datos del envío (ID, Remitente, Destinatario, Peso, etc.) para su lectura con pistolas láser o móviles.

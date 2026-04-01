@@ -1,0 +1,6 @@
+[
+  "Line 210: window.showView = (viewId) => {",
+  "Line 427: showView('tariffs');",
+  "Line 462: showView('billing');",
+  "Line 4008: showView('admin-tickets');"
+]
