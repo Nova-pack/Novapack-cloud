@@ -12,6 +12,7 @@
     let _fichaActiveSubTab = 'principal';
     let _fichaTicketsCache = [];
     let _fichaInvoicesCache = [];
+    let _fichaTariffsCache = []; // {id, label}
 
     // ============================================================
     //  ENTRY POINT
@@ -99,6 +100,43 @@
 
         // Render active sub-tab
         _fichaRenderSubTab();
+
+        // Load tariffs asynchronously and populate selects
+        _fichaLoadTariffs();
+    }
+
+    async function _fichaLoadTariffs() {
+        try {
+            if (_fichaTariffsCache.length === 0) {
+                const snap = await db.collection('tariffs').get();
+                _fichaTariffsCache = [];
+                snap.forEach(doc => {
+                    if (doc.id.startsWith('GLOBAL_')) {
+                        _fichaTariffsCache.push({ id: doc.id.replace('GLOBAL_', ''), label: 'Tarifa Global #' + doc.id.replace('GLOBAL_', '') });
+                    }
+                });
+                _fichaTariffsCache.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+            }
+            _fichaPopulateTariffSelects();
+        } catch(e) {
+            console.error('[Ficha] Error loading tariffs:', e);
+        }
+    }
+
+    function _fichaPopulateTariffSelects() {
+        const currentVal = _fichaClientData ? (_fichaClientData.tariffId || '') : '';
+        ['fc-tariff', 'fc-tariff-eco'].forEach(selId => {
+            const sel = document.getElementById(selId);
+            if (!sel) return;
+            sel.innerHTML = '<option value="">-- Sin Tarifa Global --</option>';
+            _fichaTariffsCache.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = t.label;
+                if (t.id === currentVal) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        });
     }
 
     // ============================================================
@@ -190,7 +228,12 @@
                 )
             })}
             ${_field('Cliente Padre (Filial)', 'fc-parent-client', d.parentClientId || '', { placeholder: 'Sin padre (independiente)' })}
-            ${_field('Tarifa Global', 'fc-tariff', d.tariffId)}
+            <div style="flex:1; min-width:150px;">
+                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tarifa Global</label>
+                <select id="fc-tariff" style="width:100%; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">
+                    <option value="">-- Cargando tarifas... --</option>
+                </select>
+            </div>
         </div>
         `;
     }
@@ -229,7 +272,12 @@
 
         ${_sectionTitle('sell', 'Tarifas y Cuota Plana', '#FFD700')}
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
-            ${_field('Tarifa Global Asignada', 'fc-tariff-eco', d.tariffId, { placeholder: 'Sin tarifa asignada' })}
+            <div style="flex:1; min-width:150px;">
+                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tarifa Global Asignada</label>
+                <select id="fc-tariff-eco" style="width:100%; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">
+                    <option value="">-- Cargando tarifas... --</option>
+                </select>
+            </div>
             ${_field('Cuota Plana Activa', 'fc-flatrate', d.isFlatRate ? 'Sí' : 'No', { readonly: true })}
             ${_field('Importe Cuota Plana (€)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number' })}
         </div>

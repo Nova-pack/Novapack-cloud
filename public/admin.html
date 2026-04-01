@@ -1239,6 +1239,7 @@
                         <div class="dd-sep"></div>
                         <div class="dd-label">Herramientas Avanzadas</div>
                         <button onclick="if(typeof window.advInitTicketSearch==='function') window.advInitTicketSearch(); erpOpenTab('ticket-search'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:var(--brand-primary); font-weight:bold;"><span class="material-symbols-outlined">search</span> Búsqueda de Albaranes</button>
+                        <button onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#2196F3; font-weight:bold;"><span class="material-symbols-outlined">inventory_2</span> 📊 Albaranes Centralizado</button>
                         <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">qr_code_scanner</span> Escáner QR</button>
                         <button onclick="openBulkDeleteModal(); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#FF3B30;"><span class="material-symbols-outlined">delete_sweep</span> Eliminar por Lote</button>
                     </div>
@@ -1598,6 +1599,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- Tab wrapper: Ficha Cliente -->
 <div id="erp-tab-ficha-cliente" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
+
+<!-- Tab wrapper: Albaranes Centralizado -->
+<div id="erp-tab-albaranes-central" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
 
 <!-- Tab wrapper: Ticket Search -->
 <div id="erp-tab-ticket-search" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
@@ -13311,8 +13315,9 @@ window.importTarifas50 = async () => {
 <script src="ticket_search_v2.js?v=5"></script>
 <script src="phones_manager.js"></script>
 <script src="mailbox_manager.js?v=2.1"></script>
-<script src="ficha_cliente.js?v=1"></script>
-<script src="erp_tabs.js?v=19"></script>
+<script src="ficha_cliente.js?v=2"></script>
+<script src="albaranes_central.js?v=1"></script>
+<script src="erp_tabs.js?v=20"></script>
 
 </body>
 </html>
