@@ -1202,7 +1202,13 @@
             <!-- TOOLBAR PRO (Dropdown Menus) -->
             <div id="adv-main-toolbar" style="background:linear-gradient(90deg, #001f3f, #003366); padding:4px 15px; display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-family:-apple-system, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;">
                 <div onclick="erpOpenTab('inicio')" style="cursor:pointer; color:white; font-family:var(--font-logo); letter-spacing:3px; font-size:0.8rem; padding:4px 10px; opacity:0.9;">NOVAPACK<span style='color:#FF3B30; font-weight:900; font-family:sans-serif;'>➤</span></div>
-                <div style="width:1px; height:20px; background:#fff; opacity:0.3; margin:0 3px;"></div>
+                
+                <!-- AVISO DE RECOGIDA (New Request) -->
+                <button id="btn-top-aviso-recogida" onclick="alert('Programar Aviso de Recogida')" style="background:transparent; border:1px solid #00CED1; color:#00CED1; padding:3px 8px; font-size:0.75rem; border-radius:4px; margin-left:8px; cursor:pointer; display:flex; align-items:center; gap:4px; font-weight:bold; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,206,209,0.1)'" onmouseout="this.style.background='transparent'" title="Generar Aviso de Recogida">
+                    <span class="material-symbols-outlined" style="font-size:14px;">inventory_2</span> AVISO RECOGIDA
+                </button>
+
+                <div style="width:1px; height:20px; background:#fff; opacity:0.3; margin:0 8px;"></div>
 
                 <!-- ALERTS BUTTON (Pending Deletions) -->
                 <button id="toolbar-btn-alerts" onclick="if(typeof erpOpenTab==='function') erpOpenTab('pending-deletes');" style="display:none; background:linear-gradient(135deg, #FF3B30, #FF6B00); border:1px solid #FF3B30; box-shadow:0 0 10px rgba(255,59,48,0.5); color:white; padding:4px 12px; font-size:0.85rem; cursor:pointer; border-radius:3px; align-items:center; gap:6px; font-weight:bold; animation:pulse 2s infinite;">
@@ -1603,23 +1609,55 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="erp-tab-albaranes-central" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
 
 <!-- Tab wrapper: Ticket Search -->
-<div id="erp-tab-ticket-search" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
-    <div class="header" style="margin-bottom:30px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
-        <div>
-            <h1 style="color:var(--brand-primary); margin:0; display:flex; align-items:center; gap:10px;">
-                <span class="material-symbols-outlined" style="font-size:2rem;">search</span> Búsqueda Avanzada de Albaranes
-            </h1>
-            <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">
-                Encuentra, edita, exporta e imprime albaranes históricos usando múltiples filtros.
-            </p>
+<div id="erp-tab-ticket-search" style="display:none; flex:1; overflow:hidden; background:#0a0a0a; color:#d4d4d4;">
+    
+    <div style="display:flex; height:100%; width:100%;">
+        
+        <!-- Left Action Panel (ARP Style) -->
+        <div style="width:280px; min-width:280px; background:#111; border-right:1px solid #222; padding:30px 20px; display:flex; flex-direction:column; overflow-y:auto; gap:25px;">
+            <div style="border-bottom:1px solid #333; padding-bottom:15px;">
+                <h3 style="margin:0; font-size:0.85rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; gap:8px;">
+                    <span class="material-symbols-outlined" style="font-size:1.1rem;">print</span> Centro de Impresión
+                </h3>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <button class="btn btn-outline" onclick="alert('Función: Imprimir Albaranes Mañana')" style="border-color:#4CAF50; color:#4CAF50; justify-content:flex-start; font-size:0.8rem; padding:10px 15px;">
+                    <span class="material-symbols-outlined" style="font-size:1.2rem;">wb_sunny</span> Albaranes Mañana
+                </button>
+                <button class="btn btn-outline" onclick="alert('Función: Imprimir Albaranes Tarde')" style="border-color:#FF9800; color:#FF9800; justify-content:flex-start; font-size:0.8rem; padding:10px 15px;">
+                    <span class="material-symbols-outlined" style="font-size:1.2rem;">nights_stay</span> Albaranes Tarde
+                </button>
+            </div>
+            
+            <div style="margin-top:10px;">
+                <div class="adv-dropdown" style="width:100%;">
+                    <button class="btn btn-outline adv-dropdown-btn" style="width:100%; border-color:#555; color:#ddd; justify-content:space-between; font-size:0.8rem; padding:10px 15px;">
+                        <span style="display:flex; align-items:center; gap:8px;"><span class="material-symbols-outlined" style="font-size:1.2rem;">history</span> Reimpresiones</span> ▾
+                    </button>
+                    <div class="adv-dropdown-menu" style="width:100%; top:100%; left:0; position:relative; background:#1a1a1a; margin-top:5px; border-radius:8px; border:1px solid #333; box-shadow:none;">
+                        <button onclick="alert('Reimprimir Etiquetas'); document.activeElement.blur();"><span class="material-symbols-outlined">label</span> Etiquetas</button>
+                        <button onclick="alert('Reimprimir Albaranes'); document.activeElement.blur();"><span class="material-symbols-outlined">receipt_long</span> Albaranes</button>
+                        <button onclick="alert('Reimprimir Manifiestos'); document.activeElement.blur();"><span class="material-symbols-outlined">list_alt</span> Manifiestos</button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div style="display:flex; gap:10px;" id="ticket-search-export-container">
-            <button class="btn btn-outline" onclick="advBatchPrintSearchTickets()" style="display:flex; align-items:center; gap:5px; border-color:#FF9800; color:#FF9800; white-space:nowrap;">
-                <span class="material-symbols-outlined" style="font-size:1.2rem;">print</span> Imprimir Seleccionados
-            </button>
-            <!-- Export menu will be injected here by JS -->
-        </div>
-    </div>
+
+        <!-- Main Search Content -->
+        <div style="flex:1; padding:30px; overflow-y:auto; background:#161618;">
+            <div class="header" style="margin-bottom:30px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+                <div>
+                    <h1 style="color:var(--brand-primary); margin:0; display:flex; align-items:center; gap:10px;">
+                        <span class="material-symbols-outlined" style="font-size:2rem;">search</span> Búsqueda Avanzada de Albaranes
+                    </h1>
+                    <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">
+                        Encuentra y gestiona el histórico. La impresión por lotes está en el panel izquierdo.
+                    </p>
+                </div>
+                <!-- Dynamic actions can go here if needed -->
+                <div style="display:flex; gap:10px;" id="ticket-search-export-container"></div>
+            </div>
 
     <!-- Filters -->
     <div style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:20px; background:rgba(255,255,255,0.02); padding:15px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
@@ -1652,7 +1690,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     <!-- Data Table -->
     <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; overflow:hidden;">
-        <div class="table-responsive" style="max-height:60vh; overflow-y:auto;">
+        <div class="table-responsive" style="max-height:55vh; overflow-y:auto;">
             <table class="user-list mailbox-table" style="width:100%; border-collapse:collapse;" id="ticket-search-table">
                 <thead style="position:sticky; top:0; background:#1e1e1e; z-index:10; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
                     <tr style="border-bottom:1px solid #333; text-align:left;">
@@ -1678,6 +1716,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <span>0 seleccionados.</span>
         </div>
     </div>
+            
+        </div> <!-- End right panel -->
+    </div> <!-- End flex layout -->
+</div>
 </div>
 
 <!-- Mailbox Detail Modal -->
