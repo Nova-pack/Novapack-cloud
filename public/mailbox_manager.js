@@ -134,7 +134,7 @@ window.renderMailbox = function() {
 
     // Render rows
     let html = '';
-    filtered.forEach(item => {
+    filtered.forEach((item, idx) => {
         const est = item.status || 'nueva';
         let estIcon = '🔴';
         if (est === 'en_curso') estIcon = '🟡';
@@ -161,8 +161,9 @@ window.renderMailbox = function() {
 
         const ticketStr = item.ticketRef ? `<span style="background:rgba(255,152,0,0.2); color:#FF9800; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8rem;">${item.ticketRef}</span>` : `<span style="color:#666;">-</span>`;
 
+        // Use data-idx to reference the item in the filtered array safely
         html += `
-        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer;" class="mailbox-row hover-highlight" onclick="openMailboxModal('${item.id}')">
+        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer;" class="mailbox-row hover-highlight" data-mail-idx="${idx}">
             <td style="padding:12px; text-align:center; font-size: 1.2rem;">${estIcon}</td>
             <td style="padding:12px; font-size:0.85rem; color:#aaa; font-weight: bold;">${catText}</td>
             <td style="padding:12px; font-weight:bold; color:#ddd;">${item.from || 'Desconocido'}</td>
@@ -170,12 +171,35 @@ window.renderMailbox = function() {
             <td style="padding:12px; text-align:center;">${ticketStr}</td>
             <td style="padding:12px; font-size:0.8rem; color:#888; text-align:center;">${dateStr}</td>
             <td style="padding:12px; text-align:center;">
-                <button class="btn btn-sm btn-outline" style="border-color:#4CAF50; color:#4CAF50; padding:2px 8px; font-size:0.85rem; border-radius:4px; transform:translateY(-2px); box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);" onclick="event.stopPropagation(); updateMailboxStatus('${item.id}', 'resuelta')" title="Marcar Resuelta">✓</button>
+                <button class="btn btn-sm btn-outline mailbox-resolve-btn" data-mail-idx="${idx}" style="border-color:#4CAF50; color:#4CAF50; padding:2px 8px; font-size:0.85rem; border-radius:4px; transform:translateY(-2px); box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);" title="Marcar Resuelta">✓</button>
             </td>
         </tr>`;
     });
 
     tbody.innerHTML = html;
+
+    // Store filtered list for click reference
+    window._mailboxFiltered = filtered;
+
+    // Event delegation for row clicks
+    tbody.querySelectorAll('tr[data-mail-idx]').forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (e.target.closest('.mailbox-resolve-btn')) return; // skip if resolve button
+            const idx = parseInt(this.getAttribute('data-mail-idx'));
+            const item = window._mailboxFiltered[idx];
+            if (item) openMailboxModal(item.id);
+        });
+    });
+
+    // Event delegation for resolve buttons
+    tbody.querySelectorAll('.mailbox-resolve-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const idx = parseInt(this.getAttribute('data-mail-idx'));
+            const item = window._mailboxFiltered[idx];
+            if (item) updateMailboxStatus(item.id, 'resuelta');
+        });
+    });
 };
 
 window.openMailboxModal = function(id) {
