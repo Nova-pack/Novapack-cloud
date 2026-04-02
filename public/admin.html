@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -1225,25 +1225,10 @@
                     </div>
                 </div>
 
-                <!-- ALBARANES dropdown (NEW) -->
-                <div class="adv-dropdown">
-                    <button class="adv-dropdown-btn"><span class="material-symbols-outlined">edit_note</span> Albaranes ▾</button>
-                    <div class="adv-dropdown-menu" style="min-width:260px;">
-                        <div class="dd-label">Importar al Grid</div>
-                        <button onclick="advOpenTicketImportModal(); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">download</span> Importar Todos</button>
-                        <button onclick="advImportByFilter('date'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">calendar_today</span> Importar por Fecha</button>
-                        <button onclick="advImportByFilter('name'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">person</span> Importar por Nombre</button>
-                        <button onclick="advImportByFilter('number'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">tag</span> Importar por Número</button>
-                        <div class="dd-sep"></div>
-                        <div class="dd-label">Crear</div>
-                        <button onclick="erpOpenTab('manual-tickets'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#4CAF50; font-weight:bold;"><span class="material-symbols-outlined">add_circle</span> + Nuevo Albarán</button>
-                        <div class="dd-sep"></div>
-                        <div class="dd-label">Herramientas Avanzadas</div>
-                        <button onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#2196F3; font-weight:bold;"><span class="material-symbols-outlined">inventory_2</span> 📊 Albaranes Centralizado</button>
-                        <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">qr_code_scanner</span> Escáner QR</button>
-                        <button onclick="openBulkDeleteModal(); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#FF3B30;"><span class="material-symbols-outlined">delete_sweep</span> Eliminar por Lote</button>
-                    </div>
-                </div>
+                <!-- ALBARANES (direct button → opens Albaranes Centralizados) -->
+                <button class="adv-dropdown-btn" onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central');" style="display:flex; align-items:center; gap:5px;">
+                    <span class="material-symbols-outlined">edit_note</span> Albaranes
+                </button>
 
                 <!-- COBROS / ABONOS dropdown -->
                 <div class="adv-dropdown">
