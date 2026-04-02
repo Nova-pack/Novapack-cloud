@@ -21,7 +21,8 @@
         'erp-tab-inicio',
         'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones', 'erp-tab-config',
         'erp-tab-maintenance', 'erp-tab-pod', 'erp-tab-pending-deletes', 'erp-tab-users',
-        'erp-tab-ticket-search', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central', 'erp-tab-mailbox'
+        'erp-tab-ticket-search', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central', 'erp-tab-mailbox',
+        'erp-tab-facturas-central'
     ];
 
     // --- TAB DEFINITIONS (built-in tabs that map to existing workspaces) ---
@@ -49,6 +50,7 @@
         'ficha-cliente':       { wsId: 'erp-tab-ficha-cliente',      title: 'Ficha Cliente',       icon: 'person',             closeable: true },
         'albaranes-central':  { wsId: 'erp-tab-albaranes-central',  title: 'Albaranes Central',   icon: 'inventory_2',        closeable: true },
         'mailbox':         { wsId: 'erp-tab-mailbox',            title: 'Buzón Correo',      icon: 'move_to_inbox',      closeable: true },
+        'facturas-central':{ wsId: 'erp-tab-facturas-central',    title: 'Centro Facturación', icon: 'receipt_long',       closeable: true },
     };
 
     // --- CORE API ---
@@ -267,6 +269,9 @@
             case 'mailbox':
                 if (typeof window.loadMailbox === 'function') window.loadMailbox();
                 break;
+            case 'facturas-central':
+                if (typeof window.facCentralInit === 'function') window.facCentralInit();
+                break;
         }
     }
 
@@ -411,7 +416,7 @@
                 'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central',
                 'adv-history-workspace', 'adv-reports-workspace', 'adv-tariffs-workspace', 
                 'adv-clients-workspace', 'adv-providers-workspace', 'adv-manual-tickets-workspace', 
-                'adv-scanner-workspace', 'erp-tab-mailbox'
+                'adv-scanner-workspace', 'erp-tab-mailbox', 'erp-tab-facturas-central'
             ];
             tabContainerIds.forEach(function(id) {
                 var el = document.getElementById(id);

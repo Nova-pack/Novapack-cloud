@@ -1222,6 +1222,9 @@
                         <div class="dd-label">Salida</div>
                         <button id="btn-adv-print" onclick="let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">print</span> Imprimir PDF</button>
                         <button id="btn-adv-email" onclick="let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">mail</span> Enviar a Cliente</button>
+                        <div class="dd-sep"></div>
+                        <div class="dd-label">Gestión</div>
+                        <button onclick="erpOpenTab('facturas-central'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#81C784;"><span class="material-symbols-outlined">receipt_long</span> 📊 Centro de Facturación</button>
                     </div>
                 </div>
 
@@ -1589,6 +1592,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- Tab wrapper: Albaranes Centralizado -->
 <div id="erp-tab-albaranes-central" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
+
+<!-- Tab wrapper: Centro de Facturación -->
+<div id="erp-tab-facturas-central" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
 
 <!-- Tab wrapper: Ticket Search -->
 <div id="erp-tab-ticket-search" style="display:none; flex:1; overflow:hidden; background:#0a0a0a; color:#d4d4d4;">
@@ -13736,6 +13742,7 @@ window.importTarifas50 = async () => {
 <script src="mailbox_manager.js?v=20260402_1445"></script>
 <script src="ficha_cliente.js?v=20260402_1201"></script>
 <script src="albaranes_central.js?v=20260402"></script>
+<script src="facturas_central.js?v=20260402"></script>
 <script src="erp_tabs.js?v=20260402"></script>
 
 </body>
