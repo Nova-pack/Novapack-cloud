@@ -5,5 +5,9 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
+    // Mail engine: allow write to mailbox without auth (for IMAP sync script)
+    match /mailbox/{docId} {
+      allow read, write: if true;
+    }
   }
 }
