@@ -7960,46 +7960,85 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 const cl = clientObj || {};
                 const sf = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', sans-serif";
                 
+                // DETECTION OF 'TARIFA PLANA' OR 'FIJO MENSUAL'
+                const tName = (cl && cl.tariffId) ? cl.tariffId.toLowerCase() : '';
+                const isPlana = tName.includes('pla') || tName.includes('fijo mensual') || 
+                                (inv.advancedGrid && inv.advancedGrid.some(r => r.description.toLowerCase().includes('plana') || r.description.toLowerCase().includes('fijo mensual')));
+
                 let conceptHTML = '';
-                if (inv.advancedGrid && inv.advancedGrid.length > 0) {
-                    inv.advancedGrid.forEach(r => {
-                        const detail = r.qty !== 1 || r.discount > 0 ? `<div style="font-size:0.72rem; color:#aaa; margin-top:2px;">${r.qty} × ${r.price.toFixed(2)}€${r.discount > 0 ? '  (−' + r.discount + '% dto.)' : ''}</div>` : '';
-                        conceptHTML += `
+
+                if (isPlana) {
+                    // FLAT RATE MODE: Compress all rows into a single summary line
+                    let allTicketIds = [];
+                    if (inv.ticketsDetail && inv.ticketsDetail.length > 0) {
+                        allTicketIds = inv.ticketsDetail.map(t => t.id);
+                    } else if (inv.advancedGrid && inv.advancedGrid.length > 0) {
+                        inv.advancedGrid.forEach(r => {
+                            if (r.ticketId || r.description.includes('Alb')) {
+                                const match = r.description.match(/NP-\d+/);
+                                if (match) allTicketIds.push(match[0]);
+                                else if (r.ticketId) allTicketIds.push(r.ticketId);
+                            }
+                        });
+                    } else if (inv.tickets && inv.tickets.length > 0) {
+                        allTicketIds = inv.tickets; // Legacy array
+                    }
+
+                    const ticketsStr = allTicketIds.length > 0 ? allTicketIds.join(', ') : 'Ninguno registrado';
+                    
+                    conceptHTML = `
                         <tr>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">${r.description}${detail}</td>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">${r.qty}</td>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">${r.price.toFixed(2)} €</td>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${r.total.toFixed(2)} €</td>
-                        </tr>`;
-                    });
-                } else if (inv.ticketsDetail && inv.ticketsDetail.length > 0) {
-                    const grouped = {};
-                    inv.ticketsDetail.forEach(t => {
-                        const group = t.compName || "Sede Principal";
-                        if (!grouped[group]) grouped[group] = { ids: [], subtotal: 0 };
-                        grouped[group].ids.push(t.id);
-                        grouped[group].subtotal += (t.price || 0);
-                    });
-                    Object.keys(grouped).forEach(group => {
-                        conceptHTML += `
-                        <tr>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">
-                                Servicios de Transporte — ${group}
-                                <div style="font-size:0.72rem; color:#aaa; margin-top:2px;">Albaranes: ${grouped[group].ids.join(', ')}</div>
+                            <td style="padding:15px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">
+                                <b>Cuota Fija Servicio de Transporte (Tarifa Plana)</b>
+                                <div style="font-size:0.75rem; color:#888; margin-top:4px;">Mantenimiento y operaciones logísticas acordadas.</div>
+                                <div style="font-size:0.6rem; color:#aaa; margin-top:4px; max-width: 500px; line-height: 1.4;">Ref. Albaranes incluidos: ${ticketsStr}</div>
                             </td>
+                            <td style="padding:15px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">1</td>
+                            <td style="padding:15px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">${inv.subtotal.toFixed(2)} €</td>
+                            <td style="padding:15px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${inv.subtotal.toFixed(2)} €</td>
+                        </tr>`;
+                } else {
+                    // STANDARD MODE
+                    if (inv.advancedGrid && inv.advancedGrid.length > 0) {
+                        inv.advancedGrid.forEach(r => {
+                            const detail = r.qty !== 1 || r.discount > 0 ? `<div style="font-size:0.72rem; color:#aaa; margin-top:2px;">${r.qty} × ${r.price.toFixed(2)}€${r.discount > 0 ? '  (−' + r.discount + '% dto.)' : ''}</div>` : '';
+                            conceptHTML += `
+                            <tr>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">${r.description}${detail}</td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">${r.qty}</td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">${r.price.toFixed(2)} €</td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${r.total.toFixed(2)} €</td>
+                            </tr>`;
+                        });
+                    } else if (inv.ticketsDetail && inv.ticketsDetail.length > 0) {
+                        const grouped = {};
+                        inv.ticketsDetail.forEach(t => {
+                            const group = t.compName || "Sede Principal";
+                            if (!grouped[group]) grouped[group] = { ids: [], subtotal: 0 };
+                            grouped[group].ids.push(t.id);
+                            grouped[group].subtotal += (t.price || 0);
+                        });
+                        Object.keys(grouped).forEach(group => {
+                            conceptHTML += `
+                            <tr>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">
+                                    Servicios de Transporte — ${group}
+                                    <div style="font-size:0.72rem; color:#aaa; margin-top:2px;">Albaranes: ${grouped[group].ids.join(', ')}</div>
+                                </td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">—</td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">—</td>
+                                <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${grouped[group].subtotal.toFixed(2)} €</td>
+                            </tr>`;
+                        });
+                    } else {
+                        conceptHTML = `
+                        <tr>
+                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">Servicios de transporte (Alb: ${(inv.tickets || []).join(', ')})</td>
                             <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">—</td>
                             <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">—</td>
-                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${grouped[group].subtotal.toFixed(2)} €</td>
+                            <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${inv.subtotal.toFixed(2)} €</td>
                         </tr>`;
-                    });
-                } else {
-                    conceptHTML = `
-                    <tr>
-                        <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; color:#444; font-weight:300;">Servicios de transporte (Alb: ${inv.tickets.join(', ')})</td>
-                        <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:center; color:#888; font-weight:300;">—</td>
-                        <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#888; font-weight:300;">—</td>
-                        <td style="padding:10px 0; border-bottom:1px solid #f0f0f0; text-align:right; color:#444; font-weight:300;">${inv.subtotal.toFixed(2)} €</td>
-                    </tr>`;
+                    }
                 }
 
                 const senderBranch = inv.senderData || {};
@@ -13652,7 +13691,7 @@ window.importTarifas50 = async () => {
 <script src="ticket_search_v2.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260402"></script>
 <script src="mailbox_manager.js?v=20260402_1120"></script>
-<script src="ficha_cliente.js?v=20260402_1145"></script>
+<script src="ficha_cliente.js?v=20260402_1201"></script>
 <script src="albaranes_central.js?v=20260402"></script>
 <script src="erp_tabs.js?v=20260402"></script>
 
