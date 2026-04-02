@@ -6,16 +6,38 @@
 let _mailboxCache = [];
 let _mailboxUnsubscribe = null;
 
-// Initialize mailbox
 window.loadMailbox = function() {
     if (!window.db) {
         console.error("[MAILBOX] Firestore db not available");
         return;
     }
 
-    console.log("[MAILBOX] Inicializando escucha de correos...");
+    // Check if user is authenticated before trying
+    const currentUser = window.auth ? window.auth.currentUser : (window.firebase && window.firebase.auth ? window.firebase.auth().currentUser : null);
+    if (!currentUser) {
+        console.warn("[MAILBOX] No authenticated user, waiting for auth state...");
+        const tbody = document.getElementById('mailbox-list-body');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#FF9800;">Esperando autenticaci\u00f3n... Si persiste, recarga la p\u00e1gina.</td></tr>';
+        
+        // Wait for auth state and retry
+        const authInstance = window.auth || (window.firebase && window.firebase.auth ? window.firebase.auth() : null);
+        if (authInstance) {
+            const unsubAuth = authInstance.onAuthStateChanged(function(user) {
+                unsubAuth(); // unsubscribe immediately
+                if (user) {
+                    console.log("[MAILBOX] Auth resolved, retrying loadMailbox...");
+                    window.loadMailbox();
+                } else {
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#ff4444;">No hay sesi\u00f3n activa. Inicia sesi\u00f3n para ver el buz\u00f3n.</td></tr>';
+                }
+            });
+        }
+        return;
+    }
+
+    console.log("[MAILBOX] Inicializando escucha de correos... (user: " + currentUser.uid + ")");
     const tbody = document.getElementById('mailbox-list-body');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Rastreando buzón de entrada... <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">sync</span></td></tr>`;
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#aaa;">Rastreando buz\u00f3n de entrada... <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">sync</span></td></tr>';
 
     // Try to listen to "mailbox" collection
     if (_mailboxUnsubscribe) _mailboxUnsubscribe();
@@ -33,9 +55,35 @@ window.loadMailbox = function() {
             renderMailbox();
         }, (error) => {
             console.error("[MAILBOX] Error leyendo correos:", error);
-            if (tbody) tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#ff4444;">Error de permisos o tabla inexistente: ${error.message} <br>Es posible que no tengas ningún correo registrado todavía o falten índices en Firestore.</td></tr>`;
+            if (error.code === 'permission-denied' || error.message.includes('permissions')) {
+                // Try without orderBy in case the index is missing
+                console.log("[MAILBOX] Retrying without orderBy...");
+                _mailboxUnsubscribe = window.db.collection('mailbox')
+                    .limit(100)
+                    .onSnapshot((snapshot) => {
+                        _mailboxCache = [];
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            data.id = doc.id;
+                            _mailboxCache.push(data);
+                        });
+                        // Sort locally
+                        _mailboxCache.sort((a, b) => {
+                            const ta = a.createdAt && a.createdAt.toDate ? a.createdAt.toDate().getTime() : 0;
+                            const tb = b.createdAt && b.createdAt.toDate ? b.createdAt.toDate().getTime() : 0;
+                            return tb - ta;
+                        });
+                        renderMailbox();
+                    }, (error2) => {
+                        console.error("[MAILBOX] Fallback also failed:", error2);
+                        if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#ff4444;">Error de permisos: ' + error2.message + '<br>Verifica que la colecci\u00f3n "mailbox" existe en Firestore y las reglas permiten lectura.</td></tr>';
+                    });
+            } else {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#ff4444;">Error: ' + error.message + '</td></tr>';
+            }
         });
 };
+
 
 window.renderMailbox = function() {
     const tbody = document.getElementById('mailbox-list-body');

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -1203,12 +1203,7 @@
             <div id="adv-main-toolbar" style="background:linear-gradient(90deg, #001f3f, #003366); padding:4px 15px; display:flex; gap:4px; align-items:center; flex-wrap:wrap; font-family:-apple-system, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;">
                 <div onclick="erpOpenTab('inicio')" style="cursor:pointer; color:white; font-family:var(--font-logo); letter-spacing:3px; font-size:0.8rem; padding:4px 10px; opacity:0.9;">NOVAPACK<span style='color:#FF3B30; font-weight:900; font-family:sans-serif;'>➤</span></div>
                 
-                <!-- AVISO DE RECOGIDA (New Request) -->
-                <button id="btn-top-aviso-recogida" onclick="alert('Programar Aviso de Recogida')" style="background:transparent; border:1px solid #00CED1; color:#00CED1; padding:3px 8px; font-size:0.75rem; border-radius:4px; margin-left:8px; cursor:pointer; display:flex; align-items:center; gap:4px; font-weight:bold; transition:all 0.2s;" onmouseover="this.style.background='rgba(0,206,209,0.1)'" onmouseout="this.style.background='transparent'" title="Generar Aviso de Recogida">
-                    <span class="material-symbols-outlined" style="font-size:14px;">inventory_2</span> AVISO RECOGIDA
-                </button>
 
-                <div style="width:1px; height:20px; background:#fff; opacity:0.3; margin:0 8px;"></div>
 
                 <!-- ALERTS BUTTON (Pending Deletions) -->
                 <button id="toolbar-btn-alerts" onclick="if(typeof erpOpenTab==='function') erpOpenTab('pending-deletes');" style="display:none; background:linear-gradient(135deg, #FF3B30, #FF6B00); border:1px solid #FF3B30; box-shadow:0 0 10px rgba(255,59,48,0.5); color:white; padding:4px 12px; font-size:0.85rem; cursor:pointer; border-radius:3px; align-items:center; gap:6px; font-weight:bold; animation:pulse 2s infinite;">
@@ -7751,7 +7746,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             };
 
-            window.emailInvoice = async (id) => {\r\n                const doc = await db.collection('invoices').doc(id).get();\r\n                const inv = doc.data();\r\n                const client = userMap[inv.clientId];\r\n                // Prefer adminEmail for invoice communications\r\n                const email = client ? (client.adminEmail || client.email) : '';\r\n                const payTermsLabels = {'contado':'Contado','giro_30':'Giro 30 días','giro_60':'Giro 60 días','giro_90':'Giro 90 días','giro_120':'Giro 120 días','transferencia':'Transferencia','recibo_sepa':'Recibo SEPA'};\r\n                const payLabel = payTermsLabels[inv.paymentTerms] || 'Contado';\r\n                const dueStr = inv.dueDate && inv.dueDate.toDate ? inv.dueDate.toDate().toLocaleDateString('es-ES') : (inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-ES') : 'Contado');\r\n                const subject = encodeURIComponent(`Factura ${inv.invoiceId} - NOVAPACK LOGÍSTICA`);\r\n                const body = encodeURIComponent(`Hola ${inv.clientName}, \n\nLe adjuntamos el detalle de su factura ${inv.invoiceId} por importe de ${inv.total.toFixed(2)}€.\n\nForma de pago: ${payLabel}\nFecha de vencimiento: ${dueStr}\nDatos bancarios: ${inv.senderData ? inv.senderData.bank : 'la cuenta habitual'} \n\nGracias por confiar en NOVAPACK.`);\r\n                window.location.href = `mailto:${email}?subject=${subject}&body=${body}`;\r\n            };
+            window.emailInvoice = async (id) => {
+                const doc = await db.collection('invoices').doc(id).get();
+                const inv = doc.data();
+                const client = userMap[inv.clientId];
+                const email = client ? (client.adminEmail || client.email) : '';
+                const payTermsLabels = {'contado':'Contado','giro_30':'Giro 30 d\u00edas','giro_60':'Giro 60 d\u00edas','giro_90':'Giro 90 d\u00edas','giro_120':'Giro 120 d\u00edas','transferencia':'Transferencia','recibo_sepa':'Recibo SEPA'};
+                const payLabel = payTermsLabels[inv.paymentTerms] || 'Contado';
+                const dueStr = inv.dueDate && inv.dueDate.toDate ? inv.dueDate.toDate().toLocaleDateString('es-ES') : (inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('es-ES') : 'Contado');
+                const subject = encodeURIComponent('Factura ' + inv.invoiceId + ' - NOVAPACK LOG\u00cdSTICA');
+                const body = encodeURIComponent('Hola ' + inv.clientName + ', \n\nLe adjuntamos el detalle de su factura ' + inv.invoiceId + ' por importe de ' + inv.total.toFixed(2) + '\u20ac.\n\nForma de pago: ' + payLabel + '\nFecha de vencimiento: ' + dueStr + '\nDatos bancarios: ' + (inv.senderData ? inv.senderData.bank : 'la cuenta habitual') + ' \n\nGracias por confiar en NOVAPACK.');
+                window.location.href = 'mailto:' + email + '?subject=' + subject + '&body=' + body;
+            };
 
             window.downloadInvoicePDF = async (id) => {
                 showLoading();
@@ -12275,6 +12281,7 @@ window.importTarifas50 = async () => {
     };
     
     // Quick action: select client and go back to invoice form
+    window.advSelectClient = function(clientId) {
         const client = window._advClientsCache.find(c => c.id === clientId);
         if (!client) return;
         // Set the client picker if available
@@ -12856,265 +12863,6 @@ window.importTarifas50 = async () => {
         window.advOpenClientModal('edit', clientId);
     };
 
-    // =============================================
-    // MANUAL TICKETS WORKSPACE
-    // =============================================
-    const manualWS = document.createElement('div');
-    manualWS.id = 'adv-manual-tickets-workspace';
-    manualWS.style.cssText = 'display:none; flex-direction:column; flex:1; overflow-y:auto; padding:20px; background:#1e1e1e; color:#d4d4d4;';
-    manualWS.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #3c3c3c; padding-bottom:15px; margin-bottom:15px;">
-            <div>
-                <h1 style="color:#fff; margin:0; font-size:1.2rem;">📝 Albaranes Manuales · Facturación PRO</h1>
-                <p style="color:#aaa; font-size:0.8rem; margin-top:5px;">Gestionar y crear albaranes para el cliente seleccionado sin salir del workspace.</p>
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button onclick="window.advManualCreateTicket()" style="background:#FF9800; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold;"><span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle;">add</span> Nuevo Albarán</button>
-                <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner');" style="background:#007acc; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:4px;"><span class="material-symbols-outlined" style="font-size:16px;">qr_code_scanner</span> Escáner QR</button>
-                <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('inicio');" style="background:#333; border:1px solid #555; color:#ccc; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px;">◀ Volver</button>
-            </div>
-        </div>
-        <div style="margin-bottom:15px; display:flex; gap:10px; align-items:center;">
-            <select id="adv-manual-client-select" onchange="window.advLoadManualTickets(this.value)" style="flex:1; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; padding:10px; font-size:0.85rem; border-radius:6px; outline:none;">
-                <option value="">— Seleccionar Cliente —</option>
-            </select>
-            <span id="adv-manual-ticket-count" style="color:#888; font-size:0.75rem; white-space:nowrap;"></span>
-        </div>
-        <div id="adv-manual-tickets-content" style="flex:1; overflow-y:auto;"></div>
-    `;
-    billView.appendChild(manualWS);
-
-    // Load clients into the manual tickets selector
-    window.advInitManualTickets = async function() {
-        const select = document.getElementById('adv-manual-client-select');
-        if (!select) return;
-        select.innerHTML = '<option value="">— Seleccionar Cliente —</option>';
-        try {
-            if (window.userMap && Object.keys(window.userMap).length > 0) {
-                Object.keys(window.userMap).sort((a,b) => {
-                    const numA = parseInt(window.userMap[a].clientNumber || window.userMap[a].idNum) || 99999;
-                    const numB = parseInt(window.userMap[b].clientNumber || window.userMap[b].idNum) || 99999;
-                    return numA - numB;
-                }).forEach(uid => {
-                    const u = window.userMap[uid];
-                    const opt = document.createElement('option');
-                    opt.value = uid;
-                    opt.textContent = (u.idNum || '') + ' — ' + (u.name || uid);
-                    select.appendChild(opt);
-                });
-            } else {
-                const snap = await db.collection('users').orderBy('name','asc').limit(500).get();
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    const opt = document.createElement('option');
-                    opt.value = doc.id;
-                    opt.textContent = (d.idNum || '') + ' — ' + (d.name || doc.id);
-                    select.appendChild(opt);
-                });
-            }
-        } catch(e) { console.error(e); }
-    };
-
-    window.advLoadManualTickets = async function(clientUid) {
-        const container = document.getElementById('adv-manual-tickets-content');
-        const countEl = document.getElementById('adv-manual-ticket-count');
-        if (!container) return;
-        if (!clientUid) { container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Selecciona un cliente para ver sus albaranes.</div>'; if(countEl) countEl.textContent=''; return; }
-        container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Cargando...</div>';
-        try {
-            const client = window.userMap ? window.userMap[clientUid] : null;
-            const idNum = client ? String(client.idNum || '') : '';
-            let q = db.collection('tickets');
-            if (idNum) q = q.where('clientIdNum', '==', idNum);
-            else q = q.where('uid', '==', clientUid);
-            const snap = await q.orderBy('createdAt', 'desc').limit(200).get();
-            const tickets = [];
-            snap.forEach(doc => tickets.push({ id: doc.id, ...doc.data() }));
-            if (countEl) countEl.textContent = tickets.length + ' albaranes';
-            if (tickets.length === 0) { container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">No hay albaranes para este cliente.</div>'; return; }
-
-            let html = '<div style="overflow-y:auto; max-height:calc(100vh - 300px);"><table style="width:100%; border-collapse:collapse; font-size:0.8rem;"><thead style="position:sticky;top:0;z-index:1;"><tr style="background:#2d2d30; color:#9cdcfe; font-size:0.7rem;">';
-            html += '<th style="padding:8px 6px; text-align:left;">Albarán</th>';
-            html += '<th style="padding:8px 6px; text-align:left;">Fecha</th>';
-            html += '<th style="padding:8px 6px; text-align:left;">Destinatario</th>';
-            html += '<th style="padding:8px 6px; text-align:center;">Bultos</th>';
-            html += '<th style="padding:8px 6px; text-align:center;">Estado</th>';
-            html += '<th style="padding:8px 6px; text-align:center;">Factura</th>';
-            html += '</tr></thead><tbody>';
-            tickets.forEach(t => {
-                const date = (t.createdAt && t.createdAt.toDate) ? t.createdAt.toDate().toLocaleDateString() : '-';
-                const pkgs = t.packagesList ? t.packagesList.reduce((s,p) => s + (parseInt(p.qty)||1), 0) : (t.packages||1);
-                const invoiced = (t.invoiceId && t.invoiceId !== 'null') ? '<span style="color:#4CAF50;">✅ ' + t.invoiceId + '</span>' : '<span style="color:#FFD700;">⏳ Pendiente</span>';
-                const status = t.status || 'creado';
-                html += '<tr style="border-bottom:1px solid #2d2d30;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'transparent\'">';
-                html += '<td style="padding:6px; color:#fff; font-weight:bold;">' + (t.id || t.ticketId || '-') + '</td>';
-                html += '<td style="padding:6px; color:#888;">' + date + '</td>';
-                html += '<td style="padding:6px; color:#ccc;">' + (t.receiver || t.receiverName || '-') + '</td>';
-                html += '<td style="padding:6px; text-align:center; color:#FFD700;">' + pkgs + '</td>';
-                html += '<td style="padding:6px; text-align:center; color:#9cdcfe;">' + status + '</td>';
-                html += '<td style="padding:6px; text-align:center;">' + invoiced + '</td>';
-                html += '</tr>';
-            });
-            html += '</tbody></table></div>';
-            container.innerHTML = html;
-        } catch(e) { container.innerHTML = '<div style="color:#f44; padding:20px;">Error: ' + e.message + '</div>'; }
-    };
-
-    window.advManualCreateTicket = async function() {
-        // Obtenemos cliente precargado
-        let preName = '';
-        let preCity = '';
-        let prePhone = '';
-        const selectEl = document.getElementById('adv-manual-client-select');
-        if (selectEl && selectEl.value && window.userMap && window.userMap[selectEl.value]) {
-            const client = window.userMap[selectEl.value];
-            preName = client.name || '';
-            prePhone = client.senderPhone || client.phone || '';
-            
-            // La dirección está directamente en el documento del usuario
-            if (client.senderAddress) {
-                preCity = client.senderAddress;
-            } else {
-                // Construir desde campos individuales
-                const parts = [];
-                if (client.street) parts.push(client.street);
-                if (client.number) parts.push('Nº ' + client.number);
-                if (client.localidad) parts.push(client.localidad);
-                if (client.cp) parts.push('(CP ' + client.cp + ')');
-                if (client.province) parts.push(client.province);
-                preCity = parts.join(', ') || client.city || client.address || '';
-            }
-        }
-
-        // Create ticket form directly in ERP mode (no showView!)
-        let modal = document.getElementById('modal-create-ticket');
-        if (modal) modal.remove();
-
-        modal = document.createElement('div');
-        modal.id = 'modal-create-ticket';
-        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:50000; display:flex; align-items:center; justify-content:center;';
-        modal.innerHTML = `
-            <div style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:12px; width:95%; max-width:700px; max-height:90vh; overflow-y:auto; padding:25px; color:#d4d4d4; box-shadow:0 20px 60px rgba(0,0,0,0.6);">
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #3c3c3c; padding-bottom:12px; margin-bottom:20px;">
-                    <h2 style="margin:0; color:#FF9800; font-size:1.3rem; display:flex; align-items:center; gap:8px;">
-                        <span class="material-symbols-outlined">edit_note</span> Nuevo Albarán Manual
-                    </h2>
-                    <button onclick="document.getElementById('modal-create-ticket').remove()" style="background:none; border:none; color:#aaa; font-size:1.5rem; cursor:pointer;">&times;</button>
-                </div>
-
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                    <div>
-                        <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Nº Albarán</label>
-                        <div style="display:flex; gap:6px; margin-top:4px;">
-                            <input id="new-ticket-id" placeholder="Ej: 12345" style="flex:1; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem;">
-                            <button onclick="window.toggleModalQRScanner()" title="Escanear QR" style="background:#007acc; border:none; color:#fff; padding:8px 12px; border-radius:4px; cursor:pointer; display:flex; align-items:center; gap:4px; font-size:0.8rem; white-space:nowrap;">
-                                <span class="material-symbols-outlined" style="font-size:18px;">qr_code_scanner</span> Escanear
-                            </button>
-                        </div>
-                    </div>
-                    <div>
-                        <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Fecha</label>
-                        <input type="date" id="new-ticket-date" value="${new Date().toISOString().split('T')[0]}" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px;">
-                    </div>
-                </div>
-
-                <!-- Inline QR Scanner Area (hidden by default) -->
-                <div id="modal-qr-scanner-area" style="display:none; margin-top:12px; padding:15px; background:rgba(0,122,204,0.05); border:2px solid #007acc; border-radius:10px; text-align:center;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                        <span style="color:#007acc; font-size:0.8rem; font-weight:bold; display:flex; align-items:center; gap:5px;">
-                            <span class="material-symbols-outlined" style="font-size:16px;">qr_code_scanner</span> Apunta la cámara al QR del albarán
-                        </span>
-                        <button onclick="window.stopModalQRScanner()" style="background:transparent; border:1px solid #555; color:#aaa; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px;">✕ Cerrar</button>
-                    </div>
-                    <div id="modal-qr-reader" style="width:100%; max-width:350px; min-height:250px; margin:0 auto; border-radius:8px; overflow:hidden; background:#000;"></div>
-                    <div id="modal-qr-status" style="margin-top:8px; color:#888; font-size:0.75rem;"></div>
-                </div>
-
-                <div style="margin-top:15px; padding:12px; background:rgba(0,122,204,0.08); border:1px solid rgba(0,122,204,0.2); border-radius:8px;">
-                    <div style="font-size:0.75rem; color:#007acc; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Remitente</div>
-                    <input id="new-ticket-sender" value="${preName}" placeholder="Nombre del remitente" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:6px; border-radius:4px; font-size:0.85rem; margin-bottom:8px; text-transform:uppercase;">
-                    <input id="new-ticket-sender-city" value="${preCity}" placeholder="Dirección del remitente" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:6px; border-radius:4px; font-size:0.85rem; margin-bottom:8px; text-transform:uppercase;">
-                    <input id="new-ticket-sender-phone" value="${prePhone}" placeholder="Teléfono del remitente" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:6px; border-radius:4px; font-size:0.85rem;">
-                </div>
-
-                <div style="margin-top:12px; padding:12px; background:rgba(76,175,80,0.08); border:1px solid rgba(76,175,80,0.2); border-radius:8px;">
-                    <div style="font-size:0.75rem; color:#4CAF50; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Destinatario</div>
-                    <input id="new-ticket-receiver" placeholder="Nombre del destinatario" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:6px; border-radius:4px; font-size:0.85rem; margin-bottom:8px; text-transform:uppercase;">
-                    <input id="new-ticket-address" placeholder="Dirección" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:6px; border-radius:4px; font-size:0.85rem; text-transform:uppercase;">
-                </div>
-
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:15px; margin-top:15px;">
-                    <div>
-                        <label style="font-size:0.75rem; color:#888;">Bultos</label>
-                        <input type="number" id="new-ticket-packages" value="1" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px;">
-                    </div>
-                    <div>
-                        <label style="font-size:0.75rem; color:#888;">Kilos</label>
-                        <input type="number" step="0.01" id="new-ticket-weight" value="0" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px;">
-                    </div>
-                    <div>
-                        <label style="font-size:0.75rem; color:#888;">Tipo Envío</label>
-                        <select id="new-ticket-type" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px;">
-                            <option value="Debidos">Debidos</option>
-                            <option value="Pagados">Pagados</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div style="margin-top:15px;">
-                    <label style="font-size:0.75rem; color:#888;">Observaciones</label>
-                    <textarea id="new-ticket-notes" rows="2" placeholder="Notas adicionales..." style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; resize:vertical;"></textarea>
-                </div>
-
-                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px; border-top:1px solid #3c3c3c; padding-top:15px;">
-                    <button onclick="document.getElementById('modal-create-ticket').remove()" style="background:#333; border:1px solid #555; color:#ccc; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px;">Cancelar</button>
-                    <button onclick="submitNewManualTicket()" style="background:#4CAF50; border:none; color:#fff; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:5px;">
-                        <span class="material-symbols-outlined" style="font-size:16px;">save</span> Crear Albarán
-                    </button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-        modal.addEventListener('click', (e) => { if (e.target === modal) { if(typeof window.stopModalQRScanner==='function') window.stopModalQRScanner(); modal.remove(); } });
-        // Also stop scanner when X button closes the modal
-        const origRemove = modal.querySelector('button[onclick*="modal-create-ticket"]');
-        if (origRemove) {
-            origRemove.onclick = function() { if(typeof window.stopModalQRScanner==='function') window.stopModalQRScanner(); document.getElementById('modal-create-ticket')?.remove(); };
-        }
-    };
-
-    window.submitNewManualTicket = async function() {
-        const data = {
-            id: document.getElementById('new-ticket-id').value.trim().toUpperCase(),
-            senderName: document.getElementById('new-ticket-sender').value.trim().toUpperCase(),
-            senderAddress: document.getElementById('new-ticket-sender-city').value.trim().toUpperCase(),
-            senderPhone: (document.getElementById('new-ticket-sender-phone') || {}).value || '',
-            city: document.getElementById('new-ticket-sender-city').value.trim().toUpperCase(),
-            receiver: document.getElementById('new-ticket-receiver').value.trim().toUpperCase(),
-            receiverAddress: document.getElementById('new-ticket-address').value.trim().toUpperCase(),
-            packages: parseInt(document.getElementById('new-ticket-packages').value) || 1,
-            weight: parseFloat(document.getElementById('new-ticket-weight').value) || 0,
-            shippingType: document.getElementById('new-ticket-type').value,
-            notes: document.getElementById('new-ticket-notes').value.trim(),
-            createdAt: firebase.firestore.Timestamp.fromDate(
-                new Date(document.getElementById('new-ticket-date').value || Date.now())
-            ),
-            createdBy: window.adminIdentity || 'Admin',
-            status: 'Pendiente'
-        };
-
-        if (!data.id) { alert('El número de albarán es obligatorio'); return; }
-        if (!data.receiver) { alert('El destinatario es obligatorio'); return; }
-
-        try {
-            await db.collection('tickets').add(data);
-            document.getElementById('modal-create-ticket').remove();
-            alert('✅ Albarán ' + data.id + ' creado correctamente');
-        } catch(e) {
-            alert('Error: ' + e.message);
-            console.error(e);
-        }
-    };
 
     // =============================================
     // INLINE QR SCANNER FOR NEW TICKET MODAL
@@ -13172,6 +12920,524 @@ window.importTarifas50 = async () => {
         if (!keepAreaVisible) {
             const area = document.getElementById('modal-qr-scanner-area');
             if (area) area.style.display = 'none';
+        }
+    };
+
+    // =============================================
+    // MANUAL TICKETS WORKSPACE (Escáner Pistola)
+    // =============================================
+    const manualWS = document.createElement('div');
+    manualWS.id = 'adv-manual-tickets-workspace';
+    manualWS.style.cssText = 'display:none; flex-direction:column; flex:1; overflow-y:auto; padding:20px; background:#1e1e1e; color:#d4d4d4;';
+    manualWS.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #3c3c3c; padding-bottom:15px; margin-bottom:20px;">
+            <div>
+                <h1 style="color:#fff; margin:0; font-size:1.3rem;">📋 Grabación de Albaranes · Escáner Manual</h1>
+                <p style="color:#aaa; font-size:0.8rem; margin-top:5px;">Escanea con la pistola sobre el campo azul. Los datos se rellenan automáticamente.</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button onclick="window._manualTicketReset()" style="background:#333; border:1px solid #555; color:#ccc; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px;">🔄 Limpiar</button>
+                <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('inicio');" style="background:#333; border:1px solid #555; color:#ccc; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px;">◀ Volver</button>
+            </div>
+        </div>
+
+        <!-- SCANNER INPUT (pistol gun) -->
+        <div style="max-width:900px; margin:0 auto; width:100%;">
+            <div style="background:linear-gradient(135deg, #001f3f, #003366); border:2px solid #007acc; border-radius:12px; padding:20px; margin-bottom:25px; text-align:center;">
+                <label style="color:#4FC3F7; font-size:0.85rem; font-weight:bold; display:block; margin-bottom:10px;">📡 CAMPO DE ESCÁNER (Enfoca aquí antes de escanear con la pistola)</label>
+                <input type="text" id="mt-scanner-input" autocomplete="off" autofocus
+                    style="width:100%; padding:15px; font-size:1.1rem; font-weight:bold; background:#0a1628; color:#00E676; border:2px solid #007acc; border-radius:8px; text-align:center; letter-spacing:1px; font-family:monospace;"
+                    placeholder="▶ HAZ CLIC AQUÍ Y ESCANEA CON LA PISTOLA ◀">
+                <div id="mt-scanner-status" style="color:#888; font-size:0.75rem; margin-top:8px;">Esperando escaneo...</div>
+            </div>
+
+            <!-- FORM -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+                <!-- LEFT: Destination -->
+                <div style="background:#252526; border:1px solid #3c3c3c; border-radius:10px; padding:20px;">
+                    <h3 style="color:#FF9800; margin-top:0; font-size:1rem; border-bottom:1px solid #444; padding-bottom:10px; margin-bottom:15px;">📍 DESTINATARIO</h3>
+                    <div style="margin-bottom:12px;">
+                        <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Nombre / Razón Social</label>
+                        <input type="text" id="mt-receiver" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; font-weight:bold; font-size:1rem;">
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Dirección</label>
+                        <input type="text" id="mt-address" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px;">
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                        <div>
+                            <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Provincia</label>
+                            <input type="text" id="mt-province" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px;">
+                        </div>
+                        <div>
+                            <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">C.P.</label>
+                            <input type="text" id="mt-cp" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Teléfono</label>
+                        <input type="text" id="mt-phone" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px;">
+                    </div>
+                    <div>
+                        <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Observaciones</label>
+                        <textarea id="mt-notes" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; min-height:60px;"></textarea>
+                    </div>
+                </div>
+
+                <!-- RIGHT: Sender & Options -->
+                <div style="display:flex; flex-direction:column; gap:15px;">
+                    <div style="background:#252526; border:1px solid #3c3c3c; border-radius:10px; padding:20px;">
+                        <h3 style="color:#4CAF50; margin-top:0; font-size:1rem; border-bottom:1px solid #444; padding-bottom:10px; margin-bottom:15px;">👤 REMITENTE (Cliente)</h3>
+                        <div style="margin-bottom:12px;">
+                            <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Cliente Nº (idNum)</label>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="mt-client-id" style="flex:1; padding:10px; background:#1e1e1e; color:#4CAF50; border:1px solid #4CAF50; border-radius:6px; font-weight:bold; font-size:1.1rem;" placeholder="Nº Cliente">
+                                <button onclick="window._mtLookupClient()" style="background:#4CAF50; border:none; color:#fff; padding:10px 15px; border-radius:6px; cursor:pointer; font-weight:bold;">🔍</button>
+                            </div>
+                        </div>
+                        <div id="mt-client-info" style="padding:10px; background:#1a2e1a; border:1px solid #2e7d32; border-radius:6px; display:none;">
+                            <div id="mt-client-name" style="color:#4CAF50; font-weight:bold; font-size:0.95rem;"></div>
+                            <div id="mt-client-company" style="color:#aaa; font-size:0.8rem; margin-top:4px;"></div>
+                            <input type="hidden" id="mt-client-uid">
+                            <input type="hidden" id="mt-client-compid">
+                            <input type="hidden" id="mt-client-sender-name">
+                            <input type="hidden" id="mt-client-sender-address">
+                            <input type="hidden" id="mt-client-sender-phone">
+                            <input type="hidden" id="mt-client-prefix">
+                        </div>
+                    </div>
+
+                    <div style="background:#252526; border:1px solid #3c3c3c; border-radius:10px; padding:20px;">
+                        <h3 style="color:#FF9800; margin-top:0; font-size:1rem; border-bottom:1px solid #444; padding-bottom:10px; margin-bottom:15px;">📦 DETALLES</h3>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                            <div>
+                                <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Bultos</label>
+                                <input type="number" id="mt-packages" value="1" min="1" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; font-weight:bold; font-size:1.2rem; text-align:center;">
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Peso (kg)</label>
+                                <input type="number" id="mt-weight" value="0" step="0.1" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; text-align:center;">
+                            </div>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                            <div>
+                                <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Portes</label>
+                                <select id="mt-shipping-type" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; font-weight:bold;">
+                                    <option value="Pagados">PAGADOS</option>
+                                    <option value="Debidos">DEBIDOS</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Reembolso (€)</label>
+                                <input type="number" id="mt-cod" value="0" step="0.01" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; text-align:center;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="color:#aaa; font-size:0.75rem; display:block; margin-bottom:4px;">Turno</label>
+                            <select id="mt-timeslot" style="width:100%; padding:10px; background:#1e1e1e; color:#fff; border:1px solid #555; border-radius:6px; font-weight:bold;">
+                                <option value="MAÑANA">☀️ MAÑANA</option>
+                                <option value="TARDE">🌙 TARDE</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- COD WARNING -->
+                    <div id="mt-cod-warning" style="display:none; background:rgba(255,152,0,0.15); border:2px solid #FF9800; border-radius:8px; padding:15px; text-align:center;">
+                        <span style="font-size:1.5rem;">⚠️</span>
+                        <div style="color:#FF9800; font-weight:bold; font-size:0.95rem; margin-top:5px;">REEMBOLSO DETECTADO</div>
+                        <div id="mt-cod-amount" style="color:#fff; font-weight:900; font-size:1.3rem; margin-top:5px;"></div>
+                    </div>
+
+                    <!-- DEBIDOS WARNING -->
+                    <div id="mt-debidos-warning" style="display:none; background:rgba(244,67,54,0.15); border:2px solid #f44336; border-radius:8px; padding:15px; text-align:center;">
+                        <span style="font-size:1.5rem;">🔴</span>
+                        <div style="color:#f44336; font-weight:bold; font-size:0.95rem; margin-top:5px;">PORTES DEBIDOS</div>
+                        <div style="color:#aaa; font-size:0.8rem; margin-top:3px;">Se cargará al <strong>destinatario</strong></div>
+                    </div>
+
+                    <!-- SAVE BUTTON -->
+                    <button id="mt-btn-save" onclick="window._mtSaveTicket()" 
+                        style="width:100%; padding:18px; font-size:1.1rem; font-weight:900; background:linear-gradient(135deg, #FF6600, #FF3B30); color:white; border:none; border-radius:12px; cursor:pointer; letter-spacing:1px; transition:all 0.2s; box-shadow: 0 4px 15px rgba(255,102,0,0.4);"
+                        onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
+                        💾 CONFIRMAR Y GRABAR ALBARÁN
+                    </button>
+                </div>
+            </div>
+
+            <!-- LOG -->
+            <div style="margin-top:25px; background:#252526; border:1px solid #3c3c3c; border-radius:10px; padding:15px;">
+                <h4 style="color:#888; margin:0 0 10px 0; font-size:0.85rem;">📜 Registro de Grabaciones</h4>
+                <div id="mt-log" style="max-height:150px; overflow-y:auto; font-size:0.8rem; color:#666; font-family:monospace;"></div>
+            </div>
+        </div>
+    `;
+    billView.appendChild(manualWS);
+
+    // --- MANUAL TICKETS ENGINE ---
+    window._mtClientCache = null; // { uid, compId, name, address, phone, prefix }
+
+    window.advInitManualTickets = function() {
+        console.log('[MANUAL TICKETS] Workspace initialized');
+        const inp = document.getElementById('mt-scanner-input');
+        if (inp) {
+            inp.value = '';
+            inp.focus();
+        }
+        // Auto-set timeslot
+        const hour = new Date().getHours();
+        const slot = document.getElementById('mt-timeslot');
+        if (slot) slot.value = (hour >= 8 && hour < 15) ? 'MAÑANA' : 'TARDE';
+    };
+
+    // Reset form
+    window._manualTicketReset = function() {
+        ['mt-receiver','mt-address','mt-province','mt-cp','mt-phone','mt-notes','mt-scanner-input','mt-client-id'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        document.getElementById('mt-packages').value = '1';
+        document.getElementById('mt-weight').value = '0';
+        document.getElementById('mt-cod').value = '0';
+        document.getElementById('mt-shipping-type').value = 'Pagados';
+        document.getElementById('mt-client-info').style.display = 'none';
+        document.getElementById('mt-cod-warning').style.display = 'none';
+        document.getElementById('mt-debidos-warning').style.display = 'none';
+        document.getElementById('mt-scanner-status').textContent = 'Esperando escaneo...';
+        document.getElementById('mt-scanner-status').style.color = '#888';
+        window._mtClientCache = null;
+        const inp = document.getElementById('mt-scanner-input');
+        if (inp) inp.focus();
+    };
+
+    // Lookup client by idNum
+    window._mtLookupClient = async function() {
+        const idNum = (document.getElementById('mt-client-id').value || '').trim();
+        if (!idNum) { alert('Introduce un número de cliente.'); return; }
+
+        const infoDiv = document.getElementById('mt-client-info');
+        infoDiv.style.display = 'block';
+        document.getElementById('mt-client-name').textContent = '🔄 Buscando...';
+        document.getElementById('mt-client-company').textContent = '';
+
+        try {
+            // Search by idNum field
+            const snap = await db.collection('users').where('idNum', '==', idNum).get();
+            let userDoc = null;
+            if (!snap.empty) {
+                userDoc = snap.docs[0];
+            } else {
+                // Try as padded number
+                const padded = idNum.padStart(3, '0');
+                const snap2 = await db.collection('users').where('idNum', '==', padded).get();
+                if (!snap2.empty) userDoc = snap2.docs[0];
+            }
+
+            if (!userDoc) {
+                document.getElementById('mt-client-name').textContent = '❌ Cliente no encontrado: ' + idNum;
+                document.getElementById('mt-client-name').style.color = '#f44';
+                window._mtClientCache = null;
+                return;
+            }
+
+            const uData = userDoc.data();
+            
+            // Get first company
+            const compSnap = await db.collection('users').doc(userDoc.id).collection('companies').get();
+            let compData = {};
+            let compId = '';
+            let prefix = 'NP';
+            if (!compSnap.empty) {
+                compId = compSnap.docs[0].id;
+                compData = compSnap.docs[0].data();
+                prefix = compData.prefix || 'NP';
+            }
+
+            window._mtClientCache = {
+                uid: userDoc.id,
+                compId: compId,
+                idNum: uData.idNum || idNum,
+                name: uData.name || 'Sin nombre',
+                senderName: compData.name || uData.name || '',
+                senderAddress: compData.address || '',
+                senderPhone: compData.phone || '',
+                prefix: prefix,
+                startNum: parseInt(compData.startNum) || 1
+            };
+
+            document.getElementById('mt-client-name').textContent = '✅ ' + (uData.name || 'Sin nombre');
+            document.getElementById('mt-client-name').style.color = '#4CAF50';
+            document.getElementById('mt-client-company').textContent = compData.name ? ('Empresa: ' + compData.name + ' | Prefijo: ' + prefix) : 'Sin empresa configurada';
+            document.getElementById('mt-client-uid').value = userDoc.id;
+            document.getElementById('mt-client-compid').value = compId;
+            document.getElementById('mt-client-sender-name').value = compData.name || uData.name || '';
+            document.getElementById('mt-client-sender-address').value = compData.address || '';
+            document.getElementById('mt-client-sender-phone').value = compData.phone || '';
+            document.getElementById('mt-client-prefix').value = prefix;
+
+            console.log('[MANUAL TICKETS] Client loaded:', window._mtClientCache);
+
+        } catch (e) {
+            document.getElementById('mt-client-name').textContent = '❌ Error: ' + e.message;
+            document.getElementById('mt-client-name').style.color = '#f44';
+            console.error('[MANUAL TICKETS] Client lookup error:', e);
+        }
+    };
+
+    // Scanner input handler — listens for barcode gun paste/keypress
+    (function setupScannerListener() {
+        let scanBuffer = '';
+        let scanTimer = null;
+
+        document.addEventListener('keypress', function(e) {
+            const inp = document.getElementById('mt-scanner-input');
+            if (!inp || document.activeElement !== inp) return;
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const raw = inp.value.trim();
+                if (raw) {
+                    window._mtProcessScan(raw);
+                    inp.value = '';
+                }
+                return;
+            }
+        });
+
+        // Also handle paste events (some scanners paste the full string)
+        const scannerInput = document.getElementById('mt-scanner-input');
+        if (scannerInput) {
+            scannerInput.addEventListener('paste', function(e) {
+                setTimeout(() => {
+                    const raw = scannerInput.value.trim();
+                    if (raw && raw.includes('|')) {
+                        window._mtProcessScan(raw);
+                        scannerInput.value = '';
+                    }
+                }, 100);
+            });
+        }
+    })();
+
+    // Process scanned QR data
+    window._mtProcessScan = function(raw) {
+        console.log('[MANUAL TICKETS] Raw scan:', raw);
+        const statusEl = document.getElementById('mt-scanner-status');
+
+        // Parse pipe-separated format: ID:xxx|DEST:xxx|ADDR:xxx|PROV:xxx|TEL:xxx|COD:xxx|BULTOS:xxx|PESO:xxx|PKG:x/x
+        if (raw.includes('|')) {
+            const parts = raw.split('|');
+            const parsed = {};
+            parts.forEach(p => {
+                const idx = p.indexOf(':');
+                if (idx > -1) {
+                    const key = p.substring(0, idx).trim().toUpperCase();
+                    const val = p.substring(idx + 1).trim();
+                    parsed[key] = val;
+                }
+            });
+
+            console.log('[MANUAL TICKETS] Parsed QR:', parsed);
+
+            // Fill form fields
+            if (parsed.DEST) document.getElementById('mt-receiver').value = parsed.DEST;
+            if (parsed.ADDR) document.getElementById('mt-address').value = parsed.ADDR;
+            if (parsed.PROV) document.getElementById('mt-province').value = parsed.PROV;
+            if (parsed.TEL) document.getElementById('mt-phone').value = parsed.TEL;
+            if (parsed.BULTOS) document.getElementById('mt-packages').value = parseInt(parsed.BULTOS) || 1;
+            if (parsed.PESO) document.getElementById('mt-weight').value = parseFloat(parsed.PESO) || 0;
+            
+            // Extract CP from address if present
+            const cpMatch = (parsed.ADDR || '').match(/\(CP\s*(\d{5})\)/i);
+            if (cpMatch) document.getElementById('mt-cp').value = cpMatch[1];
+
+            // COD (Reembolso)
+            const codVal = parseFloat(parsed.COD) || 0;
+            document.getElementById('mt-cod').value = codVal;
+            if (codVal > 0) {
+                document.getElementById('mt-cod-warning').style.display = 'block';
+                document.getElementById('mt-cod-amount').textContent = codVal.toFixed(2) + ' €';
+                // Auto-set to Debidos if COD > 0
+                document.getElementById('mt-shipping-type').value = 'Debidos';
+                document.getElementById('mt-debidos-warning').style.display = 'block';
+            } else {
+                document.getElementById('mt-cod-warning').style.display = 'none';
+            }
+
+            // CLi ID from the raw text
+            if (parsed.CLI) {
+                document.getElementById('mt-client-id').value = parsed.CLI;
+                window._mtLookupClient(); // Auto-lookup
+            }
+
+            // ID reference (original ticket ID)
+            if (parsed.ID) {
+                const notes = document.getElementById('mt-notes');
+                notes.value = (notes.value ? notes.value + ' | ' : '') + 'Ref. Original: ' + parsed.ID;
+            }
+
+            statusEl.textContent = '✅ QR procesado correctamente — ' + new Date().toLocaleTimeString();
+            statusEl.style.color = '#4CAF50';
+
+            // Visual flash on form
+            const formArea = document.getElementById('adv-manual-tickets-workspace');
+            if (formArea) {
+                formArea.style.borderLeft = '4px solid #4CAF50';
+                setTimeout(() => { formArea.style.borderLeft = ''; }, 1500);
+            }
+
+        } else {
+            // Plain text / simple barcode — try as ticket ID lookup
+            statusEl.textContent = '⚠️ Formato no reconocido. Se esperaba formato QR con pipes (|).';
+            statusEl.style.color = '#FF9800';
+
+            // Try to look it up anyway
+            document.getElementById('mt-notes').value = 'Código escaneado: ' + raw;
+        }
+    };
+
+    // Shipping type change handler
+    const mtShipping = document.getElementById('mt-shipping-type');
+    if (mtShipping) {
+        mtShipping.addEventListener('change', function() {
+            document.getElementById('mt-debidos-warning').style.display = (this.value === 'Debidos') ? 'block' : 'none';
+        });
+    }
+
+    // Save ticket to Firestore
+    window._mtSaveTicket = async function() {
+        const receiver = (document.getElementById('mt-receiver').value || '').trim();
+        const address = (document.getElementById('mt-address').value || '').trim();
+        const province = (document.getElementById('mt-province').value || '').trim();
+        
+        if (!receiver) { alert('⚠️ Falta el DESTINATARIO. Escanea un QR o escríbelo manualmente.'); return; }
+        if (!address) { alert('⚠️ Falta la DIRECCIÓN.'); return; }
+
+        if (!window._mtClientCache) {
+            alert('⚠️ Debes identificar al CLIENTE REMITENTE primero.\nIntroduce su número de cliente y pulsa 🔍.');
+            document.getElementById('mt-client-id').focus();
+            return;
+        }
+
+        const btn = document.getElementById('mt-btn-save');
+        btn.disabled = true;
+        btn.textContent = '⏳ Grabando...';
+        btn.style.opacity = '0.6';
+
+        try {
+            const cli = window._mtClientCache;
+            const packages = parseInt(document.getElementById('mt-packages').value) || 1;
+            const weight = parseFloat(document.getElementById('mt-weight').value) || 0;
+            const shippingType = document.getElementById('mt-shipping-type').value;
+            const cod = parseFloat(document.getElementById('mt-cod').value) || 0;
+            const phone = (document.getElementById('mt-phone').value || '').trim();
+            const cp = (document.getElementById('mt-cp').value || '').trim();
+            const notes = (document.getElementById('mt-notes').value || '').trim();
+            const timeSlot = document.getElementById('mt-timeslot').value;
+
+            // Generate next business ID for this client
+            const prefix = cli.prefix || 'NP';
+            let maxNum = (cli.startNum || 1) - 1;
+
+            const idVariants = [cli.uid, cli.idNum, cli.idNum.toString().padStart(3, '0'), parseInt(cli.idNum).toString()].filter(x => x);
+            const uniqueVariants = [...new Set(idVariants)].slice(0, 10);
+
+            const serverSnap = await db.collection('tickets')
+                .where('uid', 'in', uniqueVariants)
+                .get();
+            
+            serverSnap.forEach(doc => {
+                const d = doc.data();
+                if (d.compId !== cli.compId) return;
+                const bid = d.id || '';
+                if (bid.startsWith(prefix)) {
+                    const num = parseInt(bid.substring(prefix.length).replace(/\D/g, ''), 10);
+                    if (!isNaN(num) && num > maxNum) maxNum = num;
+                }
+            });
+
+            const businessId = prefix + (maxNum + 1).toString().padStart(5, '0');
+            const docId = cli.idNum + '_' + cli.compId + '_' + businessId;
+
+            // Auto-route driver
+            let driverPhone = '';
+            try {
+                const phonesSnap = await db.collection('config').doc('phones').collection('list').get();
+                phonesSnap.forEach(doc => {
+                    const label = (doc.data().label || '').toLowerCase();
+                    const num = doc.data().number;
+                    if (cp && label.includes(cp)) driverPhone = num;
+                });
+            } catch(e) { console.warn('Auto-route error:', e); }
+
+            // Build package list
+            const packagesList = [];
+            for (let i = 0; i < packages; i++) {
+                packagesList.push({ qty: 1, size: 'Bulto', weight: weight / packages });
+            }
+
+            const ticketData = {
+                id: businessId,
+                uid: cli.uid,
+                clientIdNum: cli.idNum,
+                compId: cli.compId,
+                sender: cli.senderName || cli.name,
+                senderAddress: cli.senderAddress || '',
+                senderPhone: cli.senderPhone || '',
+                receiver: receiver.toUpperCase(),
+                address: address,
+                province: province,
+                phone: phone,
+                cp: cp,
+                localidad: '',
+                shippingType: shippingType,
+                cod: cod,
+                notes: notes + (window.adminIdentity ? ' [Grabado por: ' + window.adminIdentity + ']' : ''),
+                timeSlot: timeSlot,
+                status: 'Pendiente',
+                packagesList: packagesList,
+                packages: packages,
+                weight: weight,
+                printed: false,
+                driverPhone: driverPhone ? driverPhone.toString().replace(/\D/g, '').replace(/^34/, '') : '',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            await db.collection('tickets').doc(docId).set(ticketData);
+
+            // Log entry
+            const logDiv = document.getElementById('mt-log');
+            const entry = document.createElement('div');
+            entry.style.cssText = 'padding:5px 0; border-bottom:1px solid #333; color:#4CAF50;';
+            entry.innerHTML = '<span style="color:#888;">' + new Date().toLocaleTimeString() + '</span> ✅ <strong>' + businessId + '</strong> — ' + receiver + ' (' + packages + ' bultos) — Cliente #' + cli.idNum + (shippingType === 'Debidos' ? ' <span style="color:#f44;">DEBIDOS</span>' : '');
+            logDiv.prepend(entry);
+
+            // Success feedback
+            alert('✅ Albarán ' + businessId + ' grabado correctamente.\n\nCliente: #' + cli.idNum + ' (' + cli.name + ')\nDestinatario: ' + receiver + '\nBultos: ' + packages + (shippingType === 'Debidos' ? '\n⚠️ PORTES DEBIDOS' : ''));
+
+            // Reset form (keep client)
+            ['mt-receiver','mt-address','mt-province','mt-cp','mt-phone','mt-notes'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            document.getElementById('mt-packages').value = '1';
+            document.getElementById('mt-weight').value = '0';
+            document.getElementById('mt-cod').value = '0';
+            document.getElementById('mt-shipping-type').value = 'Pagados';
+            document.getElementById('mt-cod-warning').style.display = 'none';
+            document.getElementById('mt-debidos-warning').style.display = 'none';
+            document.getElementById('mt-scanner-status').textContent = '✅ Último: ' + businessId + ' — Listo para siguiente escaneo';
+            document.getElementById('mt-scanner-status').style.color = '#4CAF50';
+            document.getElementById('mt-scanner-input').value = '';
+            document.getElementById('mt-scanner-input').focus();
+
+        } catch (e) {
+            console.error('[MANUAL TICKETS] Save error:', e);
+            alert('❌ Error al grabar albarán: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '💾 CONFIRMAR Y GRABAR ALBARÁN';
+            btn.style.opacity = '1';
         }
     };
 
@@ -13340,13 +13606,13 @@ window.importTarifas50 = async () => {
 
 
 
-<script src="export_engine.js"></script>
-<script src="ticket_search_v2.js?v=5"></script>
-<script src="phones_manager.js"></script>
-<script src="mailbox_manager.js?v=2.1"></script>
-<script src="ficha_cliente.js?v=2"></script>
-<script src="albaranes_central.js?v=1"></script>
-<script src="erp_tabs.js?v=20"></script>
+<script src="export_engine.js?v=20260402"></script>
+<script src="ticket_search_v2.js?v=20260402"></script>
+<script src="phones_manager.js?v=20260402"></script>
+<script src="mailbox_manager.js?v=20260402"></script>
+<script src="ficha_cliente.js?v=20260402"></script>
+<script src="albaranes_central.js?v=20260402"></script>
+<script src="erp_tabs.js?v=20260402"></script>
 
 </body>
 </html>
