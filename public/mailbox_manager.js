@@ -170,8 +170,9 @@ window.renderMailbox = function() {
             <td style="padding:12px; color:#fff; max-width:250px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.subject || '(Sin Asunto)'}</td>
             <td style="padding:12px; text-align:center;">${ticketStr}</td>
             <td style="padding:12px; font-size:0.8rem; color:#888; text-align:center;">${dateStr}</td>
-            <td style="padding:12px; text-align:center;">
-                <button class="btn btn-sm btn-outline mailbox-resolve-btn" data-mail-idx="${idx}" style="border-color:#4CAF50; color:#4CAF50; padding:2px 8px; font-size:0.85rem; border-radius:4px; transform:translateY(-2px); box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);" title="Marcar Resuelta">✓</button>
+            <td style="padding:12px; text-align:center; white-space:nowrap;">
+                <button class="mailbox-open-btn" data-mail-idx="${idx}" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:#fff; padding:4px 10px; font-size:0.8rem; border-radius:4px; cursor:pointer; font-weight:bold; margin-right:4px;" title="Ver Correo">👁 Ver</button>
+                <button class="mailbox-resolve-btn" data-mail-idx="${idx}" style="background:#4CAF50; border:none; color:#fff; padding:4px 8px; font-size:0.8rem; border-radius:4px; cursor:pointer; font-weight:bold;" title="Marcar Resuelta">✓</button>
             </td>
         </tr>`;
     });
@@ -181,25 +182,39 @@ window.renderMailbox = function() {
     // Store filtered list for click reference
     window._mailboxFiltered = filtered;
 
-    // Event delegation for row clicks
-    tbody.querySelectorAll('tr[data-mail-idx]').forEach(row => {
-        row.addEventListener('click', function(e) {
-            if (e.target.closest('.mailbox-resolve-btn')) return; // skip if resolve button
-            const idx = parseInt(this.getAttribute('data-mail-idx'));
+    // Attach click handlers using event delegation on tbody (only once)
+    if (!tbody._mailboxListenerAttached) {
+        tbody._mailboxListenerAttached = true;
+    tbody.addEventListener('click', function(e) {
+        // Open button clicked
+        const openBtn = e.target.closest('.mailbox-open-btn');
+        if (openBtn) {
+            e.stopPropagation();
+            const idx = parseInt(openBtn.getAttribute('data-mail-idx'));
             const item = window._mailboxFiltered[idx];
             if (item) openMailboxModal(item.id);
-        });
-    });
+            return;
+        }
 
-    // Event delegation for resolve buttons
-    tbody.querySelectorAll('.mailbox-resolve-btn').forEach(btn => {
-        btn.addEventListener('click', function(e) {
+        // Resolve button clicked
+        const resolveBtn = e.target.closest('.mailbox-resolve-btn');
+        if (resolveBtn) {
             e.stopPropagation();
-            const idx = parseInt(this.getAttribute('data-mail-idx'));
+            const idx = parseInt(resolveBtn.getAttribute('data-mail-idx'));
             const item = window._mailboxFiltered[idx];
             if (item) updateMailboxStatus(item.id, 'resuelta');
-        });
+            return;
+        }
+
+        // Row clicked (anywhere else)
+        const row = e.target.closest('tr[data-mail-idx]');
+        if (row) {
+            const idx = parseInt(row.getAttribute('data-mail-idx'));
+            const item = window._mailboxFiltered[idx];
+            if (item) openMailboxModal(item.id);
+        }
     });
+    } // end if !_mailboxListenerAttached
 };
 
 window.openMailboxModal = function(id) {
