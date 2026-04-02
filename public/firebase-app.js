@@ -314,10 +314,21 @@ function getTodayLocal() {
 // --- DATA ACCESS: COMPANIES ---
 async function loadCompanies() {
     companies = [];
+    // Check all possible user document IDs for companies subcollection
     const uidsToCheck = [currentUser.uid];
     if (effectiveStorageUid && effectiveStorageUid !== currentUser.uid) {
         uidsToCheck.push(effectiveStorageUid);
     }
+    // CRITICAL FIX: Also check the master document ID (admin-created profile) for companies
+    if (userData && userData.id && !uidsToCheck.includes(userData.id)) {
+        uidsToCheck.push(userData.id);
+    }
+    // Also check by authUid if different
+    if (userData && userData.authUid && !uidsToCheck.includes(userData.authUid)) {
+        uidsToCheck.push(userData.authUid);
+    }
+
+    console.log('[SYNC] loadCompanies checking UIDs:', uidsToCheck);
 
     try {
         for (const targetId of uidsToCheck) {
@@ -327,6 +338,15 @@ async function loadCompanies() {
                     companies.push({ id: doc.id, ...doc.data() });
                 }
             });
+            // If we found companies, also clone them to the current UID for future fast access
+            if (snap.size > 0 && targetId !== currentUser.uid) {
+                console.log(`[SYNC] Cloning ${snap.size} companies from ${targetId} to ${currentUser.uid}`);
+                for (const doc of snap.docs) {
+                    try {
+                        await db.collection('users').doc(currentUser.uid).collection('companies').doc(doc.id).set(doc.data(), { merge: true });
+                    } catch(cloneErr) { console.warn('Company clone error:', cloneErr); }
+                }
+            }
         }
     } catch (e) {
         console.error("Error loading companies:", e);
@@ -993,42 +1013,46 @@ async function getNextId() {
 
     try {
         const identityIds = [currentUser.uid, userData.email, userData.id, userData.authUid].filter(x => x);
-        const idVariants = [...new Set([myIdNum, myIdNum.padStart(3, '0'), parseInt(myIdNum).toString(), ...identityIds])].filter(v => v).slice(0, 10);
+        const idVariants = [...new Set([myIdNum, myIdNum.padStart(3, '0'), parseInt(myIdNum).toString(), ...identityIds])].filter(v => v).map(v => String(v).trim()).slice(0, 10);
 
-        // Eliminado limit(250) para no silenciar el progreso del contador cuando un cliente supera 250 albaranes.
-        const snapshot = await db.collection('tickets')
-            .where('uid', 'in', idVariants)
-            .get({ source: 'cache' }).catch(() => null);
-        
-        let maxNum = startNum - 1;
+        console.log('[SYNC] getNextId searching with variants:', idVariants);
 
-        // Primero calculamos desde la caché (inmediatamente refleja escrituras previas del loop)
-        if (snapshot && !snapshot.empty) {
-            snapshot.forEach(doc => {
+        // Helper to extract max business ID number from a snapshot
+        const extractMaxNum = (snap, currentMax) => {
+            let m = currentMax;
+            snap.forEach(doc => {
                 const d = doc.data();
                 if (d.compId !== cid) return;
                 const bid = d.id || "";
                 if (bid.startsWith(prefix)) {
                     const num = parseInt(bid.substring(prefix.length).replace(/\D/g, ''), 10);
-                    if (!isNaN(num) && num > maxNum) maxNum = num;
+                    if (!isNaN(num) && num > m) m = num;
                 }
             });
-        }
+            return m;
+        };
 
-        // Luego garantizamos lectura en servidor por si estamos en otra sesión
-        const serverSnap = await db.collection('tickets')
+        let maxNum = startNum - 1;
+
+        // 1. Cache read by uid (fast, reflects recent local writes)
+        const cacheSnap = await db.collection('tickets')
+            .where('uid', 'in', idVariants)
+            .get({ source: 'cache' }).catch(() => null);
+        if (cacheSnap && !cacheSnap.empty) maxNum = extractMaxNum(cacheSnap, maxNum);
+
+        // 2. Server read by uid (authoritative)
+        const serverSnap1 = await db.collection('tickets')
             .where('uid', 'in', idVariants)
             .get();
-        
-        serverSnap.forEach(doc => {
-            const d = doc.data();
-            if (d.compId !== cid) return;
-            const bid = d.id || "";
-            if (bid.startsWith(prefix)) {
-                const num = parseInt(bid.substring(prefix.length).replace(/\D/g, ''), 10);
-                if (!isNaN(num) && num > maxNum) maxNum = num;
-            }
-        });
+        maxNum = extractMaxNum(serverSnap1, maxNum);
+
+        // 3. CRITICAL FIX: Also search by clientIdNum to find tickets created from other terminals/UIDs
+        const serverSnap2 = await db.collection('tickets')
+            .where('clientIdNum', 'in', idVariants)
+            .get();
+        maxNum = extractMaxNum(serverSnap2, maxNum);
+
+        console.log('[SYNC] getNextId maxNum after all queries:', maxNum);
 
         // Si existe un tracker de lote temporal para inserciones rápidas, lo usamos y actualizamos
         if (window.tempBatchHighestId && window.tempBatchHighestId.cid === cid) {
