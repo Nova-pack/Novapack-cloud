@@ -51,8 +51,16 @@ function categorizeEmail(subject, body) {
 // Extract ticket references from text (NP-00001, NP00234, etc.)
 function extractTicketRef(text) {
     if (!text) return null;
-    const match = text.match(/NP[-\s]?\d{3,6}/i);
-    return match ? match[0].replace(/\s/g, '-').toUpperCase() : null;
+    
+    // Format 1: Exact NP format (NP-12345, NP12345)
+    let match = text.match(/NP[-\s]?(\d{2,8})/i);
+    if (match) return 'NP-' + match[1];
+
+    // Format 2: Keywords like Albaran, Alb, Ref followed by digits
+    match = text.match(/(?:albar[aá]n|alb|ref|referencia|ticket)[.\-\s:]*(\d{2,8})/i);
+    if (match) return 'NP-' + match[1];
+
+    return null;
 }
 
 async function run() {

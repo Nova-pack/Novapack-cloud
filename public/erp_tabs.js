@@ -22,7 +22,7 @@
         'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones', 'erp-tab-config',
         'erp-tab-maintenance', 'erp-tab-pod', 'erp-tab-pending-deletes', 'erp-tab-users',
         'erp-tab-ticket-search', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central', 'erp-tab-mailbox',
-        'erp-tab-facturas-central'
+        'erp-tab-facturas-central', 'erp-tab-route-details'
     ];
 
     // --- TAB DEFINITIONS (built-in tabs that map to existing workspaces) ---
@@ -51,6 +51,7 @@
         'albaranes-central':  { wsId: 'erp-tab-albaranes-central',  title: 'Albaranes Central',   icon: 'inventory_2',        closeable: true },
         'mailbox':         { wsId: 'erp-tab-mailbox',            title: 'Buzón Correo',      icon: 'move_to_inbox',      closeable: true },
         'facturas-central':{ wsId: 'erp-tab-facturas-central',    title: 'Centro Facturación', icon: 'receipt_long',       closeable: true },
+        'route-details':   { wsId: 'erp-tab-route-details',       title: 'Albaranes Ruta',     icon: 'route',              closeable: true },
     };
 
     // --- CORE API ---
@@ -425,7 +426,7 @@
                 'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central',
                 'adv-billing-workspace', 'adv-history-workspace', 'adv-reports-workspace', 'adv-tariffs-workspace', 
                 'adv-clients-workspace', 'adv-providers-workspace', 'adv-manual-tickets-workspace', 
-                'adv-scanner-workspace', 'erp-tab-mailbox', 'erp-tab-facturas-central'
+                'adv-scanner-workspace', 'erp-tab-mailbox', 'erp-tab-facturas-central', 'erp-tab-route-details'
             ];
             tabContainerIds.forEach(function(id) {
                 var el = document.getElementById(id);
