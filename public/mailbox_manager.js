@@ -116,8 +116,19 @@ window.renderMailbox = function() {
         return true;
     });
 
+    // Update counter badge
+    const counterEl = document.getElementById('mailbox-counter');
+    const newCount = _mailboxCache.filter(i => (i.status || 'nueva') === 'nueva').length;
+    if (counterEl) {
+        counterEl.innerHTML = `Total: <b>${_mailboxCache.length}</b> · Nuevas: <b style="color:#FF9800;">${newCount}</b> · Mostrando: <b>${filtered.length}</b>`;
+    }
+
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-dim);font-style:italic;">No hay correos en el buzón que coincidan con los filtros.</td></tr>`;
+        if (_mailboxCache.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:#FF9800; font-style:italic;">📭 El buzón está vacío. No se han recibido correos aún.<br><span style="font-size:0.8rem; color:#888;">Si esperabas correos, verifica que el servicio de importación (Make/Zapier) sigue activo.</span></td></tr>`;
+        } else {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-dim); font-style:italic;">No hay correos que coincidan con el filtro actual. Prueba a cambiar a "Todas".</td></tr>`;
+        }
         return;
     }
 

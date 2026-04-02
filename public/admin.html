@@ -1518,6 +1518,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">
                 Gestión automatizada de correos de incidencias y solicitudes.
             </p>
+            <div id="mailbox-counter" style="margin-top:8px; font-size:0.8rem; color:#aaa; background:rgba(255,255,255,0.04); padding:5px 12px; border-radius:6px; display:inline-block;"></div>
         </div>
         <div style="display:flex; gap:10px;">
             <button class="btn btn-outline" onclick="loadMailbox()" style="display:flex; align-items:center; gap:5px;">
@@ -1532,8 +1533,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <label style="font-size:0.75rem; color:var(--text-dim);">Estado</label>
                 <select id="mailbox-filter-status" class="form-control" style="width:180px; padding:10px;" onchange="renderMailbox()">
-                    <option value="todas">Todas</option>
-                    <option value="nueva" selected>Nuevas (🔴)</option>
+                    <option value="todas" selected>Todas</option>
+                    <option value="nueva">Nuevas (🔴)</option>
                     <option value="en_curso">En Curso (🟡)</option>
                     <option value="resuelta">Resueltas (🟢)</option>
                     <option value="archivada">Archivadas (⚫)</option>
