@@ -55,7 +55,7 @@ window.loadMailbox = function() {
             renderMailbox();
         }, (error) => {
             console.error("[MAILBOX] Error leyendo correos:", error);
-            if (error.code === 'permission-denied' || error.message.includes('permissions')) {
+            if (error.code === 'permission-denied' || error.code === 'failed-precondition' || error.message.includes('permissions') || error.message.includes('index')) {
                 // Try without orderBy in case the index is missing
                 console.log("[MAILBOX] Retrying without orderBy...");
                 _mailboxUnsubscribe = window.db.collection('mailbox')
