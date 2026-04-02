@@ -13223,6 +13223,50 @@ window.importTarifas50 = async () => {
 
             console.log('[MANUAL TICKETS] Parsed QR:', parsed);
 
+            // ==========================================
+            // DELETION SAFEGUARD: Check original ticket
+            // ==========================================
+            if (parsed.ID && window.db) {
+                try {
+                    let isDeleted = false;
+                    let originalId = parsed.ID.trim();
+                    // Strip CLI prefix if accidentally attached
+                    const cliMatch = originalId.match(/\|CLI:\d+$/);
+                    if (cliMatch) originalId = originalId.replace(cliMatch[0], '').trim();
+
+                    // Search by custom id
+                    const snap = await db.collection('tickets').where('id', '==', originalId).limit(1).get();
+                    if (!snap.empty) {
+                        const t = snap.docs[0].data();
+                        if (t.deleteRequested || String(t.status).toLowerCase().includes('anula')) isDeleted = true;
+                    } else {
+                        // Search by document docId
+                        const docRef = await db.collection('tickets').doc(originalId).get();
+                        if (docRef.exists) {
+                            const t = docRef.data();
+                            if (t.deleteRequested || String(t.status).toLowerCase().includes('anula')) isDeleted = true;
+                        }
+                    }
+
+                    if (isDeleted) {
+                        // BLOW UP WITH RED ALERT, DO NOT FILL FORM
+                        const formArea = document.getElementById('adv-manual-tickets-workspace');
+                        if (formArea) formArea.style.borderLeft = '6px solid #FF3B30';
+                        
+                        statusEl.innerHTML = '❌ <b>¡ALERTA ROJA!</b> EL REMITENTE HA ANULADO ESTE ALBARÁN (' + originalId + '). NO LO PROCESES.';
+                        statusEl.style.color = '#FF3B30';
+                        
+                        // Reseteamos el formulario por si había datos
+                        window._manualTicketReset();
+                        // Devolvemos el mensaje de error por encima del reset
+                        statusEl.innerHTML = '❌ <b>¡ALERTA ROJA!</b> EL REMITENTE HA ANULADO ESTE ALBARÁN (' + originalId + '). NO LO PROCESES.';
+                        return; // Abort loading
+                    }
+                } catch(e) {
+                    console.warn('[MANUAL TICKETS] Error checking original ticket state:', e);
+                }
+            }
+
             // Fill form fields
             if (parsed.DEST) document.getElementById('mt-receiver').value = parsed.DEST;
             if (parsed.ADDR) document.getElementById('mt-address').value = parsed.ADDR;
