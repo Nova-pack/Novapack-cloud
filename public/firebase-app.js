@@ -1302,8 +1302,55 @@ async function addPackageRow(data = null) {
         availableSet.add(data.size.trim());
     }
 
+    // GEOGRAPHIC FILTER: Ensure user can only select origin packages matching their province
+    const normalize = str => {
+        if (!str) return "";
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    };
+    
+    // Attempt to identify user province (needs window.userData or userData in scope)
+    const userProvStr = (typeof userData !== 'undefined' && userData && userData.province) ? normalize(userData.province) : "";
+
+    const geoFilter = (s) => {
+        if (!userProvStr || userProvStr === "todas" || userProvStr === "") return true; // No profile mapping, allow all
+        if (s === "create_new_size") return true; 
+
+        const t = normalize(s);
+        const provinces = ["alava", "albacete", "alicante", "almeria", "asturias", "avila", "badajoz", "barcelona", "burgos", "caceres", "cadiz", "cantabria", "castellon", "ciudad real", "cordoba", "cuenca", "girona", "gerona", "granada", "guadalajara", "guipuzcoa", "huelva", "huesca", "islas baleares", "baleares", "jaen", "a coruna", "la coruna", "la rioja", "las palmas", "leon", "lleida", "lerida", "lugo", "madrid", "malaga", "murcia", "navarra", "ourense", "orense", "palencia", "pontevedra", "salamanca", "segovia", "sevilla", "soria", "tarragona", "tenerife", "teruel", "toledo", "valencia", "valladolid", "vizcaya", "bizkaia", "zamora", "zaragoza", "ceuta", "melilla"];
+        
+        let found = [];
+        provinces.forEach(p => {
+            let regex = new RegExp(`\\b${p}\\b`, 'g');
+            let match;
+            while ((match = regex.exec(t)) !== null) {
+                found.push({ name: p, index: match.index });
+            }
+        });
+        found.sort((a,b) => a.index - b.index);
+
+        if (found.length > 0) {
+            // Re-map common alternate names to standardize for comparison
+            let originProv = found[0].name;
+            if (originProv === 'gerona') originProv = 'girona';
+            if (originProv === 'lerida') originProv = 'lleida';
+            if (originProv === 'orense') originProv = 'ourense';
+            if (originProv === 'la coruna') originProv = 'a coruna';
+            if (originProv === 'baleares') originProv = 'islas baleares';
+            if (originProv === 'bizkaia') originProv = 'vizcaya';
+
+            // Check if origin matches user's province
+            if (originProv === userProvStr || userProvStr.includes(originProv) || originProv.includes(userProvStr)) {
+                return true; // Match!
+            }
+            return false; // Origin explicit but DOES NOT MATCH user province, hide it.
+        }
+        return true; // Generic item with no province in name (e.g. Nacional, Caja grande)
+    };
+
     availableSet.forEach(s => {
-        optionsHtml += `<option value="${s}">${s}</option>`;
+        if (geoFilter(s)) {
+            optionsHtml += `<option value="${s}">${s}</option>`;
+        }
     });
 
     optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
