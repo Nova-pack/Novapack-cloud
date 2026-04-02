@@ -62,44 +62,44 @@
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
                     <!-- PRIMARY: + Nuevo Albarán (always visible, prominent) -->
-                    <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('manual-tickets');" style="background:linear-gradient(135deg,#e65100,#ff6d00); border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px; box-shadow:0 2px 8px rgba(255,109,0,0.4); transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(255,109,0,0.5)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(255,109,0,0.4)'">
+                    <button type="button" onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('manual-tickets');" style="background:linear-gradient(135deg,#e65100,#ff6d00); border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px; box-shadow:0 2px 8px rgba(255,109,0,0.4); transition:all 0.2s;" onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(255,109,0,0.5)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(255,109,0,0.4)'">
                         <span class="material-symbols-outlined" style="font-size:1rem;">add_circle</span> + Nuevo Albar\u00e1n
                     </button>
                     <!-- SECONDARY: More dropdown -->
                     <div style="position:relative;" id="alb-more-dropdown-wrapper">
-                        <button onclick="var dd=document.getElementById('alb-more-dropdown'); dd.style.display=dd.style.display==='block'?'none':'block';" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                        <button type="button" onclick="var dd=document.getElementById('alb-more-dropdown'); dd.style.display=dd.style.display==='block'?'none':'block';" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
                             <span class="material-symbols-outlined" style="font-size:0.9rem;">menu</span> M\u00e1s \u25BE
                         </button>
                         <div id="alb-more-dropdown" style="display:none; position:absolute; top:100%; right:0; margin-top:4px; background:#2d2d30; border:1px solid #555; border-radius:8px; min-width:240px; box-shadow:0 8px 24px rgba(0,0,0,0.5); z-index:9999; overflow:hidden;">
                             <div style="padding:6px 14px; color:#888; font-size:0.65rem; text-transform:uppercase; font-weight:600; border-bottom:1px solid #3c3c3c;">Importar al Grid</div>
-                            <button onclick="if(typeof advOpenTicketImportModal==='function') advOpenTicketImportModal(); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof advOpenTicketImportModal==='function') advOpenTicketImportModal(); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem; color:#64B5F6;">download</span> Importar Todos
                             </button>
-                            <button onclick="if(typeof advImportByFilter==='function') advImportByFilter('date'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof advImportByFilter==='function') advImportByFilter('date'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem; color:#FFB74D;">calendar_today</span> Importar por Fecha
                             </button>
-                            <button onclick="if(typeof advImportByFilter==='function') advImportByFilter('name'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof advImportByFilter==='function') advImportByFilter('name'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem; color:#81C784;">person</span> Importar por Nombre
                             </button>
-                            <button onclick="if(typeof advImportByFilter==='function') advImportByFilter('number'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof advImportByFilter==='function') advImportByFilter('number'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem; color:#CE93D8;">tag</span> Importar por N\u00famero
                             </button>
                             <div style="border-top:1px solid #3c3c3c; margin:2px 0;"></div>
                             <div style="padding:6px 14px; color:#888; font-size:0.65rem; text-transform:uppercase; font-weight:600;">Herramientas</div>
-                            <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('scanner'); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#d4d4d4; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem; color:#4FC3F7;">qr_code_scanner</span> Esc\u00e1ner QR
                             </button>
-                            <button onclick="if(typeof openBulkDeleteModal==='function') openBulkDeleteModal(); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#FF5252; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
+                            <button type="button" onclick="if(typeof openBulkDeleteModal==='function') openBulkDeleteModal(); document.getElementById('alb-more-dropdown').style.display='none';" style="display:flex; align-items:center; gap:8px; width:100%; padding:10px 14px; background:none; border:none; color:#FF5252; cursor:pointer; font-size:0.82rem; text-align:left;" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background='none'">
                                 <span class="material-symbols-outlined" style="font-size:1rem;">delete_sweep</span> Eliminar por Lote
                             </button>
                         </div>
                     </div>
                     <!-- Exportar -->
-                    <button onclick="window._albExportCSV()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                    <button type="button" onclick="window._albExportCSV()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
                         <span class="material-symbols-outlined" style="font-size:0.9rem;">download</span> Exportar
                     </button>
                     <!-- Actualizar -->
-                    <button onclick="window._albRefresh()" style="background:#4CAF50; border:none; color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                    <button type="button" onclick="window._albRefresh()" style="background:#4CAF50; border:none; color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
                         <span class="material-symbols-outlined" style="font-size:0.9rem;">refresh</span> Actualizar
                     </button>
                 </div>
@@ -119,7 +119,7 @@
                     <input type="text" id="alb-text-filter" value="${_albTextFilter}" placeholder="🔍 Buscar por nº, cliente, destino, ciudad..." oninput="window._albApplyFilters()"
                         style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; padding:7px 12px; border-radius:4px; font-size:0.8rem; box-sizing:border-box;">
                 </div>
-                <button onclick="window._albFacturarSeleccionados()" style="background:linear-gradient(135deg,#1b5e20,#2e7d32); border:none; color:#fff; padding:7px 16px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                <button type="button" onclick="window._albFacturarSeleccionados()" style="background:linear-gradient(135deg,#1b5e20,#2e7d32); border:none; color:#fff; padding:7px 16px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
                     <span class="material-symbols-outlined" style="font-size:0.9rem;">receipt</span> Facturar Seleccionados
                 </button>
             </div>
@@ -156,8 +156,8 @@
             <div id="alb-pagination" style="background:#252526; padding:8px 24px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; border-top:1px solid #3c3c3c;">
                 <span id="alb-page-info" style="color:#888; font-size:0.75rem;"></span>
                 <div style="display:flex; gap:6px;">
-                    <button onclick="window._albPrevPage()" id="alb-btn-prev" style="background:#2d2d30; border:1px solid #3c3c3c; color:#ccc; padding:4px 12px; border-radius:3px; cursor:pointer; font-size:0.8rem;">← Anterior</button>
-                    <button onclick="window._albNextPage()" id="alb-btn-next" style="background:#2d2d30; border:1px solid #3c3c3c; color:#ccc; padding:4px 12px; border-radius:3px; cursor:pointer; font-size:0.8rem;">Siguiente →</button>
+                    <button type="button" onclick="window._albPrevPage()" id="alb-btn-prev" style="background:#2d2d30; border:1px solid #3c3c3c; color:#ccc; padding:4px 12px; border-radius:3px; cursor:pointer; font-size:0.8rem;">← Anterior</button>
+                    <button type="button" onclick="window._albNextPage()" id="alb-btn-next" style="background:#2d2d30; border:1px solid #3c3c3c; color:#ccc; padding:4px 12px; border-radius:3px; cursor:pointer; font-size:0.8rem;">Siguiente →</button>
                 </div>
             </div>
         </div>`;
@@ -361,7 +361,7 @@
                 <td style="padding:6px; text-align:center; color:${typeColor}; font-size:0.7rem; font-weight:bold;">${t.shippingType || 'Pagados'}</td>
                 <td style="padding:6px; text-align:center;">${statusHtml}</td>
                 <td style="padding:6px; text-align:center; white-space:nowrap;">
-                    <button onclick="window._albViewTicket('${t.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Ver detalle">👁️</button>
+                    <button type="button" onclick="window._albViewTicket('${t.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Ver detalle">👁️</button>
                 </td>
             </tr>`;
         });
