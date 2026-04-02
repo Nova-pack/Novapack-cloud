@@ -12807,7 +12807,19 @@ window.importTarifas50 = async () => {
                 await db.collection('users').doc(editId).update(userData);
                 if (window.userMap) window.userMap[editId] = { ...window.userMap[editId], ...userData };
                 alert('✅ Cliente actualizado.');
-            } else {
+                // Auto-generate default company payload
+                const defaultCompanyData = {
+                    name: userData.name || '',
+                    nif: userData.nif || '',
+                    address: `${userData.street || ''} ${userData.number || ''}`.trim(),
+                    cp: userData.cp || '',
+                    city: userData.localidad || '',
+                    province: userData.province || '',
+                    phone: userData.senderPhone || '',
+                    email: userData.email || '',
+                    createdAt: (typeof firebase !== 'undefined' && firebase.firestore) ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
+                };
+
                 // Create via Firebase Auth + Firestore
                 if (typeof firebase !== 'undefined' && firebase.auth) {
                     try {
@@ -12816,22 +12828,23 @@ window.importTarifas50 = async () => {
                         const newUid = cred.user.uid;
                         userData.authUid = newUid;
                         await db.collection('users').doc(newUid).set(userData);
+                        await db.collection('users').doc(newUid).collection('companies').doc('comp_main').set(defaultCompanyData);
+                        
                         if (window.userMap) window.userMap[newUid] = userData;
-                        // Re-login as admin
-                        if (currentUser && currentUser.email) {
-                            // The admin re-auth logic is already handled by the existing system
-                        }
-                        alert('✅ Cliente creado (ID: ' + userData.idNum + ').');
+                        // Re-login as admin logic handled
+                        alert('✅ Cliente creado (ID: ' + userData.idNum + ') y configurado por defecto.');
                     } catch(authErr) {
                         // If auth fails, save just to Firestore
                         const docRef = await db.collection('users').add(userData);
+                        await db.collection('users').doc(docRef.id).collection('companies').doc('comp_main').set(defaultCompanyData);
                         if (window.userMap) window.userMap[docRef.id] = userData;
                         alert('✅ Cliente creado (sin autenticación): ' + authErr.message);
                     }
                 } else {
                     const docRef = await db.collection('users').add(userData);
+                    await db.collection('users').doc(docRef.id).collection('companies').doc('comp_main').set(defaultCompanyData);
                     if (window.userMap) window.userMap[docRef.id] = userData;
-                    alert('✅ Cliente creado.');
+                    alert('✅ Cliente creado con perfil predeterminado.');
                 }
             }
             document.getElementById('adv-client-modal').style.display = 'none';
@@ -13204,7 +13217,7 @@ window.importTarifas50 = async () => {
     })();
 
     // Process scanned QR data
-    window._mtProcessScan = function(raw) {
+    window._mtProcessScan = async function(raw) {
         console.log('[MANUAL TICKETS] Raw scan:', raw);
         const statusEl = document.getElementById('mt-scanner-status');
 
@@ -13639,7 +13652,7 @@ window.importTarifas50 = async () => {
 <script src="ticket_search_v2.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260402"></script>
 <script src="mailbox_manager.js?v=20260402_1120"></script>
-<script src="ficha_cliente.js?v=20260402"></script>
+<script src="ficha_cliente.js?v=20260402_1145"></script>
 <script src="albaranes_central.js?v=20260402"></script>
 <script src="erp_tabs.js?v=20260402"></script>
 
