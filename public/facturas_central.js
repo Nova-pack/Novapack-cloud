@@ -72,7 +72,7 @@
                     <span id="fac-total-badge" style="background:rgba(255,255,255,0.2); color:#fff; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:bold;"></span>
                 </div>
                 <div style="display:flex; gap:8px; align-items:center;">
-                    <button type="button" onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('factura');" style="background:linear-gradient(135deg,#e65100,#ff6d00); border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px; box-shadow:0 2px 8px rgba(255,109,0,0.4);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+                    <button type="button" onclick="window._facNewInvoice()" style="background:linear-gradient(135deg,#e65100,#ff6d00); border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px; box-shadow:0 2px 8px rgba(255,109,0,0.4);" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
                         <span class="material-symbols-outlined" style="font-size:1rem;">add_circle</span> + Nueva Factura
                     </button>
                     <button type="button" onclick="window._facExportCSV()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3); color:#fff; padding:7px 14px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
@@ -500,6 +500,14 @@
     // ============================================================
     //  ACTIONS
     // ============================================================
+    window._facNewInvoice = function() {
+        if (typeof window.erpOpenTab === 'function') window.erpOpenTab('factura');
+        setTimeout(function() {
+            if (typeof window.advResetForm === 'function') window.advResetForm();
+            if (typeof window.advPopulateClientPicker === 'function') window.advPopulateClientPicker();
+            if (typeof window.advPopulateCompanyPicker === 'function') window.advPopulateCompanyPicker();
+        }, 300);
+    };
     window._facViewInvoice = function(docId) {
         // Load invoice into the advanced billing editor
         if (typeof window.erpOpenTab === 'function') window.erpOpenTab('factura');
