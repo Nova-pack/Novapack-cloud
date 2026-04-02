@@ -48,17 +48,39 @@ function categorizeEmail(subject, body) {
     return 'otro';
 }
 
-// Extract ticket references from text (NP-00001, NP00234, etc.)
+// Extract ticket references from text (150200209, NP-00001, NP00234, etc.)
 function extractTicketRef(text) {
     if (!text) return null;
     
-    // Format 1: Exact NP format (NP-12345, NP12345)
-    let match = text.match(/NP[-\s]?(\d{2,8})/i);
-    if (match) return 'NP-' + match[1];
+    // Normalize: collapse whitespace, remove invisible chars
+    const clean = text.replace(/\s+/g, ' ');
+    
+    // Format 1: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
+    // Supports any letter/digit prefix (2-6 chars) followed by digits
+    let match = clean.match(/\b([A-Z]{1,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
+    if (match) return (match[1] + match[2]).toUpperCase();
 
-    // Format 2: Keywords like Albaran, Alb, Ref followed by digits
-    match = text.match(/(?:albar[aá]n|alb|ref|referencia|ticket)[.\-\s:]*(\d{2,8})/i);
-    if (match) return 'NP-' + match[1];
+    // Format 2: Keywords followed by a number (albarán 150200209, ref: 12345, nº 150200209)
+    match = clean.match(/(?:albar[aáà]n|albaran|alb\.?|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?|número|numero)\s*[.:\-–—#nº°]*\s*(\d{5,12})/i);
+    if (match) return match[1];
+
+    // Format 3: "pod del 150200209" / "pod de 150200209" / "pod 150200209"
+    match = clean.match(/(?:pod|comprobante|justificante|prueba\s+de\s+entrega|acuse)\s+(?:del?|para|de\s+el)?\s*[#nº]*\s*(\d{5,12})/i);
+    if (match) return match[1];
+
+    // Format 4: Standalone long number (6-12 digits) likely to be an albarán
+    // Only match if no other significant numbers present to avoid false positives
+    match = clean.match(/\b(\d{6,12})\b/);
+    if (match) {
+        // Validate it's not a phone number (9 digits starting with 6/7/9 in Spain)
+        const num = match[1];
+        const isPhone = (num.length === 9 && /^[679]/.test(num));
+        const isDate = /^\d{2}[\/\-]\d{2}[\/\-]\d{2,4}$/.test(num);
+        const isYear = (num.length === 4 && parseInt(num) >= 1990 && parseInt(num) <= 2030);
+        if (!isPhone && !isDate && !isYear) {
+            return num;
+        }
+    }
 
     return null;
 }
