@@ -504,8 +504,11 @@ async function initTicketListener(retryCount = 0) {
             if (isFirstLoad && fireCount >= 2) { isFirstLoad = false; resolve(); }
         };
 
-        const q1 = db.collection('tickets').where('uid', 'in', finalVariants).limit(250);
-        const q2 = db.collection('tickets').where('clientIdNum', 'in', finalVariants).limit(250);
+        // EXTREMELY CRITICAL: We cannot use .orderBy('createdAt', 'desc') here because combined with 'in' 
+        // it requires a pre-built Firestore Composite Index, which will crash the entire app if missing.
+        // Instead, we fetch a large limit of tickets and sort them descending locally in updateTicketsList.
+        const q1 = db.collection('tickets').where('uid', 'in', finalVariants).limit(3000);
+        const q2 = db.collection('tickets').where('clientIdNum', 'in', finalVariants).limit(3000);
 
         const unsub1 = q1.onSnapshot(snap => {
             snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
