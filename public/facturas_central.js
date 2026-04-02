@@ -501,12 +501,15 @@
     //  ACTIONS
     // ============================================================
     window._facNewInvoice = function() {
-        if (typeof window.erpOpenTab === 'function') window.erpOpenTab('factura');
-        setTimeout(function() {
+        // Trigger the exact same toolbar button that users normally click
+        var btn = document.getElementById('btn-adv-new');
+        if (btn) {
+            btn.click();
+        } else {
+            // Fallback
+            window.erpOpenTab('factura');
             if (typeof window.advResetForm === 'function') window.advResetForm();
-            if (typeof window.advPopulateClientPicker === 'function') window.advPopulateClientPicker();
-            if (typeof window.advPopulateCompanyPicker === 'function') window.advPopulateCompanyPicker();
-        }, 300);
+        }
     };
     window._facViewInvoice = function(docId) {
         // Load invoice into the advanced billing editor

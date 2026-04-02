@@ -299,6 +299,7 @@
             el.style.flexDirection = 'column';
             el.style.flex = '1';
             el.style.overflow = 'auto';
+            el.style.width = '100%';
             el.style.background = '#1e1e1e';
         }
 
@@ -414,7 +415,7 @@
                 'erp-tab-inicio', 'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones',
                 'erp-tab-config', 'erp-tab-maintenance', 'erp-tab-pod',
                 'erp-tab-pending-deletes', 'erp-tab-users', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central',
-                'adv-history-workspace', 'adv-reports-workspace', 'adv-tariffs-workspace', 
+                'adv-billing-workspace', 'adv-history-workspace', 'adv-reports-workspace', 'adv-tariffs-workspace', 
                 'adv-clients-workspace', 'adv-providers-workspace', 'adv-manual-tickets-workspace', 
                 'adv-scanner-workspace', 'erp-tab-mailbox', 'erp-tab-facturas-central'
             ];
