@@ -410,6 +410,14 @@
                 document.body.appendChild(proView);
             }
 
+            // Move modals OUT of main-content so they won't be hidden by display:none !important
+            ['mailbox-modal', 'view-pod-panel'].forEach(function(modalId) {
+                var modal = document.getElementById(modalId);
+                if (modal && modal.parentElement !== document.body) {
+                    document.body.appendChild(modal);
+                }
+            });
+
             // Move tab containers from body into view-adv-billing so they participate in PRO flex layout
             var tabContainerIds = [
                 'erp-tab-inicio', 'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones',

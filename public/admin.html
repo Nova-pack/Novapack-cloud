@@ -1064,14 +1064,12 @@
                 mywindow.document.write('<img src="' + photUrl + '" style="max-height:300px;"></div>');
             }
 
+            // Wait for images to load, then print
+            mywindow.document.write('<script>window.onload = function() { setTimeout(function(){ window.print(); }, 200); }<\/script>');
+            
             mywindow.document.write('</body></html>');
             mywindow.document.close();
             mywindow.focus();
-
-            setTimeout(() => {
-                mywindow.print();
-                mywindow.close();
-            }, 500);
         }
 
         function emailPOD() {
