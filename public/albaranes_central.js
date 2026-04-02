@@ -420,11 +420,13 @@
     };
 
     // ============================================================
-    //  VIEW TICKET DETAIL (reuses existing modal)
+    //  VIEW TICKET DETAIL
     // ============================================================
     window._albViewTicket = function(docId) {
-        if (typeof window.advOpenTicketDetailModal === 'function') {
-            window.advOpenTicketDetailModal(docId);
+        if (typeof window.openTicketPreviewModal === 'function') {
+            window.openTicketPreviewModal(docId, 'view');
+        } else if (typeof window.openTicketEditModal === 'function') {
+            window.openTicketEditModal(docId);
         } else {
             alert('Función de detalle no disponible.');
         }
