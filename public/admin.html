@@ -9869,7 +9869,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     adminManPackages = [{ qty: numBultos, size: 'Bulto' }];
                     renderAdminPackagesList();
 
-                                        function triggerAdminTicketAutoSave() {
+                    function triggerAdminTicketAutoSave() {
                         if (window.adminScannerMode === 'form') {
                             setTimeout(() => {
                                 const form = document.getElementById('admin-manual-ticket-form');
@@ -10235,6 +10235,16 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     if (!confirm("¿Borrar definitivamente este albarán? Esta acción pulverizará el documento en Firebase y no se puede deshacer.")) return;
                     showLoading();
                     try {
+                        const docSnap = await db.collection('tickets').doc(id).get();
+                        if (docSnap.exists) {
+                            const dData = docSnap.data();
+                            if (dData.erpId) {
+                                await db.collection('deleted_erp_ids').doc(String(dData.erpId)).set({
+                                    deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                    docId: id
+                                });
+                            }
+                        }
                         await db.collection('tickets').doc(id).delete();
                         alert("Albarán fulminado definitivamente.");
                         document.getElementById('scanned-result-area').classList.add('hidden');
