@@ -766,6 +766,15 @@ window.initUserNotifications = function(uid) {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Portes Debidos Toggle
+    const shippingTypeSelect = document.getElementById('ticket-shipping-type');
+    const boxNif = document.getElementById('box-receiver-nif');
+    if(shippingTypeSelect && boxNif) {
+        shippingTypeSelect.addEventListener('change', (e) => {
+            boxNif.style.display = e.target.value === 'Debidos' ? 'block' : 'none';
+        });
+    }
+
     // Dropdown toggle
     const btnNotif = document.getElementById('btn-notifications');
     const dropdown = document.getElementById('notification-dropdown');
@@ -1528,6 +1537,7 @@ async function handleFormSubmit(e) {
             senderAddress: document.getElementById('ticket-sender-address').value,
             senderPhone: document.getElementById('ticket-sender-phone').value,
             receiver: document.getElementById('ticket-receiver').value.trim().toUpperCase(),
+            receiverNif: document.getElementById('ticket-receiver-nif') ? document.getElementById('ticket-receiver-nif').value.trim() : '',
             street: street,
             number: number,
             localidad: locality,
@@ -3192,7 +3202,7 @@ function generateTicketHTML(t, footerLabel) {
                               <div style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${t.id}</div>
                          </div>
                          <div style="background: white; padding: 2px; border: 1px solid #eee;">
-                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}`)}" 
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}`)}" 
                                  alt="QR Albaran" style="display: block; width: 110px; height: 110px; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;">
                          </div>
                     </div>

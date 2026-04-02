@@ -13037,6 +13037,8 @@ window.importTarifas50 = async () => {
                             <div id="mt-client-company" style="color:#aaa; font-size:0.8rem; margin-top:4px;"></div>
                             <input type="hidden" id="mt-client-uid">
                             <input type="hidden" id="mt-client-compid">
+                            <input type="hidden" id="mt-billto-uid" value="">
+                            <input type="hidden" id="mt-billto-idnum" value="">
                             <input type="hidden" id="mt-client-sender-name">
                             <input type="hidden" id="mt-client-sender-address">
                             <input type="hidden" id="mt-client-sender-phone">
@@ -13344,10 +13346,41 @@ window.importTarifas50 = async () => {
                 document.getElementById('mt-cod-warning').style.display = 'none';
             }
 
-            // CLi ID from the raw text
+            // ====== AUTOMATIC DEBIDOS NIF MAPPING ======
+            if (parsed.NIF && parsed.NIF.trim() !== '') {
+                try {
+                    statusEl.textContent = '🔍 Verificando CIF/NIF para Portes Debidos...';
+                    
+                    // Search users DB for matching NIF or idNum
+                    let foundUid = null, foundIdNum = null;
+                    const snap = await db.collection('users').where('nif', '==', parsed.NIF).limit(1).get();
+                    if (!snap.empty) {
+                        foundUid = snap.docs[0].id;
+                        foundIdNum = snap.docs[0].data().idNum;
+                    } else {
+                        const snap2 = await db.collection('users').where('idNum', '==', parsed.NIF).limit(1).get();
+                        if (!snap2.empty) {
+                            foundUid = snap2.docs[0].id;
+                            foundIdNum = snap2.docs[0].data().idNum;
+                        }
+                    }
+
+                    if (foundIdNum) {
+                        document.getElementById('mt-billto-uid').value = foundUid;
+                        document.getElementById('mt-billto-idnum').value = foundIdNum;
+                        statusEl.textContent = '✅ Albarán vinculado al pagador (ID: ' + foundIdNum + ')';
+                    } else {
+                        document.getElementById('mt-billto-uid').value = '';
+                        document.getElementById('mt-billto-idnum').value = '';
+                        statusEl.textContent = '⚠️ Pagador ajeno al sistema (Caerá en contenedor de Debidos)';
+                    }
+                } catch(e) { console.warn('Error NIF:', e); }
+            }
+
+            // CLi ID from the raw text (Sender)
             if (parsed.CLI) {
                 document.getElementById('mt-client-id').value = parsed.CLI;
-                window._mtLookupClient(); // Auto-lookup
+                window._mtLookupClient(); // Auto-lookup sender
             }
 
             // ID reference (original ticket ID)
@@ -13483,6 +13516,14 @@ window.importTarifas50 = async () => {
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                 updatedAt: firebase.firestore.FieldValue.serverTimestamp()
             };
+
+            // Inject billTo if Debidos NIF matched
+            const billToUid = document.getElementById('mt-billto-uid').value;
+            const billToIdNum = document.getElementById('mt-billto-idnum').value;
+            if (shippingType === 'Debidos' && billToUid && billToIdNum) {
+                ticketData.billToUid = billToUid;
+                ticketData.billToClientIdNum = billToIdNum;
+            }
 
             await db.collection('tickets').doc(docId).set(ticketData);
 
