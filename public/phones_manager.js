@@ -32,6 +32,30 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- MASTER PINS -->
+                    <div style="background:linear-gradient(135deg, rgba(156,39,176,0.08), rgba(103,58,183,0.08)); border:1px solid rgba(156,39,176,0.3); border-radius:10px; padding:16px 20px; margin-bottom:20px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <span class="material-symbols-outlined" style="color:#AB47BC; font-size:1.2rem;">admin_panel_settings</span>
+                            <span style="color:#AB47BC; font-weight:bold; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px;">PIN Maestro — Acceso Admin al Terminal</span>
+                        </div>
+                        <p style="color:#888; font-size:0.8rem; margin:0 0 12px;">Estos PIN permiten acceder al terminal de cualquier ruta desde la app repartidor sin necesidad de SMS.</p>
+                        <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-end;">
+                            <div>
+                                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">PIN Maestro 1</label>
+                                <input type="text" id="master-pin-1" maxlength="8" placeholder="Ej: 1234" style="width:140px; padding:8px 12px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:1rem; font-weight:bold; letter-spacing:3px; text-align:center;">
+                            </div>
+                            <div>
+                                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">PIN Maestro 2</label>
+                                <input type="text" id="master-pin-2" maxlength="8" placeholder="Ej: 5678" style="width:140px; padding:8px 12px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:1rem; font-weight:bold; letter-spacing:3px; text-align:center;">
+                            </div>
+                            <button onclick="saveMasterPins()" style="background:linear-gradient(135deg,#AB47BC,#7B1FA2); border:none; color:#fff; padding:8px 20px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:5px;">
+                                <span class="material-symbols-outlined" style="font-size:16px;">save</span> Guardar PINs
+                            </button>
+                            <span id="master-pin-status" style="color:#888; font-size:0.8rem;"></span>
+                        </div>
+                    </div>
+
                     <table id="phones-mgr-table" style="width:100%; border-collapse:collapse; font-size:0.85rem;">
                         <thead style="background:#333;">
                             <tr>
@@ -215,6 +239,56 @@
         } catch(e) {
             alert('Error: ' + e.message);
         }
+    };
+
+    // ============ MASTER PINS ============
+
+    async function loadMasterPins() {
+        try {
+            const doc = await db.collection('config').doc('phones').get();
+            if (doc.exists) {
+                const data = doc.data();
+                const pin1 = document.getElementById('master-pin-1');
+                const pin2 = document.getElementById('master-pin-2');
+                if (pin1 && data.masterPin1) pin1.value = data.masterPin1;
+                if (pin2 && data.masterPin2) pin2.value = data.masterPin2;
+            }
+        } catch (e) {
+            console.error('[Phones] Error loading master PINs:', e);
+        }
+    }
+
+    window.saveMasterPins = async () => {
+        const pin1 = (document.getElementById('master-pin-1')?.value || '').trim();
+        const pin2 = (document.getElementById('master-pin-2')?.value || '').trim();
+        const statusEl = document.getElementById('master-pin-status');
+
+        if (!pin1 && !pin2) {
+            alert('Introduce al menos un PIN maestro');
+            return;
+        }
+
+        try {
+            await db.collection('config').doc('phones').set({
+                masterPin1: pin1,
+                masterPin2: pin2,
+                masterPinsUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            if (statusEl) {
+                statusEl.textContent = 'PINs guardados';
+                statusEl.style.color = '#4CAF50';
+                setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
+    // Auto-load PINs after rendering
+    const _origLoad = window.loadPhonesManager;
+    window.loadPhonesManager = async () => {
+        await _origLoad();
+        loadMasterPins();
     };
 
     console.log('[Phones Manager] ✅ Módulo cargado');

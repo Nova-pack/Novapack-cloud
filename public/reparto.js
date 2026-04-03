@@ -269,6 +269,97 @@ function initApp() {
         document.getElementById('login-error').textContent = '';
     });
 
+    // --- MASTER PIN AUTH ---
+    var _adminRoutes = [];
+
+    document.getElementById('btn-master-pin').addEventListener('click', async function() {
+        var pin = (document.getElementById('master-pin-input').value || '').trim();
+        if (!pin) {
+            document.getElementById('login-error').textContent = 'Introduce un PIN maestro.';
+            return;
+        }
+        document.getElementById('login-error').textContent = '';
+        showLoading();
+
+        try {
+            var configDoc = await db.collection('config').doc('phones').get();
+            var configData = configDoc.exists ? configDoc.data() : {};
+            var pin1 = configData.masterPin1 || '';
+            var pin2 = configData.masterPin2 || '';
+
+            if (pin !== pin1 && pin !== pin2) {
+                document.getElementById('login-error').textContent = 'PIN maestro incorrecto.';
+                hideLoading();
+                return;
+            }
+
+            // PIN valid — load all routes
+            var phonesSnap = await db.collection('config').doc('phones').collection('list').get();
+            _adminRoutes = [];
+            phonesSnap.forEach(function(doc) {
+                var d = doc.data();
+                _adminRoutes.push({
+                    docId: doc.id,
+                    label: d.label || 'Sin nombre',
+                    number: d.number || '',
+                    driverNames: [d.driverName, d.driverName2, d.driverName3, d.driverName4].filter(function(n) { return n && n.trim(); })
+                });
+            });
+
+            if (_adminRoutes.length === 0) {
+                document.getElementById('login-error').textContent = 'No hay rutas configuradas.';
+                hideLoading();
+                return;
+            }
+
+            showAdminRouteSelector();
+        } catch (e) {
+            console.error('Master PIN error:', e);
+            document.getElementById('login-error').textContent = 'Error: ' + e.message;
+        } finally {
+            hideLoading();
+        }
+    });
+
+    function showAdminRouteSelector() {
+        document.getElementById('login-view').style.display = 'none';
+        document.getElementById('main-app').style.display = 'none';
+        document.getElementById('driver-selector-view').style.display = 'none';
+        document.getElementById('admin-route-selector').style.display = 'flex';
+
+        var container = document.getElementById('admin-route-options');
+        container.innerHTML = '';
+
+        _adminRoutes.forEach(function(route) {
+            var driversText = route.driverNames.length > 0 ? route.driverNames.join(' · ') : 'Sin chóferes';
+            var btn = document.createElement('button');
+            btn.className = 'driver-option-btn';
+            btn.style.borderColor = 'rgba(171,71,188,0.3)';
+            btn.style.background = 'rgba(171,71,188,0.06)';
+            btn.innerHTML = '<span class="driver-icon">📍</span><div style="text-align:left;"><div>' + route.label.toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + driversText + '</div></div>';
+            btn.addEventListener('click', function() {
+                currentDriverPhone = normalizePhone(route.number);
+                currentRouteLabel = route.label;
+
+                if (route.driverNames.length <= 1) {
+                    currentDriverName = route.driverNames[0] || 'ADMIN';
+                    document.getElementById('admin-route-selector').style.display = 'none';
+                    enterMainApp();
+                } else {
+                    document.getElementById('admin-route-selector').style.display = 'none';
+                    showDriverSelector(route.driverNames, route.label);
+                }
+            });
+            container.appendChild(btn);
+        });
+    }
+
+    document.getElementById('btn-admin-back').addEventListener('click', function() {
+        document.getElementById('admin-route-selector').style.display = 'none';
+        document.getElementById('login-view').style.display = 'flex';
+        document.getElementById('master-pin-input').value = '';
+    });
+
     // --- AUTH STATE ---
     auth.onAuthStateChanged(async function(user) {
         if (user && user.phoneNumber) {
@@ -322,6 +413,7 @@ function initApp() {
             document.getElementById('login-view').style.display = 'flex';
             document.getElementById('main-app').style.display = 'none';
             document.getElementById('driver-selector-view').style.display = 'none';
+            document.getElementById('admin-route-selector').style.display = 'none';
             if (unsubscribe) { unsubscribe(); unsubscribe = null; }
         }
     });
@@ -360,6 +452,7 @@ function initApp() {
     function enterMainApp() {
         document.getElementById('login-view').style.display = 'none';
         document.getElementById('driver-selector-view').style.display = 'none';
+        document.getElementById('admin-route-selector').style.display = 'none';
         document.getElementById('driver-name').textContent = currentDriverName;
         document.getElementById('main-app').style.display = 'block';
 

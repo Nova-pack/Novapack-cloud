@@ -167,6 +167,17 @@
             </div>
             <div id="recaptcha-container"></div>
             <button class="btn btn-primary" id="btn-send-sms" style="margin-top:10px;">📲 ENVIAR CÓDIGO SMS</button>
+
+            <div style="display:flex; align-items:center; gap:10px; margin:18px 0 10px;">
+                <div style="flex:1; height:1px; background:rgba(255,255,255,0.1);"></div>
+                <span style="font-size:0.7rem; color:#555; letter-spacing:2px; font-weight:700;">O ACCESO ADMIN</span>
+                <div style="flex:1; height:1px; background:rgba(255,255,255,0.1);"></div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label" style="color:#AB47BC;">🔐 PIN Maestro</label>
+                <input type="password" id="master-pin-input" class="form-control" placeholder="Introduce PIN maestro" style="text-align:center; font-size:1.2rem; font-weight:900; letter-spacing:5px;">
+            </div>
+            <button class="btn btn-primary" id="btn-master-pin" style="margin-top:10px; background:linear-gradient(135deg,#AB47BC,#7B1FA2);">🔑 ACCEDER COMO ADMIN</button>
         </div>
 
         <!-- Step 2: Verify code -->
@@ -190,15 +201,30 @@
         <div class="login-logo">NOVAPACK<span>➤</span></div>
         <div class="login-sub" style="margin-bottom:6px;">🚚 REPARTO</div>
         <div id="driver-route-label" style="font-size:0.7rem; color:var(--brand); font-weight:800; letter-spacing:3px; margin-bottom:20px; text-transform:uppercase;"></div>
-        
+
         <div style="font-size:0.75rem; color:#888; letter-spacing:2px; font-weight:700; margin-bottom:14px;">¿QUIÉN CONDUCE HOY?</div>
-        
+
         <div id="driver-options" style="display:flex; flex-direction:column; gap:10px;"></div>
     </div>
 </div>
 
+<!-- ===== ADMIN ROUTE SELECTOR (shown after master PIN, choose route) ===== -->
+<div id="admin-route-selector" style="display:none;">
+    <div class="login-card" style="max-width:420px; text-align:center;">
+        <div class="login-logo">NOVAPACK<span>➤</span></div>
+        <div class="login-sub" style="margin-bottom:6px;">🚚 REPARTO</div>
+        <div style="font-size:0.7rem; color:#AB47BC; font-weight:800; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase;">MODO ADMINISTRADOR</div>
+
+        <div style="font-size:0.75rem; color:#888; letter-spacing:2px; font-weight:700; margin-bottom:14px;">SELECCIONA UNA RUTA</div>
+
+        <div id="admin-route-options" style="display:flex; flex-direction:column; gap:10px; max-height:60vh; overflow-y:auto;"></div>
+
+        <button class="btn btn-outline" id="btn-admin-back" style="margin-top:15px; font-size:0.8rem;">← Volver al login</button>
+    </div>
+</div>
+
 <style>
-    #driver-selector-view {
+    #driver-selector-view, #admin-route-selector {
         position:fixed; top:0; left:0; width:100%; height:100%; z-index:100;
         background:linear-gradient(135deg, #0a0a0a 0%, #1a0d00 100%);
         display:flex; align-items:center; justify-content:center;
