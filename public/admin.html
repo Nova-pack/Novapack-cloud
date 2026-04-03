@@ -1365,9 +1365,9 @@
         <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; padding:40px;">
             <h2 style="color:#fff; margin-top:0; margin-bottom:30px; font-size:1.5rem; font-weight:400;"><span class="material-symbols-outlined">check_circle</span> ¿Quién está operando el sistema?</h2>
             <div style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center;">
-                <button class="btn" style="background:linear-gradient(135deg, #005a9e, #003366); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(0,90,158,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="erpSetIdentityFromInicio('DAVID')"><span class="material-symbols-outlined">person</span> DAVID</button>
-                <button class="btn" style="background:linear-gradient(135deg, #E040FB, #7B1FA2); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(224,64,251,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="erpSetIdentityFromInicio('MARÍA JOSÉ')"><span class="material-symbols-outlined">person</span> MARÍA JOSÉ</button>
-                <button class="btn" style="background:linear-gradient(135deg, #FF9800, #F57C00); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(255,152,0,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="erpSetIdentityFromInicio('CLAUDIA')"><span class="material-symbols-outlined">person</span> CLAUDIA</button>
+                <button class="btn" style="background:linear-gradient(135deg, #005a9e, #003366); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(0,90,158,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="requestPinForIdentity('DAVID')"><span class="material-symbols-outlined">person</span> DAVID</button>
+                <button class="btn" style="background:linear-gradient(135deg, #E040FB, #7B1FA2); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(224,64,251,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="requestPinForIdentity('MARÍA JOSÉ')"><span class="material-symbols-outlined">person</span> MARÍA JOSÉ</button>
+                <button class="btn" style="background:linear-gradient(135deg, #FF9800, #F57C00); color:white; border:none; padding:15px 35px; font-size:1.2rem; border-radius:10px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(255,152,0,0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" onclick="requestPinForIdentity('CLAUDIA')"><span class="material-symbols-outlined">person</span> CLAUDIA</button>
             </div>
         </div>
     </div>
@@ -1448,7 +1448,7 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 <script>
-// === PIN Gate — Facturación Pro ===
+// === PIN Gate — Identity Selection ===
 (function() {
     var FACTURA_PINS = {
         'DAVID':       '2580',
@@ -1456,36 +1456,15 @@ document.addEventListener('DOMContentLoaded', () => {
         'CLAUDIA':     '4567'
     };
 
-    var PIN_GATED_TABS = ['factura','facturas-central','history','contabilidad','reports','tariffs'];
+    var _pendingIdentity = null, _pinAttempts = 0;
 
-    window._facturacionPinVerified = false;
-    var _pendingTabId = null, _pendingTabOpts = null, _pinAttempts = 0;
-
-    // Wrap erpOpenTab once it exists
-    var _gateTimer = setInterval(function() {
-        if (typeof window.erpOpenTab === 'function' && !window._pinGateInstalled) {
-            window._pinGateInstalled = true;
-            clearInterval(_gateTimer);
-            var _origOpen = window.erpOpenTab;
-            window.erpOpenTab = function(tabId, opts) {
-                if (PIN_GATED_TABS.indexOf(tabId) !== -1 && !window._facturacionPinVerified) {
-                    _pendingTabId = tabId;
-                    _pendingTabOpts = opts;
-                    showPinModal();
-                    return;
-                }
-                _origOpen(tabId, opts);
-            };
-            console.log('[PIN] Gate installed on erpOpenTab');
-        }
-    }, 150);
-
-    window.showPinModal = function() {
+    // Called by identity picker buttons
+    window.requestPinForIdentity = function(name) {
+        _pendingIdentity = name;
         var m = document.getElementById('pin-access-modal');
         if (!m) return;
         m.style.display = 'flex';
-        var id = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity') || '?';
-        document.getElementById('pin-modal-user').textContent = id + ' \u2014 Introduce tu PIN de 4 d\u00edgitos';
+        document.getElementById('pin-modal-user').textContent = name + ' \u2014 Introduce tu PIN de 4 d\u00edgitos';
         document.getElementById('pin-error').textContent = '';
         _pinAttempts = 0;
         var inps = document.querySelectorAll('#pin-inputs .pin-digit');
@@ -1496,7 +1475,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.closePinModal = function() {
         var m = document.getElementById('pin-access-modal');
         if (m) m.style.display = 'none';
-        _pendingTabId = null; _pendingTabOpts = null;
+        _pendingIdentity = null;
     };
 
     window.verifyPin = function() {
@@ -1505,12 +1484,11 @@ document.addEventListener('DOMContentLoaded', () => {
         for (var i = 0; i < inps.length; i++) pin += inps[i].value;
         if (pin.length !== 4) return;
 
-        var identity = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity');
-        if (pin === FACTURA_PINS[identity]) {
-            window._facturacionPinVerified = true;
+        if (pin === FACTURA_PINS[_pendingIdentity]) {
             closePinModal();
-            if (_pendingTabId && typeof window.erpOpenTab === 'function') {
-                window.erpOpenTab(_pendingTabId, _pendingTabOpts || {});
+            // PIN correct → set identity and proceed
+            if (typeof erpSetIdentityFromInicio === 'function') {
+                erpSetIdentityFromInicio(_pendingIdentity);
             }
         } else {
             _pinAttempts++;
