@@ -1493,6 +1493,46 @@ window.acceptTerms = async function() {
     }
 };
 
+// --- DAILY REMINDER (Point 1: Package count/type verification) ---
+let _dailyReminderShown = false;
+let _dailyReminderCallback = null;
+
+window.dismissDailyReminder = function() {
+    const modal = document.getElementById('modal-daily-reminder');
+    if (modal) modal.style.display = 'none';
+    // Save today's date so it doesn't show again today
+    try { localStorage.setItem('novapack_daily_reminder', new Date().toISOString().slice(0, 10)); } catch(e) {}
+    _dailyReminderShown = true;
+    if (_dailyReminderCallback) {
+        _dailyReminderCallback();
+        _dailyReminderCallback = null;
+    }
+};
+
+function checkDailyReminder() {
+    if (_dailyReminderShown) return Promise.resolve(true);
+    // Check if already shown today
+    try {
+        const lastShown = localStorage.getItem('novapack_daily_reminder');
+        const today = new Date().toISOString().slice(0, 10);
+        if (lastShown === today) {
+            _dailyReminderShown = true;
+            return Promise.resolve(true);
+        }
+    } catch(e) {}
+    // Show the reminder
+    return new Promise(function(resolve) {
+        const modal = document.getElementById('modal-daily-reminder');
+        if (modal) {
+            modal.style.display = 'flex';
+            _dailyReminderCallback = function() { resolve(true); };
+        } else {
+            _dailyReminderShown = true;
+            resolve(true);
+        }
+    });
+}
+
 // --- FIRST TICKET WARNING ---
 let _firstTicketWarningShown = false;
 let _firstTicketContinueCallback = null;
@@ -1548,6 +1588,10 @@ let isSubmittingTicket = false;
 async function handleFormSubmit(e) {
     e.preventDefault();
     if (isSubmittingTicket) return;
+
+    // Daily reminder (Point 1: verify packages)
+    const dailyOk = await checkDailyReminder();
+    if (!dailyOk) return;
 
     // First ticket warning check
     const canProceed = await checkFirstTicketWarning();

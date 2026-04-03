@@ -422,6 +422,21 @@
         </div>
     </div>
 
+    <!-- Daily Reminder Modal (Point 1 - Package verification) -->
+    <div id="modal-daily-reminder" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99997; align-items:center; justify-content:center; padding:20px;">
+        <div style="background:#1a1a1a; border:1px solid #2196F3; border-radius:14px; max-width:520px; width:100%; padding:30px; color:#d4d4d4; text-align:center;">
+            <div style="font-size:2.5rem; margin-bottom:10px;">&#128230;</div>
+            <h2 style="color:#2196F3; margin:0 0 15px; font-size:1.1rem; letter-spacing:1px;">RECORDATORIO DIARIO</h2>
+            <div style="font-size:0.9rem; line-height:1.7; color:#ccc; text-align:left; margin-bottom:20px;">
+                <p style="margin:0 0 12px;">Recuerde que es <strong style="color:#fff;">obligatorio</strong> verificar que el <strong style="color:#fff;">numero de bultos</strong> y el <strong style="color:#fff;">tipo de mercancia</strong> declarados en cada albaran correspondan <strong style="color:#fff;">exactamente</strong> con la mercancia fisica entregada.</p>
+                <p style="margin:0;"><strong style="color:#2196F3;">NOVAPACK S.L.</strong> se reserva el derecho de modificar el albaran si los datos declarados no coinciden con la mercancia real recibida.</p>
+            </div>
+            <button onclick="window.dismissDailyReminder()" style="width:100%; padding:14px; background:linear-gradient(135deg, #2196F3, #1565C0); border:none; color:#fff; font-size:1rem; font-weight:bold; letter-spacing:2px; border-radius:8px; cursor:pointer;">
+                ENTENDIDO
+            </button>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div id="loading-overlay"
         style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:none; flex-direction:column; align-items:center; justify-content:center; z-index:10000; backdrop-filter:blur(5px);">

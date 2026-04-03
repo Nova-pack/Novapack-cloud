@@ -3904,6 +3904,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const batch = db.batch();
                 chunk.forEach(t => {
                     batch.delete(db.collection('tickets').doc(t.docId));
+                    // Blacklist ticket IDs so physical copies are detected later
+                    const blData = { deletedAt: firebase.firestore.FieldValue.serverTimestamp(), docId: t.docId, bulk: true };
+                    if (t.erpId) batch.set(db.collection('deleted_erp_ids').doc(String(t.erpId)), blData);
+                    if (t.id && String(t.id) !== String(t.erpId)) batch.set(db.collection('deleted_erp_ids').doc(String(t.id)), blData);
                 });
                 try {
                     await batch.commit();
@@ -10104,17 +10108,33 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                                 resetAdminTicketForm();
                                 return;
                             }
-                            // 2) Consultar si existe con deleteRequested activo
-                            const reqSnap = await db.collection('tickets').where('erpId', '==', qrData.id).limit(1).get();
-                            if (!reqSnap.empty) {
-                                const existingTicket = reqSnap.docs[0].data();
+                            // 2) Consultar si existe por erpId O por id (business ID)
+                            const searchTicketId = String(qrData.id);
+                            const reqSnap = await db.collection('tickets').where('erpId', '==', searchTicketId).limit(1).get();
+                            let foundExisting = !reqSnap.empty ? reqSnap.docs[0] : null;
+                            // Si no se encontró por erpId, buscar por id (campo de negocio)
+                            if (!foundExisting) {
+                                const idSnap = await db.collection('tickets').where('id', '==', searchTicketId).limit(1).get();
+                                if (!idSnap.empty) foundExisting = idSnap.docs[0];
+                            }
+                            // También buscar sin ceros iniciales
+                            if (!foundExisting) {
+                                const trimmedId = searchTicketId.replace(/^0+/, '');
+                                if (trimmedId !== searchTicketId) {
+                                    const trimSnap = await db.collection('tickets').where('id', '==', trimmedId).limit(1).get();
+                                    if (!trimSnap.empty) foundExisting = trimSnap.docs[0];
+                                }
+                            }
+                            if (foundExisting) {
+                                const existingTicket = foundExisting.data();
                                 if (existingTicket.deleteRequested || String(existingTicket.status || '').toLowerCase().includes('anula')) {
                                     alert("🚫 ¡ALBARÁN PENDIENTE DE ANULACIÓN!\n\nEste albarán (Ref: " + qrData.id + ") tiene una solicitud de borrado activa.\nNO se grabará.");
                                     resetAdminTicketForm();
                                     return;
                                 }
                                 // Ya existe y NO está anulado → Duplicado real
-                                alert("¡ATENCIÓN!\n\nEste albarán externo (Ref: " + qrData.id + ") YA SE ENCUENTRA REGISTRADO en la base de datos del cliente.\nAutoguardado cancelado para evitar un duplicado exacto.");
+                                const existDate = existingTicket.createdAt && typeof existingTicket.createdAt.toDate === 'function' ? existingTicket.createdAt.toDate().toLocaleString() : '';
+                                alert("⚠️ ¡DUPLICADO DETECTADO!\n\nEste albarán (Ref: " + qrData.id + ") YA SE ENCUENTRA REGISTRADO en el sistema." + (existDate ? "\nFecha de registro: " + existDate : "") + "\nRemitente: " + (existingTicket.sender || '---') + "\nDestinatario: " + (existingTicket.receiver || '---') + "\n\nAutoguardado cancelado para evitar un duplicado.");
                             } else {
                                 triggerAdminTicketAutoSave();
                             }
@@ -10467,11 +10487,19 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         const docSnap = await db.collection('tickets').doc(id).get();
                         if (docSnap.exists) {
                             const dData = docSnap.data();
+                            const blacklistData = {
+                                deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                docId: id,
+                                sender: dData.sender || '',
+                                receiver: dData.receiver || ''
+                            };
+                            // Blacklist por erpId
                             if (dData.erpId) {
-                                await db.collection('deleted_erp_ids').doc(String(dData.erpId)).set({
-                                    deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                                    docId: id
-                                });
+                                await db.collection('deleted_erp_ids').doc(String(dData.erpId)).set(blacklistData);
+                            }
+                            // Blacklist también por id (business ID) si es diferente
+                            if (dData.id && String(dData.id) !== String(dData.erpId)) {
+                                await db.collection('deleted_erp_ids').doc(String(dData.id)).set(blacklistData);
                             }
                         }
                         await db.collection('tickets').doc(id).delete();
