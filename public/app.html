@@ -251,10 +251,10 @@
                                         style="font-weight:900; font-size:1.1rem; border-color:var(--brand-primary);">
                                     <div id="suggestions-box" class="hidden"></div>
                                 </div>
-                                <div id="box-receiver-nif" style="display:none; margin-bottom: 12px;">
+                                <div id="box-receiver-nif" style="margin-bottom: 12px;">
                                     <input type="text" id="ticket-receiver-nif" class="form-control"
-                                        placeholder="CIF / NIF DEL DESTINATARIO OBLIGATORIO" style="border-color:#FF9800; text-transform:uppercase;">
-                                    <div style="font-size:0.6rem; color:#FF9800; margin-top:4px; font-weight:bold;">⚠️ Requerido para asignar facturación remota (Portes Debidos)</div>
+                                        placeholder="CIF / NIF DEL DESTINATARIO *" required style="border-color:#FF9800; text-transform:uppercase;">
+                                    <div style="font-size:0.6rem; color:#FF9800; margin-top:4px; font-weight:bold;">⚠️ Campo obligatorio</div>
                                 </div>
                                 <div
                                     style="display: grid; grid-template-columns: 3fr 1fr; gap: 10px; margin-bottom: 12px;">
@@ -266,7 +266,7 @@
                                     style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom:12px;">
                                     <input type="text" id="ticket-localidad" class="form-control"
                                         placeholder="LOCALIDAD">
-                                    <input type="text" id="ticket-cp" class="form-control" placeholder="C.P." maxlength="5">
+                                    <input type="text" id="ticket-cp" class="form-control" placeholder="C.P. *" required maxlength="5">
                                 </div>
                                 <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px;">
                                     <select id="ticket-province" class="form-control">

@@ -913,9 +913,15 @@ async function loadEditor(t) {
         await addPackageRow();
     }
 
-    // Actions
-    document.getElementById('action-print').onclick = () => printTicket(t);
-    document.getElementById('action-label').onclick = () => printLabel(t);
+    // Actions — block printing if pending confirmation
+    document.getElementById('action-print').onclick = () => {
+        if (isPendingConfirmation) { alert("No se puede imprimir un albarán pendiente de revisión. Acepta o modifica los cambios primero."); return; }
+        printTicket(t);
+    };
+    document.getElementById('action-label').onclick = () => {
+        if (isPendingConfirmation) { alert("No se puede imprimir etiquetas de un albarán pendiente de revisión. Acepta o modifica los cambios primero."); return; }
+        printLabel(t);
+    };
     document.getElementById('action-delete').onclick = () => {
         if (isLocked) {
             alert("Este albarán está bloqueado y no puede eliminarse ni volver a solicitar su eliminación.");
@@ -1632,12 +1638,28 @@ async function handleFormSubmit(e) {
     const provinceField = document.getElementById('ticket-province').value;
     const timeSlotField = document.getElementById('ticket-time-slot').value;
 
+    const cpField = (document.getElementById('ticket-cp').value || '').trim();
+    const nifField = (document.getElementById('ticket-receiver-nif') ? document.getElementById('ticket-receiver-nif').value.trim() : '');
+
     if (!receiverField) {
         alert("Debe indicar el NOMBRE DEL CLIENTE (Destinatario).");
         return;
     }
     if (!addressField) {
         alert("Debe indicar la DIRECCIÓN de destino.");
+        return;
+    }
+    if (!cpField) {
+        alert("Debe indicar el CÓDIGO POSTAL.");
+        document.getElementById('ticket-cp').focus();
+        return;
+    }
+    if (!nifField) {
+        alert("Debe indicar el NIF / CIF del destinatario.");
+        const nifBox = document.getElementById('box-receiver-nif');
+        if (nifBox) nifBox.style.display = 'block';
+        const nifInput = document.getElementById('ticket-receiver-nif');
+        if (nifInput) nifInput.focus();
         return;
     }
     if (!provinceField) {
