@@ -132,8 +132,10 @@ window.renderMailbox = function() {
     const searchText = (document.getElementById('mailbox-search')?.value || '').toLowerCase();
 
     const filtered = _mailboxCache.filter(item => {
-        if (statusFilter !== 'todas') {
-            const itemStatus = item.status || 'nueva';
+        const itemStatus = item.status || 'nueva';
+        if (statusFilter === 'todas') {
+            if (itemStatus === 'archivada') return false;
+        } else {
             if (itemStatus !== statusFilter) return false;
         }
         if (categoryFilter !== 'todas') {
