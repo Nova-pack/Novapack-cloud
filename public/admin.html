@@ -1425,6 +1425,141 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+<!-- ============================================= -->
+<!-- PIN Access Control — Facturación Pro          -->
+<!-- ============================================= -->
+<style>
+@keyframes pinShake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-12px)} 40%{transform:translateX(10px)} 60%{transform:translateX(-8px)} 80%{transform:translateX(6px)} }
+@keyframes pinFadeIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
+</style>
+<div id="pin-access-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.88); z-index:99999; align-items:center; justify-content:center;">
+    <div style="background:linear-gradient(145deg, #1e1e1e, #141414); border:1px solid #333; border-radius:14px; padding:40px 45px; text-align:center; min-width:340px; box-shadow:0 25px 80px rgba(0,0,0,0.9); animation:pinFadeIn 0.25s ease-out;">
+        <span class="material-symbols-outlined" style="font-size:48px; color:#FF6D00; margin-bottom:12px; display:block;">lock</span>
+        <h3 style="color:#fff; margin:0 0 4px; font-size:1.15rem; font-weight:500;">Acceso Facturación Pro</h3>
+        <p id="pin-modal-user" style="color:#777; font-size:0.82rem; margin:0 0 28px;"></p>
+        <div id="pin-inputs" style="display:flex; gap:14px; justify-content:center; margin-bottom:18px;">
+            <input type="password" maxlength="1" class="pin-digit" data-idx="0" inputmode="numeric" autocomplete="off" style="width:52px; height:62px; text-align:center; font-size:1.8rem; font-weight:700; background:#2a2a2d; border:2px solid #444; color:#fff; border-radius:10px; outline:none; caret-color:transparent; transition:border-color 0.3s;">
+            <input type="password" maxlength="1" class="pin-digit" data-idx="1" inputmode="numeric" autocomplete="off" style="width:52px; height:62px; text-align:center; font-size:1.8rem; font-weight:700; background:#2a2a2d; border:2px solid #444; color:#fff; border-radius:10px; outline:none; caret-color:transparent; transition:border-color 0.3s;">
+            <input type="password" maxlength="1" class="pin-digit" data-idx="2" inputmode="numeric" autocomplete="off" style="width:52px; height:62px; text-align:center; font-size:1.8rem; font-weight:700; background:#2a2a2d; border:2px solid #444; color:#fff; border-radius:10px; outline:none; caret-color:transparent; transition:border-color 0.3s;">
+            <input type="password" maxlength="1" class="pin-digit" data-idx="3" inputmode="numeric" autocomplete="off" style="width:52px; height:62px; text-align:center; font-size:1.8rem; font-weight:700; background:#2a2a2d; border:2px solid #444; color:#fff; border-radius:10px; outline:none; caret-color:transparent; transition:border-color 0.3s;">
+        </div>
+        <p id="pin-error" style="color:#FF3B30; font-size:0.8rem; margin:0 0 18px; min-height:1.2em;"></p>
+        <button onclick="closePinModal()" style="background:transparent; border:1px solid rgba(255,255,255,0.12); color:#666; padding:8px 28px; font-size:0.82rem; cursor:pointer; border-radius:6px; transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(255,77,0,0.4)';this.style.color='#FF6D00'" onmouseout="this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='#666'">Cancelar</button>
+    </div>
+</div>
+<script>
+// === PIN Gate — Facturación Pro ===
+(function() {
+    var FACTURA_PINS = {
+        'DAVID':       '2580',
+        'MARÍA JOSÉ':  '1973',
+        'CLAUDIA':     '4567'
+    };
+
+    var PIN_GATED_TABS = ['factura','facturas-central','history','contabilidad','reports','tariffs'];
+
+    window._facturacionPinVerified = false;
+    var _pendingTabId = null, _pendingTabOpts = null, _pinAttempts = 0;
+
+    // Wrap erpOpenTab once it exists
+    var _gateTimer = setInterval(function() {
+        if (typeof window.erpOpenTab === 'function' && !window._pinGateInstalled) {
+            window._pinGateInstalled = true;
+            clearInterval(_gateTimer);
+            var _origOpen = window.erpOpenTab;
+            window.erpOpenTab = function(tabId, opts) {
+                if (PIN_GATED_TABS.indexOf(tabId) !== -1 && !window._facturacionPinVerified) {
+                    _pendingTabId = tabId;
+                    _pendingTabOpts = opts;
+                    showPinModal();
+                    return;
+                }
+                _origOpen(tabId, opts);
+            };
+            console.log('[PIN] Gate installed on erpOpenTab');
+        }
+    }, 150);
+
+    window.showPinModal = function() {
+        var m = document.getElementById('pin-access-modal');
+        if (!m) return;
+        m.style.display = 'flex';
+        var id = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity') || '?';
+        document.getElementById('pin-modal-user').textContent = id + ' \u2014 Introduce tu PIN de 4 d\u00edgitos';
+        document.getElementById('pin-error').textContent = '';
+        _pinAttempts = 0;
+        var inps = document.querySelectorAll('#pin-inputs .pin-digit');
+        for (var i = 0; i < inps.length; i++) { inps[i].value = ''; inps[i].style.borderColor = '#444'; }
+        setTimeout(function() { inps[0].focus(); }, 120);
+    };
+
+    window.closePinModal = function() {
+        var m = document.getElementById('pin-access-modal');
+        if (m) m.style.display = 'none';
+        _pendingTabId = null; _pendingTabOpts = null;
+    };
+
+    window.verifyPin = function() {
+        var inps = document.querySelectorAll('#pin-inputs .pin-digit');
+        var pin = '';
+        for (var i = 0; i < inps.length; i++) pin += inps[i].value;
+        if (pin.length !== 4) return;
+
+        var identity = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity');
+        if (pin === FACTURA_PINS[identity]) {
+            window._facturacionPinVerified = true;
+            closePinModal();
+            if (_pendingTabId && typeof window.erpOpenTab === 'function') {
+                window.erpOpenTab(_pendingTabId, _pendingTabOpts || {});
+            }
+        } else {
+            _pinAttempts++;
+            document.getElementById('pin-error').textContent = 'PIN incorrecto' + (_pinAttempts >= 3 ? ' \u2014 Contacta al administrador' : '');
+            var box = document.getElementById('pin-inputs');
+            box.style.animation = 'pinShake 0.4s ease-out';
+            setTimeout(function() { box.style.animation = ''; }, 420);
+            for (var i = 0; i < inps.length; i++) { inps[i].value = ''; inps[i].style.borderColor = '#FF3B30'; }
+            setTimeout(function() {
+                for (var j = 0; j < inps.length; j++) inps[j].style.borderColor = '#444';
+                inps[0].focus();
+            }, 800);
+        }
+    };
+
+    // Auto-advance digits + auto-verify on 4th
+    document.addEventListener('input', function(e) {
+        if (!e.target.classList || !e.target.classList.contains('pin-digit')) return;
+        // Only allow digits
+        e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(-1);
+        var idx = parseInt(e.target.getAttribute('data-idx'));
+        if (e.target.value && idx < 3) {
+            var nxt = document.querySelector('.pin-digit[data-idx="' + (idx + 1) + '"]');
+            if (nxt) nxt.focus();
+        }
+        if (idx === 3 && e.target.value) setTimeout(verifyPin, 60);
+    });
+
+    // Backspace navigation + Escape
+    document.addEventListener('keydown', function(e) {
+        if (!e.target.classList || !e.target.classList.contains('pin-digit')) return;
+        var idx = parseInt(e.target.getAttribute('data-idx'));
+        if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+            var prev = document.querySelector('.pin-digit[data-idx="' + (idx - 1) + '"]');
+            if (prev) { prev.value = ''; prev.focus(); }
+        }
+        if (e.key === 'Escape') closePinModal();
+    });
+
+    // Focus highlight
+    document.addEventListener('focusin', function(e) {
+        if (e.target.classList && e.target.classList.contains('pin-digit')) e.target.style.borderColor = '#FF6D00';
+    });
+    document.addEventListener('focusout', function(e) {
+        if (e.target.classList && e.target.classList.contains('pin-digit')) e.target.style.borderColor = '#444';
+    });
+})();
+</script>
+
 <!-- Tab wrapper: Debidos -->
 <div id="erp-tab-debidos" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
     <div style="max-width:1400px; margin:0 auto; width:100%; overflow-x:auto;">
@@ -12014,7 +12149,7 @@ window.importTarifas50 = async () => {
                 <p style="color:#aaa; font-size:0.8rem; margin-top:5px;">Buscar, editar y gestionar clientes sin salir de Facturación.</p>
             </div>
             <div style="display:flex; gap:8px;">
-                <button onclick="if(typeof window.openNewUserModal==='function') window.openNewUserModal();" style="background:#FF9800; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold;">➕ Nuevo Cliente</button>
+                <button onclick="if(typeof window.advOpenClientModal==='function') window.advOpenClientModal('new');" style="background:#FF9800; border:none; color:#fff; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold;">➕ Nuevo Cliente</button>
                 <button onclick="if(typeof window.erpOpenTab==='function') window.erpOpenTab('inicio');" style="background:#333; border:1px solid #555; color:#ccc; padding:6px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px;">◀ Volver</button>
             </div>
         </div>
