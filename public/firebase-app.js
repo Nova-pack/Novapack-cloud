@@ -3185,8 +3185,13 @@ function printReportResults() {
     area.innerHTML = reportHtml;
 
     setTimeout(() => {
+        const handleAfterPrint = () => {
+            area.innerHTML = '';
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+        window.addEventListener('afterprint', handleAfterPrint);
         window.print();
-        setTimeout(() => { area.innerHTML = ''; }, 5000);
+        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
     }, 600);
 }
 
@@ -3394,16 +3399,21 @@ async function printTicket(t) {
     document.body.classList.remove('printing-labels');
 
     setTimeout(() => {
+        const handleAfterPrint = () => {
+            area.innerHTML = '';
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+        window.addEventListener('afterprint', handleAfterPrint);
         window.print();
-        setTimeout(() => { area.innerHTML = ''; }, 5000);
+        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
     }, 800);
 }
 
 function generateManifestHTML(tickets) {
     const today = new Date().toLocaleDateString();
 
-    // Split tickets by Time Slot
-    const morningTickets = tickets.filter(t => t.timeSlot === 'MAÑANA');
+    // Split tickets by Time Slot (tickets without timeSlot go to morning by default)
+    const morningTickets = tickets.filter(t => t.timeSlot === 'MAÑANA' || (!t.timeSlot && t.timeSlot !== 'TARDE'));
     const afternoonTickets = tickets.filter(t => t.timeSlot === 'TARDE');
 
     // Helper to generate a table for a subset of tickets
@@ -3555,8 +3565,14 @@ async function printManifestOnlyBatch(slot = 'AMBOS') {
 
     hideLoading();
     setTimeout(() => {
+        const handleAfterPrint = () => {
+            area.innerHTML = '';
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+        window.addEventListener('afterprint', handleAfterPrint);
         window.print();
-        setTimeout(() => { area.innerHTML = ''; }, 2000);
+        // Fallback cleanup if afterprint doesn't fire (some mobile browsers)
+        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
     }, 250);
 }
 function handleExportCSV() {
@@ -3625,11 +3641,21 @@ async function printShiftBatch(slot, reprint = false) {
         renderTicketsList();
         updatePromises.forEach(p => p.catch(e => console.error("Batch update fail:", e)));
 
-        area.innerHTML += generateManifestHTML(tickets);
+        // Append manifest via appendChild to avoid innerHTML re-serialization (preserves QR images)
+        const manifestWrapper = document.createElement('div');
+        manifestWrapper.style.pageBreakBefore = 'always';
+        manifestWrapper.innerHTML = generateManifestHTML(tickets);
+        area.appendChild(manifestWrapper);
 
         setTimeout(() => {
+            const handleAfterPrint = () => {
+                area.innerHTML = '';
+                window.removeEventListener('afterprint', handleAfterPrint);
+            };
+            window.addEventListener('afterprint', handleAfterPrint);
             window.print();
-            setTimeout(() => { area.innerHTML = ''; }, 5000);
+            // Fallback cleanup if afterprint doesn't fire
+            setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
         }, 800);
     } catch (e) {
         console.error("Print batch error:", e);
