@@ -471,7 +471,29 @@ function initApp() {
     document.getElementById('btn-logout').addEventListener('click', function() {
         if (confirm('¿Cerrar sesión?')) {
             stopScanner();
-            auth.signOut();
+            // Unsubscribe from Firestore listeners
+            if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+            // Reset all session state
+            currentDriverPhone = '';
+            currentDriverName = '';
+            currentRouteLabel = '';
+            deliveries = [];
+            manualOrder = null;
+            currentScanDoc = null;
+            knownDeliveryIds = new Set();
+            scannedPackages = {};
+            isFirstSnapshot = true;
+            _adminRoutes = [];
+            // Hide all views, show login
+            document.getElementById('main-app').style.display = 'none';
+            document.getElementById('driver-selector-view').style.display = 'none';
+            document.getElementById('admin-route-selector').style.display = 'none';
+            document.getElementById('login-view').style.display = 'flex';
+            document.getElementById('master-pin-input').value = '';
+            document.getElementById('phone-input').value = '';
+            document.getElementById('login-error').textContent = '';
+            // Sign out Firebase auth (for SMS users; no-op for PIN users)
+            auth.signOut().catch(function() {});
             showToast('Sesión cerrada.', 'info');
         }
     });
@@ -1165,7 +1187,12 @@ function initApp() {
                 var snap = await db.collection('tickets').where('id', '==', searchId).get();
                 if (snap.empty) {
                     var snap2 = await db.collection('tickets').where('id', '==', searchId.replace(/^0+/, '')).get();
-                    if (snap2.empty) { showToast('Albarán no encontrado: ' + searchId, 'error'); hideLoading(); return; }
+                    if (snap2.empty) {
+                        // Ticket not found — could be deleted by admin
+                        showToast('⚠️ ALBARÁN NO ENCONTRADO: ' + searchId + '. Puede haber sido eliminado por administración.', 'error', 6000);
+                        hideLoading();
+                        return;
+                    }
                     doc = snap2.docs[0];
                 } else {
                     doc = snap.docs[0];
@@ -1176,6 +1203,23 @@ function initApp() {
             d._id = doc.id;
             d._ref = doc.ref;
             currentScanDoc = d;
+
+            // --- DETECT ALREADY DELIVERED ---
+            var isAlreadyDelivered = d.status === 'Entregado' || d.delivered;
+            if (isAlreadyDelivered) {
+                var deliveredDate = '';
+                if (d.deliveredAt) {
+                    try { deliveredDate = ' el ' + (d.deliveredAt.toDate ? d.deliveredAt.toDate() : new Date(d.deliveredAt)).toLocaleString('es-ES'); } catch(e) {}
+                }
+                showToast('⚠️ ALBARÁN YA ENTREGADO' + deliveredDate + '. Receptor: ' + (d.deliveredTo || d.receiverName || '---'), 'warning', 8000);
+            }
+
+            // --- DETECT INCIDENCIA / DEVUELTO ---
+            if (d.status === 'Incidencia') {
+                showToast('⚠️ ALBARÁN CON INCIDENCIA registrada. Consulta con administración.', 'warning', 6000);
+            } else if (d.status === 'Devuelto') {
+                showToast('⚠️ ALBARÁN MARCADO COMO DEVUELTO. No se debe entregar.', 'error', 6000);
+            }
 
             // Calculate total packages from ticket data
             var totalPkgs = d.packagesList ? d.packagesList.reduce(function(s, p) { return s + (parseInt(p.qty) || 1); }, 0) : (parseInt(d.packages) || 1);
@@ -1188,10 +1232,15 @@ function initApp() {
                 scannedPackages[ticketKey] = new Set();
             }
 
+            // --- DETECT DUPLICATE SCAN (same ticket, old format, already fully scanned) ---
+            if (pkgNum === 0 && scannedPackages[ticketKey].size >= totalPkgs && scannedPackages[ticketKey].size > 0 && !isAlreadyDelivered) {
+                showToast('ℹ️ Este albarán ya fue escaneado en esta sesión.', 'info', 5000);
+            }
+
             // Register scanned package
             if (pkgNum > 0) {
                 if (scannedPackages[ticketKey].has(pkgNum)) {
-                    showToast('📦 Bulto ' + pkgNum + '/' + totalPkgs + ' ya escaneado.', 'info');
+                    showToast('📦 Bulto ' + pkgNum + '/' + totalPkgs + ' ya escaneado (duplicado).', 'warning');
                 } else {
                     scannedPackages[ticketKey].add(pkgNum);
                     showToast('📦 Bulto ' + pkgNum + '/' + totalPkgs + ' escaneado ✅', 'success');
@@ -1199,7 +1248,9 @@ function initApp() {
             } else {
                 // Old QR format without PKG — mark ALL as scanned
                 for (var i = 1; i <= totalPkgs; i++) scannedPackages[ticketKey].add(i);
-                showToast('Albarán encontrado: ' + ticketKey, 'success');
+                if (!isAlreadyDelivered && d.status !== 'Devuelto' && d.status !== 'Incidencia') {
+                    showToast('Albarán encontrado: ' + ticketKey, 'success');
+                }
             }
 
             await loadTicketForConfirmation(d, totalPkgs);
@@ -1218,8 +1269,13 @@ function initApp() {
         document.getElementById('scan-ticket-id').textContent = 'ALBARÁN: ' + (d.id || d._id);
         var statusEl = document.getElementById('scan-ticket-status');
         var isDelivered = d.status === 'Entregado' || d.delivered;
-        statusEl.textContent = isDelivered ? 'ENTREGADO' : 'PENDIENTE';
-        statusEl.className = 'dc-status ' + (isDelivered ? 'delivered' : 'pending');
+        var statusText = isDelivered ? 'ENTREGADO' : (d.status === 'Incidencia' ? 'INCIDENCIA' : (d.status === 'Devuelto' ? 'DEVUELTO' : 'PENDIENTE'));
+        var statusClass = isDelivered ? 'delivered' : (d.status === 'Incidencia' || d.status === 'Devuelto' ? 'delivered' : 'pending');
+        statusEl.textContent = statusText;
+        statusEl.className = 'dc-status ' + statusClass;
+        if (d.status === 'Incidencia') { statusEl.style.background = 'rgba(255,152,0,0.2)'; statusEl.style.color = '#FF9800'; }
+        else if (d.status === 'Devuelto') { statusEl.style.background = 'rgba(255,59,48,0.2)'; statusEl.style.color = '#FF3B30'; }
+        else { statusEl.style.background = ''; statusEl.style.color = ''; }
 
         var addr = [d.address, d.localidad, d.cp, d.province].filter(Boolean).join(', ');
         if (!totalPkgs) totalPkgs = getPackageCount(d);
@@ -1255,6 +1311,9 @@ function initApp() {
             '<b>Bultos:</b> ' + totalPkgs + '<br>' +
             '<b>Remitente:</b> ' + (d.sender || '---') + '<br>' +
             (d.notes ? '<b>Obs:</b> ' + d.notes + '<br>' : '') +
+            (isDelivered ? '<div style="margin:8px 0; padding:10px; background:rgba(76,217,100,0.15); border:1px solid rgba(76,217,100,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#4CD964;">✅ YA ENTREGADO' + (d.deliveredTo ? ' — Receptor: ' + d.deliveredTo : '') + '</div>' : '') +
+            (d.status === 'Devuelto' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,59,48,0.15); border:1px solid rgba(255,59,48,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF3B30;">🚫 DEVUELTO — No entregar</div>' : '') +
+            (d.status === 'Incidencia' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF9800;">⚠️ INCIDENCIA — Consultar con administración</div>' : '') +
             pkgProgressHtml;
 
         // Bind "scan next" button
@@ -1267,7 +1326,7 @@ function initApp() {
 
         var confirmPanel = document.getElementById('confirm-panel');
         var btnConfirm = document.getElementById('btn-confirm-delivery');
-        if (isDelivered) {
+        if (isDelivered || d.status === 'Devuelto') {
             confirmPanel.style.display = 'none';
             btnConfirm.style.display = 'none';
         } else {
