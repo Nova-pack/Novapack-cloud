@@ -9,5 +9,12 @@ service cloud.firestore {
     match /mailbox/{docId} {
       allow read, write: if true;
     }
+    // Master PIN: allow read on config/phones for driver app PIN validation
+    match /config/phones {
+      allow read: if true;
+    }
+    match /config/phones/list/{docId} {
+      allow read: if true;
+    }
   }
 }
