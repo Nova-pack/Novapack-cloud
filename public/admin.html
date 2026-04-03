@@ -1728,7 +1728,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="margin-top:4px;"><strong style="color:var(--brand-primary);">Fecha:</strong> <span id="mailbox-modal-date"></span></div>
                 </div>
                 
-                <div style="background:#0f0f0f; border:1px solid #222; border-radius:8px; padding:20px; flex:1; white-space:pre-wrap; font-family:monospace; font-size:0.9rem; color:#eee; overflow-y:auto; line-height:1.5;" id="mailbox-modal-body">
+                <div style="background:#0f0f0f; border:1px solid #222; border-radius:8px; padding:20px; flex:1; white-space:pre-wrap; font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif; font-size:0.9rem; color:#eee; overflow-y:auto; line-height:1.5;" id="mailbox-modal-body">
                     <!-- Body -->
                 </div>
             </div>
@@ -9886,21 +9886,37 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         }
                     }
 
-                    // --- ALERTA DE ALBARÁN DUPLICADO / YA CARGADO ---
+                    // --- PROTECCIÓN: ALBARÁN ELIMINADO POR ADMIN (BLACKLIST) ---
                     if (qrData.id) {
                         try {
                             if(document.getElementById('admin-t-erp-id')) {
                                 document.getElementById('admin-t-erp-id').value = qrData.id;
                             }
-                            db.collection('tickets').where('erpId', '==', qrData.id).limit(1).get().then(snap => {
-                                if (!snap.empty) {
-                                    alert("¡ATENCIÓN!\n\nEste albarán externo (Ref: " + qrData.id + ") YA SE ENCUENTRA REGISTRADO en la base de datos del cliente.\nAutoguardado cancelado para evitar un duplicado exacto.");
-                                } else {
-                                    triggerAdminTicketAutoSave();
+                            // 1) Consultar blacklist de IDs eliminados definitivamente
+                            const delDoc = await db.collection('deleted_erp_ids').doc(String(qrData.id)).get();
+                            if (delDoc.exists) {
+                                const delData = delDoc.data();
+                                const delDate = delData.deletedAt && typeof delData.deletedAt.toDate === 'function' ? delData.deletedAt.toDate().toLocaleString() : 'fecha desconocida';
+                                alert("🚫 ¡ALBARÁN ANULADO!\n\nEste albarán (Ref: " + qrData.id + ") fue ELIMINADO DEFINITIVAMENTE a petición del cliente.\nFecha de eliminación: " + delDate + "\n\nNO se grabará. Retira este papel de la bandeja.");
+                                resetAdminTicketForm();
+                                return;
+                            }
+                            // 2) Consultar si existe con deleteRequested activo
+                            const reqSnap = await db.collection('tickets').where('erpId', '==', qrData.id).limit(1).get();
+                            if (!reqSnap.empty) {
+                                const existingTicket = reqSnap.docs[0].data();
+                                if (existingTicket.deleteRequested || String(existingTicket.status || '').toLowerCase().includes('anula')) {
+                                    alert("🚫 ¡ALBARÁN PENDIENTE DE ANULACIÓN!\n\nEste albarán (Ref: " + qrData.id + ") tiene una solicitud de borrado activa.\nNO se grabará.");
+                                    resetAdminTicketForm();
+                                    return;
                                 }
-                            });
+                                // Ya existe y NO está anulado → Duplicado real
+                                alert("¡ATENCIÓN!\n\nEste albarán externo (Ref: " + qrData.id + ") YA SE ENCUENTRA REGISTRADO en la base de datos del cliente.\nAutoguardado cancelado para evitar un duplicado exacto.");
+                            } else {
+                                triggerAdminTicketAutoSave();
+                            }
                         } catch (e) {
-                            console.warn("Fallo comprobando alertas de duplicación:", e);
+                            console.warn("Fallo comprobando alertas de duplicación/eliminación:", e);
                             triggerAdminTicketAutoSave();
                         }
                     } else {
@@ -10162,6 +10178,16 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         const trimId = searchId.replace(/^0+/, '');
                         const snap2 = await db.collection('tickets').where('id', '==', trimId).get();
                         if (snap2.empty) {
+                            // Comprobar si fue eliminado intencionalmente (blacklist)
+                            try {
+                                const delCheck = await db.collection('deleted_erp_ids').doc(String(searchId)).get();
+                                if (delCheck.exists) {
+                                    const dd = delCheck.data();
+                                    const delDate = dd.deletedAt && typeof dd.deletedAt.toDate === 'function' ? dd.deletedAt.toDate().toLocaleString() : 'fecha desconocida';
+                                    alert("🚫 ALBARÁN ELIMINADO\n\nEste albarán (" + searchId + ") fue BORRADO DEFINITIVAMENTE por el Administrador a petición del cliente.\nFecha: " + delDate + "\n\nRetira este documento.");
+                                    return;
+                                }
+                            } catch(delErr) { console.warn('Error consultando blacklist:', delErr); }
                             alert("Albarán no encontrado: " + searchId);
                             return;
                         }
@@ -13331,6 +13357,21 @@ window.importTarifas50 = async () => {
                         // Devolvemos el mensaje de error por encima del reset
                         statusEl.innerHTML = '❌ <b>¡ALERTA ROJA!</b> EL REMITENTE HA ANULADO ESTE ALBARÁN (' + originalId + '). NO LO PROCESES.';
                         return; // Abort loading
+                    }
+
+                    // Comprobar blacklist de IDs eliminados definitivamente
+                    const delBlacklist = await db.collection('deleted_erp_ids').doc(String(originalId)).get();
+                    if (delBlacklist.exists) {
+                        const dd = delBlacklist.data();
+                        const delDate = dd.deletedAt && typeof dd.deletedAt.toDate === 'function' ? dd.deletedAt.toDate().toLocaleString() : 'fecha desconocida';
+                        const formArea = document.getElementById('adv-manual-tickets-workspace');
+                        if (formArea) formArea.style.borderLeft = '6px solid #FF3B30';
+                        
+                        statusEl.innerHTML = '🚫 <b>¡ALBARÁN FULMINADO!</b> Este ID (' + originalId + ') fue borrado definitivamente el ' + delDate + '. NO lo proceses. Retira este papel.';
+                        statusEl.style.color = '#FF3B30';
+                        window._manualTicketReset();
+                        statusEl.innerHTML = '🚫 <b>¡ALBARÁN FULMINADO!</b> Este ID (' + originalId + ') fue borrado definitivamente el ' + delDate + '. NO lo proceses. Retira este papel.';
+                        return;
                     }
                 } catch(e) {
                     console.warn('[MANUAL TICKETS] Error checking original ticket state:', e);

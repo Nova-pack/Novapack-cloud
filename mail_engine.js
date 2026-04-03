@@ -55,18 +55,19 @@ function extractTicketRef(text) {
     // Normalize: collapse whitespace, remove invisible chars
     const clean = text.replace(/\s+/g, ' ');
     
-    // Format 1: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
-    // Supports any letter/digit prefix (2-6 chars) followed by digits
-    let match = clean.match(/\b([A-Z]{1,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
-    if (match) return (match[1] + match[2]).toUpperCase();
-
-    // Format 2: Keywords followed by a number (albarán 150200209, ref: 12345, nº 150200209)
-    match = clean.match(/(?:albar[aáà]n|albaran|alb\.?|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?|número|numero)\s*[.:\-–—#nº°]*\s*(\d{5,12})/i);
+    // Format 1 (PRIORITY): Keywords followed by a number (albarán 150200209, ref: 12345, nº 150200209)
+    // This must run FIRST to prevent partial-word false positives (e.g. "albarán" → "n" captured as prefix)
+    let match = clean.match(/(?:albar[aáà]n|albaran|alb\.?|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?|número|numero)\s*[.:;\-–—#]*\s*(\d{5,12})/i);
     if (match) return match[1];
 
-    // Format 3: "pod del 150200209" / "pod de 150200209" / "pod 150200209"
+    // Format 2: "pod del 150200209" / "pod de 150200209" / "pod 150200209"
     match = clean.match(/(?:pod|comprobante|justificante|prueba\s+de\s+entrega|acuse)\s+(?:del?|para|de\s+el)?\s*[#nº]*\s*(\d{5,12})/i);
     if (match) return match[1];
+
+    // Format 3: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
+    // Requires 2+ alpha chars as prefix to avoid capturing trailing letter from words like "albarán"
+    match = clean.match(/\b([A-Z]{2,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
+    if (match) return (match[1] + match[2]).toUpperCase();
 
     // Format 4: Standalone long number (6-12 digits) likely to be an albarán
     // Only match if no other significant numbers present to avoid false positives
