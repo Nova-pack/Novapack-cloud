@@ -1,42 +1,144 @@
 // Gestor de Portes Debidos - Novapack Cloud
 
 let debidosTicketsCache = [];
+let debidosAssignedCache = [];
+let debidosCurrentView = 'pendientes';
 
 window.loadDebidosManager = async () => {
     const tbody = document.getElementById('debidos-table-body');
-    if (!tbody) return;
-    
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#aaa;">Cargando albaranes a portes debidos sin asignar...</td></tr>';
-    
+    const tbodyAssigned = document.getElementById('debidos-assigned-body');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#aaa;">Cargando albaranes a portes debidos...</td></tr>';
+    if (tbodyAssigned) tbodyAssigned.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#aaa;">Cargando...</td></tr>';
+
     try {
-        // Obtenemos tickets que son Debidos
-        // NOTA: Firestore no permite WHERE IS NULL de forma fácil si el campo no existe. 
-        // Traeremos los Debidos y los filtraremos en memoria. Como suelen ser una fracción pequeña, es performante.
         const snap = await db.collection('tickets')
             .where('shippingType', '==', 'Debidos')
             .orderBy('createdAt', 'desc')
             .limit(1000)
             .get();
-            
+
         debidosTicketsCache = [];
-        
+        debidosAssignedCache = [];
+
         snap.forEach(doc => {
             const t = doc.data();
             // Si ya está facturado, ignorar
             if (t.invoiceId && String(t.invoiceId).trim() !== "" && String(t.invoiceId).toLowerCase() !== "null") return;
             // Si está pendiente de anulación, ignorar
             if (t.deleteRequested || t.status === 'Pendiente Anulación') return;
-            // Si ya tiene adjudicado un receptor de facturación, ignorar (ya está en el panel del cliente)
-            if (t.billToUid) return;
-            
-            debidosTicketsCache.push({ ...t, docId: doc.id });
+
+            if (t.billToUid) {
+                // Asignado pero no facturado → lista de asignados
+                debidosAssignedCache.push({ ...t, docId: doc.id });
+            } else {
+                // Sin asignar → pendientes
+                debidosTicketsCache.push({ ...t, docId: doc.id });
+            }
         });
-        
+
         renderDebidosTable(debidosTicketsCache);
+        renderDebidosAssignedTable(debidosAssignedCache);
 
     } catch (e) {
         console.error("Error loading debidos:", e);
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding:20px;">Error: ${e.message}</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding:20px;">Error: ${e.message}</td></tr>`;
+    }
+};
+
+window.switchDebidosView = function(view) {
+    debidosCurrentView = view;
+    var btnP = document.getElementById('debidos-tab-pendientes');
+    var btnA = document.getElementById('debidos-tab-asignados');
+    var tblP = document.getElementById('debidos-table-pendientes');
+    var tblA = document.getElementById('debidos-table-asignados');
+    if (view === 'asignados') {
+        if (btnP) { btnP.style.background = '#2d2d30'; btnP.style.color = '#888'; }
+        if (btnA) { btnA.style.background = '#4CAF50'; btnA.style.color = '#fff'; }
+        if (tblP) tblP.style.display = 'none';
+        if (tblA) tblA.style.display = 'table';
+    } else {
+        if (btnP) { btnP.style.background = '#FF9800'; btnP.style.color = '#000'; }
+        if (btnA) { btnA.style.background = '#2d2d30'; btnA.style.color = '#888'; }
+        if (tblP) tblP.style.display = 'table';
+        if (tblA) tblA.style.display = 'none';
+    }
+};
+
+window.renderDebidosAssignedTable = (ticketsArray) => {
+    const tbody = document.getElementById('debidos-assigned-body');
+    if (!tbody) return;
+
+    if (ticketsArray.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:#888;">No hay albaranes asignados pendientes de facturar.</td></tr>';
+        return;
+    }
+
+    let html = '';
+    ticketsArray.forEach(t => {
+        const dateStr = t.createdAt && typeof t.createdAt.toDate === 'function' ?
+            t.createdAt.toDate().toLocaleDateString() : 'Sin fecha';
+        const docIdSafe = (t.docId || '').replace(/'/g, "\\'");
+        const ticketIdSafe = (t.id || t.docId || '').replace(/'/g, "\\'");
+        // Resolve client name from userMap
+        let clientName = t.billToClientIdNum || '?';
+        if (window.userMap && t.billToUid && window.userMap[t.billToUid]) {
+            clientName = window.userMap[t.billToUid].name || clientName;
+        }
+
+        html += `
+            <tr style="border-bottom: 1px solid #333; transition:background 0.2s;"
+                onmouseover="this.style.background='rgba(76,175,80,0.08)'"
+                onmouseout="this.style.background='transparent'">
+                <td style="padding:10px;">${dateStr}</td>
+                <td style="padding:10px; font-weight:bold; color:var(--brand-primary);">${t.id || t.docId}</td>
+                <td style="padding:10px;">
+                    <div>${t.senderName || 'Remitente N/A'}</div>
+                    <div style="font-size:0.75rem; color:#888;">${t.city || t.province || ''}</div>
+                </td>
+                <td style="padding:10px; color:#fff;">
+                    <div style="font-weight:bold;">${t.receiver || 'Destinatario N/A'}</div>
+                </td>
+                <td style="padding:10px;">
+                    <span style="color:#4CAF50; font-weight:600; font-size:0.82rem;">${clientName}</span>
+                    <div style="font-size:0.7rem; color:#666;">Nº ${t.billToClientIdNum || ''}</div>
+                </td>
+                <td style="padding:10px; text-align:right;">
+                    <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); unassignDebido('${docIdSafe}', '${ticketIdSafe}')" style="font-size:0.7rem; border-color:#FF5252; color:#FF5252; display:flex; align-items:center; gap:3px;">
+                        <span class="material-symbols-outlined" style="font-size:14px;">link_off</span> Desasignar
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+};
+
+window.unassignDebido = async (docId, ticketId) => {
+    if (!confirm('¿Desasignar el albarán ' + ticketId + '?\n\nVolverá a la lista de pendientes.')) return;
+
+    try {
+        await db.collection('tickets').doc(docId).update({
+            billToUid: firebase.firestore.FieldValue.delete(),
+            billToClientIdNum: firebase.firestore.FieldValue.delete(),
+            ...(typeof getOperatorStamp === 'function' ? getOperatorStamp() : {})
+        });
+
+        // Move from assigned to pending cache
+        var idx = debidosAssignedCache.findIndex(t => t.docId === docId);
+        if (idx !== -1) {
+            var ticket = debidosAssignedCache.splice(idx, 1)[0];
+            delete ticket.billToUid;
+            delete ticket.billToClientIdNum;
+            debidosTicketsCache.unshift(ticket);
+        }
+
+        renderDebidosTable(debidosTicketsCache);
+        renderDebidosAssignedTable(debidosAssignedCache);
+        alert('✅ Albarán ' + ticketId + ' desasignado');
+    } catch(e) {
+        alert('Error: ' + e.message);
+        console.error(e);
     }
 };
 
@@ -92,17 +194,19 @@ window.renderDebidosTable = (ticketsArray) => {
 
 window.filterDebidosList = (query) => {
     const q = query.toLowerCase().trim();
-    if (!q) {
-        renderDebidosTable(debidosTicketsCache);
-        return;
-    }
-    const filtered = debidosTicketsCache.filter(t => {
+    const matchFn = t => {
         const s = (t.senderName || '').toLowerCase();
         const r = (t.receiver || '').toLowerCase();
         const id = (t.id || t.docId || '').toLowerCase();
         return s.includes(q) || r.includes(q) || id.includes(q);
-    });
-    renderDebidosTable(filtered);
+    };
+    if (!q) {
+        renderDebidosTable(debidosTicketsCache);
+        renderDebidosAssignedTable(debidosAssignedCache);
+    } else {
+        renderDebidosTable(debidosTicketsCache.filter(matchFn));
+        renderDebidosAssignedTable(debidosAssignedCache.filter(matchFn));
+    }
 };
 
 // ================= MODAL DE ASIGNACIÓN =================
