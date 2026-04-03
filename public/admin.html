@@ -1230,10 +1230,15 @@
                     </div>
                 </div>
 
-                <!-- ALBARANES (direct button → opens Albaranes Centralizados) -->
-                <button class="adv-dropdown-btn" onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central');" style="display:flex; align-items:center; gap:5px;">
-                    <span class="material-symbols-outlined">edit_note</span> Albaranes
-                </button>
+                <!-- ALBARANES dropdown -->
+                <div class="adv-dropdown">
+                    <button class="adv-dropdown-btn"><span class="material-symbols-outlined">edit_note</span> Albaranes ▾</button>
+                    <div class="adv-dropdown-menu">
+                        <button onclick="if(typeof window.albCentralInit==='function') window.albCentralInit(); erpOpenTab('albaranes-central'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">inventory_2</span> Albaranes Centralizados</button>
+                        <div class="dd-sep"></div>
+                        <button onclick="erpOpenTab('debidos'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#FF9800;"><span class="material-symbols-outlined">local_shipping</span> Portes Debidos</button>
+                    </div>
+                </div>
 
                 <!-- COBROS / ABONOS dropdown -->
                 <div class="adv-dropdown">
@@ -1281,7 +1286,6 @@
                     <button class="adv-dropdown-btn"><span class="material-symbols-outlined">hub</span> Operaciones ▾</button>
                     <div class="adv-dropdown-menu">
                         <div class="dd-label">Entregas</div>
-                        <button onclick="erpOpenTab('debidos'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');" style="color:#FF9800;"><span class="material-symbols-outlined">local_shipping</span> Portes Debidos</button>
                         <button onclick="erpOpenTab('rutas'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">location_on</span> Control Rutas</button>
                         <button onclick="erpOpenTab('phones'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">notifications</span> Alertas Pickup</button>
                         <div class="dd-sep"></div>

@@ -214,20 +214,42 @@ window.filterDebidosList = (query) => {
 window.openAssignDebidoModal = async (docId, ticketId) => {
     document.getElementById('assign-debido-ticket-id').value = docId;
     document.getElementById('assign-debido-id').textContent = ticketId;
-    
+
     document.getElementById('assign-debido-search').value = '';
     document.getElementById('assign-debido-dropdown').style.display = 'none';
     document.getElementById('assign-debido-selected-card').style.display = 'none';
-    
+
     document.getElementById('modal-assign-debido').style.display = 'flex';
-    
-    // Asegurar que los clientes están cargados para el buscador
-    if (!window.advAllClients || window.advAllClients.length === 0) {
-        if(typeof window.advPopulateClientPicker === 'function') {
-            await window.advPopulateClientPicker();
-        }
-    }
+
+    // Cargar clientes desde userMap si no están disponibles
+    await _debidosEnsureClients();
 };
+
+async function _debidosEnsureClients() {
+    // Si advAllClients ya tiene datos, usarlos
+    if (window.advAllClients && window.advAllClients.length > 0) return;
+
+    // Cargar userMap si está vacío
+    if (!window.userMap || Object.keys(window.userMap).length < 2) {
+        if (typeof window.loadUsers === 'function') await window.loadUsers('first');
+    }
+
+    // Construir lista de clientes desde userMap
+    if (window.userMap) {
+        var seen = {};
+        window.advAllClients = [];
+        Object.entries(window.userMap).forEach(function(entry) {
+            var uid = entry[0], u = entry[1];
+            if (u && u.role === 'admin') return;
+            var actualId = u.id || uid;
+            if (!actualId || seen[actualId]) return;
+            seen[actualId] = true;
+            window.advAllClients.push(Object.assign({}, u, { id: actualId }));
+        });
+        window.advAllClients.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+        console.log('[Debidos] Loaded ' + window.advAllClients.length + ' clients from userMap');
+    }
+}
 
 window.closeAssignDebidoModal = () => {
     document.getElementById('modal-assign-debido').style.display = 'none';
