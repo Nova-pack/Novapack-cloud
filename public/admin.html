@@ -7997,10 +7997,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     const doc = await db.collection('invoices').doc(id).get();
                     const inv = doc.data();
 
-                    // Get next invoice ID with a 'CR-' prefix for credits
-                    const counterDoc = await db.collection('config').doc('counters').get();
-                    let nextNum = (counterDoc.data().invoice || 0) + 1;
-                    const creditId = `ABO-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`;
+                    // Year-based credit note numbering: ABO-YY-SEQ
+                    const aboYear = new Date().getFullYear();
+                    const aboYY = String(aboYear).slice(-2);
+                    const aboYrStart = new Date(aboYear, 0, 1);
+                    const aboYrEnd = new Date(aboYear + 1, 0, 1);
+                    const aboSnap = await db.collection('invoices')
+                        .where('date', '>=', aboYrStart)
+                        .where('date', '<', aboYrEnd)
+                        .orderBy('date', 'desc')
+                        .get();
+                    let nextNum = 0;
+                    aboSnap.forEach(d => {
+                        const iid = d.data().invoiceId || '';
+                        const match = iid.match(/^(?:FAC|ABO)-\d{2}-(\d+)$/);
+                        if (match) {
+                            const seq = parseInt(match[1], 10);
+                            if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+                        }
+                    });
+                    const creditId = `ABO-${aboYY}-${nextNum}`;
 
                     const creditData = {
                         ...inv,
@@ -9849,13 +9865,29 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                 showLoading();
                 try {
-                    const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-                    let nextNum = 1;
-                    if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
+                    // Year-based invoice numbering: FAC-YY-SEQ
+                    const invCurrentYear = new Date().getFullYear();
+                    const invCurrentYY = String(invCurrentYear).slice(-2);
+                    const invYearStart = new Date(invCurrentYear, 0, 1);
+                    const invYearEnd = new Date(invCurrentYear + 1, 0, 1);
+                    const invSnap = await db.collection('invoices')
+                        .where('date', '>=', invYearStart)
+                        .where('date', '<', invYearEnd)
+                        .orderBy('date', 'desc')
+                        .get();
+                    let nextNum = 0;
+                    invSnap.forEach(doc => {
+                        const iid = doc.data().invoiceId || '';
+                        const match = iid.match(/^FAC-\d{2}-(\d+)$/);
+                        if (match) {
+                            const seq = parseInt(match[1], 10);
+                            if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+                        }
+                    });
 
                     const invoiceData = {
                         number: nextNum,
-                        invoiceId: `FAC-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`,
+                        invoiceId: `FAC-${invCurrentYY}-${nextNum}`,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
                         clientId: adminTicketUID,
                         clientName: clientData.name,
@@ -11082,15 +11114,16 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
             // Duplicate reset function removed to avoid conflict
 
-            // Helper to get next Ticket ID for Admin
+            // Helper to get next Ticket ID for Admin — Format: PREFIX-YY-SEQ (e.g., 5402-26-0)
             async function getNextId() {
                 const comp = adminCompaniesCache[adminTicketCompID] || {};
                 const prefix = comp.prefix || "NP";
-                const startNum = parseInt(comp.startNum) || 1001;
+                const currentYY = String(new Date().getFullYear()).slice(-2);
+                const yearPrefix = prefix + "-" + currentYY + "-";
 
                 const uData = userMap[adminTicketUID] || {};
                 const myIdNum = String(uData.idNum || '').trim();
-                if (!myIdNum) return prefix + startNum.toString().padStart(5, '0');
+                if (!myIdNum) return yearPrefix + "0";
 
                 // Variantes de ID para búsqueda exhaustiva
                 let idVariants = [myIdNum];
@@ -11107,22 +11140,21 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     .where('clientIdNum', 'in', finalVariants)
                     .get();
 
-                let maxNum = startNum - 1;
+                let maxNum = -1; // Start from -1 so first ticket is 0
                 snap.forEach(doc => {
                     const d = doc.data();
                     const tcid = d.compId || 'comp_main';
-                    // Solo considerar si coincide la empresa o si es la principal/default
                     if (adminTicketCompID === "ALL" || tcid === adminTicketCompID || tcid === 'comp_main' || tcid === 'default') {
                         const bid = d.id || "";
-                        if (bid.startsWith(prefix)) {
-                            const num = parseInt(bid.substring(prefix.length).replace(/[^0-9]/g, ""));
-                            if (!isNaN(num) && num > maxNum) maxNum = num;
+                        // New format: PREFIX-YY-SEQ
+                        if (bid.startsWith(yearPrefix)) {
+                            const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                            if (!isNaN(seq) && seq > maxNum) maxNum = seq;
                         }
                     }
                 });
 
-                const nextNum = maxNum + 1;
-                return prefix + nextNum.toString().padStart(5, '0');
+                return yearPrefix + (maxNum + 1);
             }
 
             window.getNextUserId = () => {
@@ -13789,9 +13821,10 @@ window.importTarifas50 = async () => {
             const notes = (document.getElementById('mt-notes').value || '').trim();
             const timeSlot = document.getElementById('mt-timeslot').value;
 
-            // Generate next business ID for this client
+            // Generate next business ID for this client — Format: PREFIX-YY-SEQ
             const prefix = cli.prefix || 'NP';
-            let maxNum = (cli.startNum || 1) - 1;
+            const currentYY = String(new Date().getFullYear()).slice(-2);
+            const yearPrefix = prefix + "-" + currentYY + "-";
 
             const idVariants = [cli.uid, cli.idNum, cli.idNum.toString().padStart(3, '0'), parseInt(cli.idNum).toString()].filter(x => x);
             const uniqueVariants = [...new Set(idVariants)].slice(0, 10);
@@ -13799,18 +13832,19 @@ window.importTarifas50 = async () => {
             const serverSnap = await db.collection('tickets')
                 .where('uid', 'in', uniqueVariants)
                 .get();
-            
+
+            let maxNum = -1;
             serverSnap.forEach(doc => {
                 const d = doc.data();
                 if (d.compId !== cli.compId) return;
                 const bid = d.id || '';
-                if (bid.startsWith(prefix)) {
-                    const num = parseInt(bid.substring(prefix.length).replace(/\D/g, ''), 10);
-                    if (!isNaN(num) && num > maxNum) maxNum = num;
+                if (bid.startsWith(yearPrefix)) {
+                    const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                    if (!isNaN(seq) && seq > maxNum) maxNum = seq;
                 }
             });
 
-            const businessId = prefix + (maxNum + 1).toString().padStart(5, '0');
+            const businessId = yearPrefix + (maxNum + 1);
             const docId = cli.idNum + '_' + cli.compId + '_' + businessId;
 
             // Auto-route driver

@@ -1068,12 +1068,13 @@ async function resetEditor() {
 
 async function getNextId() {
     const comp = companies.find(c => c.id === currentCompanyId);
-    if (!comp) return "NP00001";
+    if (!comp) return "NP-" + String(new Date().getFullYear()).slice(-2) + "-0";
     const prefix = comp.prefix || "NP";
-    const startNum = parseInt(comp.startNum) || 1;
+    const currentYY = String(new Date().getFullYear()).slice(-2);
+    const yearPrefix = prefix + "-" + currentYY + "-";
 
     const myIdNum = userData && userData.idNum ? userData.idNum.toString() : (currentUser ? currentUser.uid : null);
-    if (!myIdNum) return prefix + startNum.toString().padStart(5, '0');
+    if (!myIdNum) return yearPrefix + "0";
 
     const cid = currentCompanyId;
 
@@ -1083,22 +1084,27 @@ async function getNextId() {
 
         console.log('[SYNC] getNextId searching with variants:', idVariants);
 
-        // Helper to extract max business ID number from a snapshot
+        // Helper to extract max sequence number from tickets matching current year format PREFIX-YY-SEQ
         const extractMaxNum = (snap, currentMax) => {
             let m = currentMax;
             snap.forEach(doc => {
                 const d = doc.data();
                 if (d.compId !== cid) return;
                 const bid = d.id || "";
-                if (bid.startsWith(prefix)) {
-                    const num = parseInt(bid.substring(prefix.length).replace(/\D/g, ''), 10);
-                    if (!isNaN(num) && num > m) m = num;
+                // New format: PREFIX-YY-SEQ (e.g., 5402-26-0)
+                if (bid.startsWith(yearPrefix)) {
+                    const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                    if (!isNaN(seq) && seq > m) m = seq;
+                }
+                // Legacy format: PREFIX00001 — ignore for sequence but still recognized
+                else if (bid.startsWith(prefix) && !bid.startsWith(prefix + "-")) {
+                    // Old format tickets exist but don't affect new year-based sequence
                 }
             });
             return m;
         };
 
-        let maxNum = startNum - 1;
+        let maxNum = -1; // Start from -1 so first ticket is 0
 
         // 1. Cache read by uid (fast, reflects recent local writes)
         const cacheSnap = await db.collection('tickets')
@@ -1121,24 +1127,24 @@ async function getNextId() {
         console.log('[SYNC] getNextId maxNum after all queries:', maxNum);
 
         // Si existe un tracker de lote temporal para inserciones rápidas, lo usamos y actualizamos
-        if (window.tempBatchHighestId && window.tempBatchHighestId.cid === cid) {
+        if (window.tempBatchHighestId && window.tempBatchHighestId.cid === cid && window.tempBatchHighestId.yy === currentYY) {
             if (window.tempBatchHighestId.maxNum > maxNum) maxNum = window.tempBatchHighestId.maxNum;
         }
-        window.tempBatchHighestId = { cid, maxNum: maxNum + 1 };
+        window.tempBatchHighestId = { cid, yy: currentYY, maxNum: maxNum + 1 };
 
-        return prefix + (maxNum + 1).toString().padStart(5, '0');
+        return yearPrefix + (maxNum + 1);
 
     } catch (e) {
         console.warn("Optimized NextId query failed (possibly missing index), falling back...", e);
         // Fallback to local memory search (very reliable but limited to what's loaded)
-        let maxNum = startNum - 1;
+        let maxNum = -1;
         lastTicketsBatch.forEach(t => {
-            if (t.id && t.id.startsWith(prefix)) {
-                const num = parseInt(t.id.substring(prefix.length).replace(/[^0-9]/g, "")) || 0;
-                if (num > maxNum) maxNum = num;
+            if (t.id && t.id.startsWith(yearPrefix)) {
+                const seq = parseInt(t.id.substring(yearPrefix.length), 10) || 0;
+                if (seq > maxNum) maxNum = seq;
             }
         });
-        return prefix + (maxNum + 1).toString().padStart(5, '0');
+        return yearPrefix + (maxNum + 1);
     }
 }
 

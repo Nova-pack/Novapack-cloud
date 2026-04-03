@@ -219,12 +219,26 @@ window.advLoadClientDetails = async (uid) => {
     }
     advCurrentClient = window.userMap[uid];
     
-    // Auto-generate invoice number placeholder
+    // Auto-generate invoice number placeholder — Format: FAC-YY-SEQ
     try {
-        const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-        let nextNum = 1;
-        if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
-        document.getElementById('adv-inv-number').value = `FAC-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')} (BORRADOR)`;
+        const currentYY = String(new Date().getFullYear()).slice(-2);
+        const yearStart = new Date(new Date().getFullYear(), 0, 1);
+        const yearEnd = new Date(new Date().getFullYear() + 1, 0, 1);
+        const invSnap = await db.collection('invoices')
+            .where('date', '>=', yearStart)
+            .where('date', '<', yearEnd)
+            .orderBy('date', 'desc')
+            .get();
+        let nextNum = 0;
+        invSnap.forEach(doc => {
+            const iid = doc.data().invoiceId || '';
+            const match = iid.match(/^FAC-\d{2}-(\d+)$/);
+            if (match) {
+                const seq = parseInt(match[1], 10);
+                if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+            }
+        });
+        document.getElementById('adv-inv-number').value = `FAC-${currentYY}-${nextNum} (BORRADOR)`;
         document.getElementById('adv-inv-date').value = new Date().toISOString().split('T')[0];
     } catch(e) { console.error("Error auto-num:", e); }
     
@@ -680,12 +694,36 @@ document.getElementById('btn-adv-save').onclick = async () => {
     
     if (typeof showLoading === 'function') showLoading();
     try {
-        const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-        let nextNum = 1;
-        if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
-
         const dateStr = document.getElementById('adv-inv-date').value;
         const finalDate = dateStr ? new Date(dateStr) : new Date();
+        const invYear = finalDate.getFullYear();
+        const invYY = String(invYear).slice(-2);
+
+        // Year-based invoice numbering: FAC-YY-SEQ, resets each year
+        const yearStart = new Date(invYear, 0, 1);
+        const yearEnd = new Date(invYear + 1, 0, 1);
+        const invSnap = await db.collection('invoices')
+            .where('date', '>=', yearStart)
+            .where('date', '<', yearEnd)
+            .orderBy('date', 'desc')
+            .get();
+        let nextNum = 0;
+        invSnap.forEach(doc => {
+            const d = doc.data();
+            const iid = d.invoiceId || '';
+            const match = iid.match(/^FAC-\d{2}-(\d+)$/);
+            if (match) {
+                const seq = parseInt(match[1], 10);
+                if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+            }
+        });
+        // Fallback: also check the global number field
+        if (nextNum === 0 && !invSnap.empty) {
+            invSnap.forEach(doc => {
+                const n = doc.data().number || 0;
+                if (n >= nextNum) nextNum = n + 1;
+            });
+        }
 
         // Extraer tickets afectados
         const ticketsIdArray = advGridRows.filter(r => r.ticketId).map(r => r.rawTicketData.id);
@@ -719,7 +757,7 @@ document.getElementById('btn-adv-save').onclick = async () => {
 
         const invoiceData = {
             number: nextNum,
-            invoiceId: `FAC-${finalDate.getFullYear()}-${nextNum.toString().padStart(4, '0')}`,
+            invoiceId: `FAC-${invYY}-${nextNum}`,
             date: finalDate,
             clientId: advCurrentClient.id,
             clientName: advCurrentClient.name,
@@ -856,14 +894,30 @@ if(btnCredit) {
             if(!doc.exists) throw new Error("La factura original ya no existe.");
             const orig = doc.data();
             
-            const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-            let nextNum = 1;
-            if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
-            
+            // Year-based numbering for credit note: ABO-YY-SEQ
+            const aboYear = new Date().getFullYear();
+            const aboYY = String(aboYear).slice(-2);
+            const aboYrStart = new Date(aboYear, 0, 1);
+            const aboYrEnd = new Date(aboYear + 1, 0, 1);
+            const invSnapAbo = await db.collection('invoices')
+                .where('date', '>=', aboYrStart)
+                .where('date', '<', aboYrEnd)
+                .orderBy('date', 'desc')
+                .get();
+            let nextNum = 0;
+            invSnapAbo.forEach(doc => {
+                const iid = doc.data().invoiceId || '';
+                const match = iid.match(/^(?:FAC|ABO)-\d{2}-(\d+)$/);
+                if (match) {
+                    const seq = parseInt(match[1], 10);
+                    if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+                }
+            });
+
             const abonoData = {
                 ...orig,
                 number: nextNum,
-                invoiceId: `ABO-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`,
+                invoiceId: `ABO-${aboYY}-${nextNum}`,
                 date: new Date(),
                 subtotal: -orig.subtotal,
                 iva: -orig.iva,

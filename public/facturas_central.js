@@ -636,9 +636,25 @@
         if (!confirm(`¿Confirmas generar un abono parcial con ${selectedLines.length} línea(s)?`)) return;
 
         try {
-            const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-            let nextNum = 1;
-            if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
+            // Year-based numbering: ABO-YY-SEQ
+            const aboYear = new Date().getFullYear();
+            const aboYY = String(aboYear).slice(-2);
+            const aboYrStart = new Date(aboYear, 0, 1);
+            const aboYrEnd = new Date(aboYear + 1, 0, 1);
+            const invSnap = await db.collection('invoices')
+                .where('date', '>=', aboYrStart)
+                .where('date', '<', aboYrEnd)
+                .orderBy('date', 'desc')
+                .get();
+            let nextNum = 0;
+            invSnap.forEach(doc => {
+                const iid = doc.data().invoiceId || '';
+                const match = iid.match(/^(?:FAC|ABO)-\d{2}-(\d+)$/);
+                if (match) {
+                    const seq = parseInt(match[1], 10);
+                    if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
+                }
+            });
 
             const subtotal = selectedLines.reduce((s, l) => s + l.total, 0);
             const ivaRate = _facAbonoOriginal.ivaRate || 21;
@@ -649,7 +665,7 @@
 
             const abonoData = {
                 number: nextNum,
-                invoiceId: `ABO-${new Date().getFullYear()}-${nextNum.toString().padStart(4, '0')}`,
+                invoiceId: `ABO-${aboYY}-${nextNum}`,
                 date: new Date(),
                 clientId: _facAbonoOriginal.clientId,
                 clientName: _facAbonoOriginal.clientName,
