@@ -268,9 +268,9 @@ window.openMailboxModal = function(id) {
     const bodyEl = document.getElementById('mailbox-modal-body');
     if (bodyEl) bodyEl.innerText = item.body || '(Sin cuerpo de mensaje visible. Revisa el correo original.)';
 
-    // Category badge
-    const catBadgeEl = document.getElementById('mailbox-modal-category');
-    if (catBadgeEl) catBadgeEl.innerText = getCategoryText(item.category || 'otro');
+    // Category dropdown
+    const catSelect = document.getElementById('mailbox-modal-category-select');
+    if (catSelect) catSelect.value = item.category || 'otro';
 
     // Ticket ref
     const tRef = document.getElementById('mailbox-modal-ticketref');
@@ -534,6 +534,34 @@ window.updateMailboxStatus = async function(id, newStatus) {
         } else {
             showMailboxToast('Error al actualizar: ' + error.message, 'error');
         }
+    }
+};
+
+/**
+ * Update Mailbox Category (admin recategorization)
+ */
+window.updateMailboxCategory = async function(newCategory) {
+    const id = document.getElementById('mailbox-modal')?.getAttribute('data-active-id');
+    if (!id || !newCategory) return;
+
+    try {
+        await window.db.collection('mailbox').doc(id).update({
+            category: newCategory,
+            categoryManual: true,
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        const item = _mailboxCache.find(i => i.id === id);
+        if (item) {
+            item.category = newCategory;
+            item.categoryManual = true;
+        }
+
+        showMailboxToast('Categoría cambiada a: ' + getCategoryText(newCategory), 'success');
+        renderMailbox();
+    } catch (error) {
+        console.error("Error updating category:", error);
+        showMailboxToast('Error al cambiar categoría: ' + error.message, 'error');
     }
 };
 

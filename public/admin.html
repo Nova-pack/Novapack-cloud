@@ -1888,7 +1888,16 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding-bottom:15px; margin-bottom:15px;">
             <h2 id="mailbox-modal-subject" style="margin:0; font-size:1.3rem; color:white; padding-right:40px; word-break:break-word;">Asunto</h2>
             <div id="mailbox-modal-badges" style="display:flex; gap:10px; align-items:center;">
-                <span id="mailbox-modal-category" style="background:rgba(255,255,255,0.08); padding:4px 12px; border-radius:20px; font-size:0.8rem; color:#ccc;"></span>
+                <select id="mailbox-modal-category-select" onchange="updateMailboxCategory(this.value)" style="background:#2a2a2d; border:1px solid #444; color:#ccc; padding:5px 12px; border-radius:20px; font-size:0.8rem; cursor:pointer; outline:none; appearance:auto;">
+                    <option value="pod">📄 Solicitud POD</option>
+                    <option value="abono">💰 Solicitud Abono</option>
+                    <option value="rectificacion">📑 Rectificación</option>
+                    <option value="fiscal">📊 Petición Fiscal</option>
+                    <option value="consulta_albaran">📦 Consulta Albarán</option>
+                    <option value="reclamacion">⚠️ Reclamación</option>
+                    <option value="facturacion">🏢 Facturación</option>
+                    <option value="otro">📧 Otros</option>
+                </select>
             </div>
         </div>
 
