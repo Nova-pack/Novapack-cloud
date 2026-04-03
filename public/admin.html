@@ -1426,6 +1426,36 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <!-- ============================================= -->
+<!-- Modal Asignación Debidos (top-level)          -->
+<!-- ============================================= -->
+<div id="modal-assign-debido" class="modal" style="display:none; align-items:center; justify-content:center;">
+    <div class="modal-content" style="max-width:500px; width:90%; padding:20px; background:#1e1e1e; border:1px solid #3c3c3c; border-radius:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #3c3c3c; padding-bottom:10px;">
+            <h2 style="margin:0; color:#FF9800; font-size:1.3rem;">Adjudicar Facturación</h2>
+            <span class="close" onclick="closeAssignDebidoModal()" style="font-size:1.5rem;">&times;</span>
+        </div>
+        <p style="color:#d4d4d4; font-size:0.9rem;">
+            Selecciona a qué cliente de tu agenda deseas facturar el Albarán <strong id="assign-debido-id" style="color:#fff;"></strong>. Al asignarlo, desaparecerá de esta lista y se añadirá a la facturación de ese cliente.
+        </p>
+        <input type="hidden" id="assign-debido-ticket-id">
+
+        <div class="form-group" style="margin-top:15px; position:relative;">
+            <label>Buscar Cliente (Nombre, NIF, Número):</label>
+            <input type="text" id="assign-debido-search" placeholder="Ej: Perez S.L." autocomplete="off" style="width:100%;">
+            <div id="assign-debido-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#252526; border:1px solid #444; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 4px 10px rgba(0,0,0,0.5);"></div>
+        </div>
+
+        <div id="assign-debido-selected-card" style="display:none; margin-top:15px; padding:15px; background:rgba(76, 175, 80, 0.1); border:1px solid #4CAF50; border-radius:4px;">
+            <div style="font-weight:bold; color:#fff;" id="assign-debido-sel-name"></div>
+            <div style="font-size:0.8rem; color:#aaa;" id="assign-debido-sel-nif"></div>
+            <input type="hidden" id="assign-debido-sel-uid">
+            <input type="hidden" id="assign-debido-sel-idnum">
+            <button class="btn btn-primary" onclick="confirmAssignDebido()" style="width:100%; margin-top:15px;"><span class="material-symbols-outlined">save</span> CONFIRMAR ASIGNACIÓN</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================= -->
 <!-- PIN Access Control — Facturación Pro          -->
 <!-- ============================================= -->
 <style>
@@ -2173,33 +2203,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             
-            <!-- Modal Asignación Debidos -->
-            <div id="modal-assign-debido" class="modal" style="display:none; align-items:center; justify-content:center;">
-                <div class="modal-content" style="max-width:500px; width:90%; padding:20px; background:#1e1e1e; border:1px solid #3c3c3c; border-radius:8px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #3c3c3c; padding-bottom:10px;">
-                        <h2 style="margin:0; color:#FF9800; font-size:1.3rem;">Adjudicar Facturación</h2>
-                        <span class="close" onclick="closeAssignDebidoModal()" style="font-size:1.5rem;">&times;</span>
-                    </div>
-                    <p style="color:#d4d4d4; font-size:0.9rem;">
-                        Selecciona a qué cliente de tu agenda deseas facturar el Albarán <strong id="assign-debido-id" style="color:#fff;"></strong>. Al asignarlo, desaparecerá de esta lista y se añadirá a la facturación de ese cliente.
-                    </p>
-                    <input type="hidden" id="assign-debido-ticket-id">
-                    
-                    <div class="form-group" style="margin-top:15px; position:relative;">
-                        <label>Buscar Cliente (Nombre, NIF, Número):</label>
-                        <input type="text" id="assign-debido-search" placeholder="Ej: Perez S.L." autocomplete="off" style="width:100%;">
-                        <div id="assign-debido-dropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#252526; border:1px solid #444; max-height:200px; overflow-y:auto; z-index:100; box-shadow:0 4px 10px rgba(0,0,0,0.5);"></div>
-                    </div>
-                    
-                    <div id="assign-debido-selected-card" style="display:none; margin-top:15px; padding:15px; background:rgba(76, 175, 80, 0.1); border:1px solid #4CAF50; border-radius:4px;">
-                        <div style="font-weight:bold; color:#fff;" id="assign-debido-sel-name"></div>
-                        <div style="font-size:0.8rem; color:#aaa;" id="assign-debido-sel-nif"></div>
-                        <input type="hidden" id="assign-debido-sel-uid">
-                        <input type="hidden" id="assign-debido-sel-idnum">
-                        <button class="btn btn-primary" onclick="confirmAssignDebido()" style="width:100%; margin-top:15px;"><span class="material-symbols-outlined">save</span> CONFIRMAR ASIGNACIÓN</button>
-                    </div>
-                </div>
-            </div>
+            <!-- Modal Asignación Debidos: movido a nivel body para ser visible desde cualquier pestaña -->
         </div>
 
         <!-- PESTAÑA 2: FACTURAS EMITIDAS -->
