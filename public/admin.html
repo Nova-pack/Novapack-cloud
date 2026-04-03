@@ -1299,7 +1299,7 @@
                     <!-- Fin Botón Buzón -->
                     <span id="erp-toolbar-identity" style="color:#aaa; font-size:0.78rem; font-weight:400;"></span>
                     <div style="width:1px; height:16px; background:#555;"></div>
-                    <button onclick="sessionStorage.removeItem('adminActiveIdentity'); location.reload();" title="Cerrar sesión" style="background:transparent; border:1px solid #555; color:#FF5252; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:4px;">
+                    <button onclick="logout()" title="Cerrar sesión" style="background:transparent; border:1px solid #555; color:#FF5252; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:4px;">
                         <span class="material-symbols-outlined" style="font-size:15px;">logout</span> Salir
                     </button>
                 </div>
@@ -4109,11 +4109,12 @@ document.addEventListener('DOMContentLoaded', () => {
             window.logout = () => {
                 if (confirm("¿Cerrar sesión en Novapack Cloud?")) {
                     if (typeof showLoading === 'function') showLoading();
+                    sessionStorage.removeItem('adminActiveIdentity');
                     firebase.auth().signOut().then(() => {
                         window.location.href = 'index.html';
                     }).catch(e => {
                         console.error("Logout Error:", e);
-                        window.location.href = 'index.html'; // Force redirect
+                        window.location.href = 'index.html';
                     });
                 }
             };
