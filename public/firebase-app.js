@@ -226,6 +226,12 @@ auth.onAuthStateChanged(async (user) => {
         // Finalmente resetear el editor (Ahora que ya tenemos empresas y tickets cargados)
         await resetEditor();
 
+        // --- CHECK TERMS ACCEPTANCE ---
+        if (userData && !userData.termsAccepted) {
+            const termsModal = document.getElementById('modal-terms');
+            if (termsModal) termsModal.style.display = 'flex';
+        }
+
     } catch (e) {
         console.error("Critical Sync Error:", e);
     } finally {
@@ -1469,11 +1475,83 @@ function getPackagesData() {
     }));
 }
 
+// --- TERMS ACCEPTANCE ---
+window.acceptTerms = async function() {
+    try {
+        if (currentUser && currentUser.uid) {
+            await db.collection('users').doc(currentUser.uid).update({
+                termsAccepted: true,
+                termsAcceptedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            if (userData) userData.termsAccepted = true;
+        }
+        const modal = document.getElementById('modal-terms');
+        if (modal) modal.style.display = 'none';
+    } catch (e) {
+        console.error('Error accepting terms:', e);
+        alert('Error al guardar. Intentalo de nuevo.');
+    }
+};
+
+// --- FIRST TICKET WARNING ---
+let _firstTicketWarningShown = false;
+let _firstTicketContinueCallback = null;
+
+window.dismissFirstTicketWarning = function() {
+    const modal = document.getElementById('modal-first-ticket-warning');
+    if (modal) modal.style.display = 'none';
+    if (_firstTicketContinueCallback) {
+        _firstTicketContinueCallback();
+        _firstTicketContinueCallback = null;
+    }
+};
+
+async function checkFirstTicketWarning() {
+    if (_firstTicketWarningShown) return true;
+
+    // Check if user already has tickets
+    try {
+        const myId = userData ? (userData.idNum || userData.id) : null;
+        if (!myId) return true;
+
+        const snap = await db.collection('tickets')
+            .where('clientIdNum', '==', String(myId))
+            .limit(1)
+            .get();
+
+        if (!snap.empty) {
+            _firstTicketWarningShown = true;
+            return true; // Has tickets, no warning needed
+        }
+    } catch (e) {
+        console.warn('[FirstTicket] Check error:', e);
+        return true; // On error, allow through
+    }
+
+    // Show warning and wait for dismissal
+    return new Promise(function(resolve) {
+        const modal = document.getElementById('modal-first-ticket-warning');
+        if (modal) {
+            modal.style.display = 'flex';
+            _firstTicketContinueCallback = function() {
+                _firstTicketWarningShown = true;
+                resolve(true);
+            };
+        } else {
+            resolve(true);
+        }
+    });
+}
+
 // --- FORM SUBMIT (SAVE TICKET) ---
 let isSubmittingTicket = false;
 async function handleFormSubmit(e) {
     e.preventDefault();
     if (isSubmittingTicket) return;
+
+    // First ticket warning check
+    const canProceed = await checkFirstTicketWarning();
+    if (!canProceed) return;
 
     const receiverField = document.getElementById('ticket-receiver').value.trim();
     const addressField = document.getElementById('ticket-address').value.trim();
