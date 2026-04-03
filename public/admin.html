@@ -88,10 +88,14 @@
             transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* ERP Mode: sidebar is completely hidden */
+        /* ERP Mode: sidebar is completely hidden (including mobile-active state) */
         body.erp-mode-active .sidebar,
+        body.erp-mode-active .sidebar.mobile-active,
         body.erp-mode-active .mobile-header {
             display: none !important;
+            transform: translateX(-100%) !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
         body.erp-mode-active #main-content {
             display: none !important;
@@ -4218,8 +4222,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log("NOVAPACK ADMIN CONSOLE - ERP v2.0 ACTIVE");
 
-            // Mobile Sidebar Toggle
+            // Mobile Sidebar Toggle — blocked in ERP mode
             window.toggleSidebar = () => {
+                if (document.body.classList.contains('erp-mode-active')) return;
                 const sidebar = document.getElementById('sidebar');
                 if (sidebar) sidebar.classList.toggle('mobile-active');
             };
