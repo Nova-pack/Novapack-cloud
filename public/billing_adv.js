@@ -405,6 +405,7 @@ document.getElementById('btn-adv-save').onclick = async () => {
             // Advanced specific fields (to recreate grids if needed later)
             advancedGrid: advGridRows.map(r => ({description: r.description, qty: r.qty, price: r.price, discount: r.discount, iva: r.iva, total: r.total, ticketId: r.ticketId}))
         };
+        if (typeof getOperatorStamp === 'function') Object.assign(invoiceData, getOperatorStamp());
 
         const invDoc = await db.collection('invoices').add(invoiceData);
 
@@ -460,7 +461,7 @@ document.getElementById('btn-adv-pay')?.addEventListener('click', async () => {
     if(!advCurrentInvoiceId) { alert("Primero debes guardar la factura."); return; }
     if(confirm("¿Marcar esta factura como COBRADA?")) {
         try {
-            await db.collection('invoices').doc(advCurrentInvoiceId).update({ paid: true, paidDate: new Date() });
+            await db.collection('invoices').doc(advCurrentInvoiceId).update({ paid: true, paidDate: new Date(), ...(typeof getOperatorStamp === 'function' ? getOperatorStamp() : {}) });
             alert("✅ Factura marcada como cobrada exitosamente.");
             document.getElementById('btn-adv-pay').style.display = 'none';
         } catch(e) {
@@ -527,7 +528,8 @@ document.getElementById('btn-adv-credit')?.addEventListener('click', async () =>
         if (abonoData.ticketsDetail) {
             abonoData.ticketsDetail = abonoData.ticketsDetail.map(t => ({...t, price: -t.price}));
         }
-        
+        if (typeof getOperatorStamp === 'function') Object.assign(abonoData, getOperatorStamp());
+
         const abonoDoc = await db.collection('invoices').add(abonoData);
         alert(`✅ Abono ${abonoData.invoiceId} generado exitosamente.`);
         

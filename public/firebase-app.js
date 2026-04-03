@@ -10,6 +10,17 @@ window.addEventListener('unhandledrejection', function(event) {
     alert("PROMISE ERROR: " + (event.reason ? event.reason.message || event.reason : "Desconocido"));
 });
 
+// ============ AUDIT TRAIL: Operador oculto ============
+// Devuelve { _operadoPor, _operadoAt } para inyectar en cada escritura Firestore
+window.getOperatorStamp = function() {
+    const identity = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity') || 'sistema';
+    return {
+        _operadoPor: identity,
+        _operadoAt: new Date().toISOString()
+    };
+};
+// ======================================================
+
 // Configuración global y estado
 let currentUser = null;
 let userData = null; // Stored profile data (idNum, name, etc.)
@@ -1570,12 +1581,14 @@ async function handleFormSubmit(e) {
                 hideLoading();
                 return;
             }
+            Object.assign(data, getOperatorStamp());
             await db.collection('tickets').doc(editingId).update(data);
         } else {
             const businessId = await getNextId();
             data.id = businessId;
             data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
             data.printed = false;
+            Object.assign(data, getOperatorStamp());
 
             const docId = `${myIdNum}_${currentCompanyId}_${businessId}`;
             await db.collection('tickets').doc(docId).set(data);
@@ -4541,7 +4554,8 @@ async function handleExcelUpload(e) {
             tData.id = businessId;
             tData.packages = tData.packagesList.reduce((sum, p) => sum + (parseInt(p.qty) || 1), 0);
             tData.importBatchId = importBatchId; // Tag for undo
-            
+            Object.assign(tData, getOperatorStamp());
+
             await db.collection('tickets').doc(docId).set(tData);
 
             if (isFirstInSession) {

@@ -138,6 +138,7 @@ window.generateInvoiceJournalEntry = async function(invoiceData, invoiceDocId) {
         total: total,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if (typeof getOperatorStamp === 'function') Object.assign(journalEntry, getOperatorStamp());
 
     try {
         await db.collection('journal').add(journalEntry);
@@ -195,7 +196,7 @@ window.generatePaymentJournalEntry = async function(invoiceData, invoiceDocId) {
     ];
 
     try {
-        await db.collection('journal').add({
+        const paymentEntry = {
             number: asientoNum,
             date: new Date(),
             description: `Cobro factura ${invoiceId} de ${clientName}`,
@@ -207,7 +208,9 @@ window.generatePaymentJournalEntry = async function(invoiceData, invoiceDocId) {
             type: 'payment',
             total: total,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (typeof getOperatorStamp === 'function') Object.assign(paymentEntry, getOperatorStamp());
+        await db.collection('journal').add(paymentEntry);
         console.log(`[CONTA] ✅ Asiento cobro #${asientoNum} para factura ${invoiceId}`);
     } catch(e) {
         console.error('[CONTA] Error generando asiento de cobro:', e);
@@ -1252,6 +1255,7 @@ window.contaSaveGasto = async function() {
             total: total,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };
+        if (typeof getOperatorStamp === 'function') Object.assign(expData, getOperatorStamp());
         const expDoc = await db.collection('expenses').add(expData);
         
         // 2. Auto-generate journal entry for this expense

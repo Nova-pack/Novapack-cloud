@@ -213,7 +213,8 @@ window.confirmAssignDebido = async () => {
     try {
         await db.collection('tickets').doc(docId).update({
             billToUid: uid,
-            billToClientIdNum: idNum
+            billToClientIdNum: idNum,
+            ...(typeof getOperatorStamp === 'function' ? getOperatorStamp() : {})
         });
         
         closeAssignDebidoModal();
@@ -366,9 +367,10 @@ window.saveDebidoChanges = async () => {
         updates.createdAt = firebase.firestore.Timestamp.fromDate(new Date(dateVal));
     }
 
+    if (typeof getOperatorStamp === 'function') Object.assign(updates, getOperatorStamp());
     try {
         await db.collection('tickets').doc(docId).update(updates);
-        
+
         // Update cache
         const cached = debidosTicketsCache.find(t => t.docId === docId);
         if (cached) Object.assign(cached, updates);
