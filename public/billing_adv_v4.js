@@ -723,7 +723,7 @@ document.getElementById('btn-adv-save').onclick = async () => {
             date: finalDate,
             clientId: advCurrentClient.id,
             clientName: advCurrentClient.name,
-            clientCIF: advCurrentClient.idNum || 'N/A',
+            clientCIF: advCurrentClient.nif || advCurrentClient.idNum || 'N/A',
             subtotal: advCurrentCalculations.subtotal,
             iva: advCurrentCalculations.iva,
             ivaRate: advGridRows.length > 0 ? advGridRows[0].iva : 21, // Simplified avg if mixed
@@ -905,7 +905,7 @@ window.advLoadInvoice = async (invoiceId) => {
         if(!doc.exists) throw new Error("Factura no encontrada.");
         const inv = doc.data();
         
-        advCurrentClient = window.userMap ? window.userMap[inv.clientId] : { name: inv.clientName, idNum: inv.clientCIF, id: inv.clientId };
+        advCurrentClient = (window.userMap && window.userMap[inv.clientId]) ? window.userMap[inv.clientId] : { name: inv.clientName, nif: inv.clientCIF, idNum: inv.clientCIF, id: inv.clientId };
         advCurrentInvoiceId = doc.id;
         
         // Set header
