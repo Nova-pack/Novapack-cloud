@@ -710,13 +710,14 @@ function renderTicketItem(t, list) {
     else if (isDelivered) { badgeClass = 'delivered'; badgeText = '✅ ENTREGADO'; }
     else if (t.printed) { badgeClass = 'printed'; badgeText = 'IMPRESO'; }
 
+    const sfFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif";
     div.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-            <strong style="color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${docIdDisplay}</strong>
+            <strong style="font-family:${sfFont}; color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${docIdDisplay}</strong>
             <span class="status-badge ${badgeClass}" style="font-size:0.55rem; padding:2px 4px; ${isPendingDelete ? 'background:#FF3B30; color:white; border-radius:4px; font-weight:bold;' : ''}">${badgeText}</span>
         </div>
-        <div style="font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${receiverName}</div>
-        <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-dim); opacity:0.8;">
+        <div style="font-family:${sfFont}; font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${receiverName}</div>
+        <div style="font-family:${sfFont}; display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-dim); opacity:0.8;">
             <span>${dateStr}</span>
             <span>📦 ${pkgCount}</span>
         </div>
