@@ -190,7 +190,10 @@ window.renderMailbox = function() {
         const subjectFull = (item.subject || '(Sin Asunto)').replace(/"/g, '&quot;');
 
         html += `
-        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer;" class="mailbox-row hover-highlight" data-mail-idx="${idx}">
+        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer;" class="mailbox-row hover-highlight" data-mail-idx="${idx}" data-mail-id="${item.id}">
+            <td style="padding:12px; text-align:center;" onclick="event.stopPropagation()">
+                <input type="checkbox" class="mailbox-chk" data-mail-id="${item.id}" onchange="mailboxUpdateBulkBar()" style="width:18px; height:18px; cursor:pointer; accent-color:#FF9800;">
+            </td>
             <td style="padding:12px; text-align:center; font-size: 1.2rem;">${estIcon}</td>
             <td style="padding:12px; font-size:0.85rem; color:#aaa; font-weight: bold;">${catText}</td>
             <td style="padding:12px; font-weight:bold; color:#ddd;">${item.from || 'Desconocido'}</td>
@@ -209,6 +212,11 @@ window.renderMailbox = function() {
 
     tbody.innerHTML = html;
     window._mailboxFiltered = filtered;
+
+    // Reset bulk selection state
+    const selectAllChk = document.getElementById('mailbox-select-all');
+    if (selectAllChk) selectAllChk.checked = false;
+    mailboxUpdateBulkBar();
 
     if (!tbody._mailboxListenerAttached) {
         tbody._mailboxListenerAttached = true;
@@ -577,12 +585,104 @@ window.updateMailboxCategory = async function(newCategory) {
     }
 };
 
+// ============ BULK SELECTION & ACTIONS ============
+
+window.mailboxToggleAll = function(checked) {
+    document.querySelectorAll('.mailbox-chk').forEach(chk => { chk.checked = checked; });
+    mailboxUpdateBulkBar();
+};
+
+window.mailboxUpdateBulkBar = function() {
+    const checks = document.querySelectorAll('.mailbox-chk:checked');
+    const bar = document.getElementById('mailbox-bulk-bar');
+    const countEl = document.getElementById('mailbox-bulk-count');
+    if (!bar) return;
+    if (checks.length > 0) {
+        bar.style.display = 'flex';
+        if (countEl) countEl.textContent = checks.length + ' seleccionado' + (checks.length > 1 ? 's' : '');
+    } else {
+        bar.style.display = 'none';
+    }
+};
+
+window.mailboxBulkClearSelection = function() {
+    document.querySelectorAll('.mailbox-chk').forEach(chk => { chk.checked = false; });
+    const selectAll = document.getElementById('mailbox-select-all');
+    if (selectAll) selectAll.checked = false;
+    mailboxUpdateBulkBar();
+};
+
+window.mailboxBulkArchive = async function() {
+    const ids = Array.from(document.querySelectorAll('.mailbox-chk:checked')).map(c => c.getAttribute('data-mail-id'));
+    if (ids.length === 0) return;
+
+    const bar = document.getElementById('mailbox-bulk-bar');
+    const countEl = document.getElementById('mailbox-bulk-count');
+    if (countEl) countEl.textContent = `Archivando ${ids.length}...`;
+
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+        try {
+            await window.db.collection('mailbox').doc(id).update({
+                status: 'archivada',
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            const item = _mailboxCache.find(i => i.id === id);
+            if (item) item.status = 'archivada';
+            ok++;
+        } catch (e) {
+            console.error('[MAILBOX] Bulk archive error:', id, e);
+            fail++;
+        }
+    }
+
+    showMailboxToast(`${ok} correo${ok > 1 ? 's' : ''} archivado${ok > 1 ? 's' : ''}` + (fail ? ` (${fail} error${fail > 1 ? 'es' : ''})` : ''), 'success');
+    mailboxBulkClearSelection();
+    renderMailbox();
+};
+
+window.mailboxBulkResolve = async function() {
+    const ids = Array.from(document.querySelectorAll('.mailbox-chk:checked')).map(c => c.getAttribute('data-mail-id'));
+    if (ids.length === 0) return;
+
+    const countEl = document.getElementById('mailbox-bulk-count');
+    if (countEl) countEl.textContent = `Resolviendo ${ids.length}...`;
+
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+        try {
+            await window.db.collection('mailbox').doc(id).update({
+                status: 'archivada',
+                resolvedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            });
+            const item = _mailboxCache.find(i => i.id === id);
+            if (item) {
+                item.status = 'archivada';
+                item.resolvedAt = new Date();
+            }
+            ok++;
+        } catch (e) {
+            console.error('[MAILBOX] Bulk resolve error:', id, e);
+            fail++;
+        }
+    }
+
+    showMailboxToast(`${ok} correo${ok > 1 ? 's' : ''} resuelto${ok > 1 ? 's' : ''} y archivado${ok > 1 ? 's' : ''}` + (fail ? ` (${fail} error${fail > 1 ? 'es' : ''})` : ''), 'success');
+    mailboxBulkClearSelection();
+    renderMailbox();
+};
+
+// =================================================
+
 // Auto-trigger loadMailbox when the tab opens
 document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.innerHTML = `
     .mailbox-row { transition: all 0.2s; }
     .mailbox-row:hover { background: rgba(0, 206, 209, 0.1) !important; cursor: pointer; }
+    .mailbox-chk:checked ~ td { background: rgba(255,152,0,0.05); }
+    tr:has(.mailbox-chk:checked) { background: rgba(255,152,0,0.08) !important; }
     `;
     document.head.appendChild(style);
 });

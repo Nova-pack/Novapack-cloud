@@ -1700,7 +1700,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     <!-- Kanban/List Layout -->
     <div style="display:flex; flex-direction:column; gap:20px; max-width:1400px; margin:0 auto; width:100%;">
-        <div style="display:flex; gap:10px; margin-bottom: 10px; flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; margin-bottom: 10px; flex-wrap:wrap; align-items:flex-end;">
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <label style="font-size:0.75rem; color:var(--text-dim);">Estado</label>
                 <select id="mailbox-filter-status" class="form-control" style="width:180px; padding:10px;" onchange="renderMailbox()">
@@ -1733,11 +1733,26 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         </div>
 
+        <!-- Barra de acciones masivas -->
+        <div id="mailbox-bulk-bar" style="display:none; background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #FF9800; border-radius:10px; padding:10px 18px; margin-bottom:10px; align-items:center; gap:12px; flex-wrap:wrap;">
+            <span id="mailbox-bulk-count" style="color:#FF9800; font-weight:bold; font-size:0.9rem;">0 seleccionados</span>
+            <button onclick="mailboxBulkArchive()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:8px 18px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1.1rem;">archive</span> ARCHIVAR SELECCIONADOS
+            </button>
+            <button onclick="mailboxBulkResolve()" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:#fff; padding:8px 18px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1.1rem;">check_circle</span> RESOLVER Y ARCHIVAR
+            </button>
+            <button onclick="mailboxBulkClearSelection()" style="background:transparent; border:1px solid #555; color:#aaa; padding:8px 14px; border-radius:6px; font-size:0.85rem; cursor:pointer;">
+                CANCELAR
+            </button>
+        </div>
+
         <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; overflow:hidden;">
             <div class="table-responsive" style="max-height:600px; overflow-y:auto;">
                 <table class="user-list mailbox-table" style="width:100%; border-collapse:collapse;">
                     <thead style="position:sticky; top:0; background:#1e1e1e; z-index:10; box-shadow:0 2px 10px rgba(0,0,0,0.5);">
                         <tr style="border-bottom:1px solid #333; text-align:left;">
+                            <th style="padding:12px; width:36px; text-align:center;"><input type="checkbox" id="mailbox-select-all" onchange="mailboxToggleAll(this.checked)" style="width:18px; height:18px; cursor:pointer; accent-color:#FF9800;"></th>
                             <th style="padding:12px; width:40px; text-align:center;">Est.</th>
                             <th style="padding:12px; width:160px; text-align:center;">Categoría</th>
                             <th style="padding:12px; width:200px;">Remitente</th>
