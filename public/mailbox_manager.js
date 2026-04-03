@@ -169,6 +169,8 @@ window.renderMailbox = function() {
         if (est === 'en_curso') estIcon = '🟡';
         else if (est === 'resuelta') estIcon = '🟢';
         else if (est === 'archivada') estIcon = '⚫';
+        else if (est === 'pod_lista') estIcon = '📄';
+        else if (est === 'pod_autorizada') estIcon = '🚀';
 
         const catText = getCategoryText(item.category || 'otro');
 
@@ -301,6 +303,90 @@ window.openMailboxModal = function(id) {
         if (noTRef) noTRef.style.display = 'block';
     }
 
+    // ============ POD PANEL ============
+    const podPanel = document.getElementById('mailbox-pod-panel');
+    if (podPanel) {
+        if (item.podInfo && item.podInfo.ready) {
+            // POD available — show authorize panel
+            const reasonMap = { pod_disponible: 'POD disponible' };
+            let deliveredAt = 'N/A';
+            if (item.podInfo.deliveredAt) {
+                if (item.podInfo.deliveredAt.toDate) deliveredAt = item.podInfo.deliveredAt.toDate().toLocaleString('es-ES');
+                else if (item.podInfo.deliveredAt._seconds) deliveredAt = new Date(item.podInfo.deliveredAt._seconds * 1000).toLocaleString('es-ES');
+            }
+
+            podPanel.innerHTML = `
+                <div style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); border-radius:8px; padding:15px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                        <span class="material-symbols-outlined" style="color:#4CAF50; font-size:1.3rem;">check_circle</span>
+                        <strong style="color:#4CAF50; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px;">Respuesta POD Preparada</strong>
+                    </div>
+                    <div style="font-size:0.8rem; color:#ccc; margin-bottom:8px;">
+                        <div><strong>Estado:</strong> <span style="color:#4CAF50;">Entregado</span></div>
+                        <div><strong>Fecha entrega:</strong> ${deliveredAt}</div>
+                        <div><strong>Recibido por:</strong> ${item.podInfo.receiverName || 'N/A'}</div>
+                        <div><strong>Repartidor:</strong> ${item.podInfo.driverName || 'N/A'}</div>
+                        <div style="margin-top:6px;">
+                            ${item.podInfo.signatureURL ? '<span style="color:#2196F3;">📝 Firma</span> ' : ''}
+                            ${item.podInfo.photoURL ? '<span style="color:#FF9800;">📷 Foto</span>' : ''}
+                        </div>
+                    </div>
+                    ${item.status === 'pod_autorizada' ?
+                        '<div style="background:rgba(255,152,0,0.15); padding:8px; border-radius:6px; text-align:center; color:#FF9800; font-weight:bold; font-size:0.8rem;">⏳ Envío autorizado — pendiente de procesamiento</div>' :
+                    item.podSentAt ?
+                        '<div style="background:rgba(76,175,80,0.15); padding:8px; border-radius:6px; text-align:center; color:#4CAF50; font-weight:bold; font-size:0.8rem;">✅ POD enviada por email</div>' :
+                        `<button id="mailbox-btn-authorize-pod" class="btn btn-sm" style="width:100%; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; font-weight:bold; padding:10px; font-size:0.85rem; border:none; border-radius:6px; cursor:pointer; letter-spacing:1px; margin-top:5px;" onclick="authorizePODSend()">
+                            <span class="material-symbols-outlined" style="font-size:1.1rem; vertical-align:middle; margin-right:5px;">send</span> AUTORIZAR ENVÍO POD
+                        </button>`
+                    }
+                </div>`;
+            podPanel.style.display = 'block';
+        } else if (item.podInfo && !item.podInfo.ready) {
+            // POD not available — show reason
+            const reasons = {
+                albaran_no_encontrado: 'Albarán no encontrado en el sistema',
+                pendiente_entrega: 'Albarán pendiente de entrega',
+                entregado_sin_pod: 'Entregado pero sin firma/foto POD',
+                error_consulta: 'Error al consultar el albarán'
+            };
+            const reason = reasons[item.podInfo.reason] || item.podInfo.reason || 'Desconocido';
+            podPanel.innerHTML = `
+                <div style="background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:15px;">
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <span class="material-symbols-outlined" style="color:#FF9800; font-size:1.1rem;">info</span>
+                        <strong style="color:#FF9800; font-size:0.8rem; text-transform:uppercase;">POD No Disponible</strong>
+                    </div>
+                    <div style="font-size:0.8rem; color:#aaa;">${reason}</div>
+                </div>`;
+            podPanel.style.display = 'block';
+        } else {
+            podPanel.style.display = item.category === 'pod' ? 'block' : 'none';
+            if (item.category === 'pod') {
+                podPanel.innerHTML = '<div style="font-size:0.8rem; color:#888; font-style:italic; text-align:center; padding:10px;">Categoría POD detectada. El motor aún no ha consultado el estado del albarán.</div>';
+            }
+        }
+    }
+
+    // ============ ATTACHMENTS INFO ============
+    const attachPanel = document.getElementById('mailbox-modal-attachments');
+    if (attachPanel) {
+        if (item.attachments && item.attachments.length > 0) {
+            let attHtml = '<div style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Adjuntos:</div>';
+            item.attachments.forEach(att => {
+                const sizeKB = att.size ? (att.size / 1024).toFixed(1) + ' KB' : '';
+                attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:0.8rem; color:#ccc;">
+                    <span class="material-symbols-outlined" style="font-size:1rem; color:#FF9800;">attach_file</span>
+                    <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${att.filename}</span>
+                    <span style="color:#666; font-size:0.7rem;">${sizeKB}</span>
+                </div>`;
+            });
+            attachPanel.innerHTML = attHtml;
+            attachPanel.style.display = 'block';
+        } else {
+            attachPanel.style.display = 'none';
+        }
+    }
+
     // Load saved notes from Firestore
     const notesEl = document.getElementById('mailbox-modal-notes');
     if (notesEl) {
@@ -356,6 +442,42 @@ window.saveMailboxNotes = async function() {
     } catch (error) {
         console.error("[MAILBOX] Error saving notes:", error);
         showMailboxToast('Error al guardar notas: ' + error.message, 'error');
+    }
+};
+
+/**
+ * Authorize POD email send
+ * Marks the mailbox doc as 'pod_autorizada' so pod_responder.js picks it up
+ */
+window.authorizePODSend = async function() {
+    const modalEl = document.getElementById('mailbox-modal');
+    const id = modalEl?.getAttribute('data-active-id');
+    if (!id) return;
+
+    const item = _mailboxCache.find(i => i.id === id);
+    if (!item || !item.podInfo || !item.podInfo.ready) {
+        showMailboxToast('No se puede autorizar: POD no disponible', 'error');
+        return;
+    }
+
+    try {
+        await window.db.collection('mailbox').doc(id).update({
+            status: 'pod_autorizada',
+            podAuthorizedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        item.status = 'pod_autorizada';
+        showMailboxToast('Envío POD autorizado. Se procesará en breve.', 'success');
+
+        // Update the button in the panel
+        const btn = document.getElementById('mailbox-btn-authorize-pod');
+        if (btn) {
+            btn.outerHTML = '<div style="background:rgba(255,152,0,0.15); padding:8px; border-radius:6px; text-align:center; color:#FF9800; font-weight:bold; font-size:0.8rem;">⏳ Envío autorizado — pendiente de procesamiento</div>';
+        }
+    } catch(error) {
+        console.error("[MAILBOX] Error authorizing POD:", error);
+        showMailboxToast('Error al autorizar: ' + error.message, 'error');
     }
 };
 

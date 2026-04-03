@@ -1,12 +1,14 @@
 /**
- * NOVAPACK MAIL ENGINE v1.1
+ * NOVAPACK MAIL ENGINE v2.0
  * Connects to IONOS IMAP, reads recent emails, and syncs them to Firestore 'mailbox' collection.
+ * v2.0: HTML fallback, attachment info, POD auto-detection with ticket lookup
  * Run manually: node mail_engine.js
  * Or schedule via Task Scheduler / cron every 5 minutes.
  */
 
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
+const { JSDOM } = require('jsdom');
 const firebase = require('firebase/compat/app');
 require('firebase/compat/auth');
 require('firebase/compat/firestore');
@@ -40,17 +42,90 @@ const IMAP_MAX_RETRIES = 3;
 const IMAP_RETRY_DELAY_MS = 5000;
 // ================================
 
-// Categorize email by subject/body content
+// ============ SPAM / PUBLICITY FILTER ============
+function isSpamOrPublicity(from, subject, body, headers) {
+    const text = ((subject || '') + ' ' + (body || '')).toLowerCase();
+    const fromLower = (from || '').toLowerCase();
+
+    // Unsubscribe header or link = newsletter
+    if (headers && headers.get && headers.get('list-unsubscribe')) return true;
+    if (text.includes('unsubscribe') || text.includes('darse de baja') || text.includes('cancelar suscripci')) return true;
+
+    // Marketing keywords
+    const spamWords = ['newsletter', 'promoción especial', 'oferta exclusiva', 'click aquí para ver',
+        'no-reply@', 'noreply@', 'marketing@', 'promo@', 'news@', 'info@',
+        'has been added to', 'view in browser', 'ver en navegador'];
+    for (const w of spamWords) {
+        if (text.includes(w) || fromLower.includes(w)) return true;
+    }
+
+    // Automated system notifications
+    const systemSenders = ['mailer-daemon', 'postmaster', 'notify@', 'notification@', 'alert@', 'system@'];
+    for (const s of systemSenders) {
+        if (fromLower.includes(s)) return true;
+    }
+
+    return false;
+}
+
+// ============ HTML TO TEXT FALLBACK ============
+function htmlToText(html) {
+    try {
+        const dom = new JSDOM(html);
+        const doc = dom.window.document;
+        // Remove script/style tags
+        doc.querySelectorAll('script, style, head').forEach(el => el.remove());
+        // Get text content, collapse whitespace
+        return doc.body.textContent.replace(/\s+/g, ' ').trim();
+    } catch(e) {
+        // Simple regex fallback
+        return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+}
+
+// ============ CATEGORIZE BY WEIGHTED SCORE ============
 function categorizeEmail(subject, body) {
     const text = ((subject || '') + ' ' + (body || '')).toLowerCase();
-    if (text.includes('pod') || text.includes('prueba de entrega') || text.includes('comprobante')) return 'pod';
-    if (text.includes('abono') || text.includes('devoluc')) return 'abono';
-    if (text.includes('rectifica') || text.includes('error en factura')) return 'rectificacion';
-    if (text.includes('fiscal') || text.includes('modelo') || text.includes('hacienda') || text.includes('certificado')) return 'fiscal';
-    if (text.includes('albar') || text.includes('np-') || text.includes('envío') || text.includes('paquete') || text.includes('seguimiento')) return 'consulta_albaran';
-    if (text.includes('reclama') || text.includes('queja') || text.includes('incidencia') || text.includes('daño') || text.includes('roto')) return 'reclamacion';
-    if (text.includes('factura') || text.includes('cobro') || text.includes('pago') || text.includes('recibo')) return 'facturacion';
-    return 'otro';
+    const subjectLower = (subject || '').toLowerCase();
+
+    const categories = {
+        pod:              { keywords: ['pod', 'prueba de entrega', 'comprobante', 'justificante de entrega', 'acuse de recibo'], score: 0 },
+        abono:            { keywords: ['abono', 'devoluc', 'reembolso', 'devolver'], score: 0 },
+        rectificacion:    { keywords: ['rectifica', 'error en factura', 'factura rectificativa', 'corregir factura'], score: 0 },
+        fiscal:           { keywords: ['fiscal', 'hacienda', 'certificado fiscal', 'modelo 347', 'modelo 303', 'retencion', 'irpf'], score: 0 },
+        consulta_albaran: { keywords: ['albar', 'np-', 'envío', 'envio', 'paquete', 'seguimiento', 'donde está', 'estado del envio'], score: 0 },
+        reclamacion:      { keywords: ['reclama', 'queja', 'incidencia', 'daño', 'dano', 'roto', 'extravi', 'perdido'], score: 0 },
+        facturacion:      { keywords: ['factura', 'cobro', 'pago', 'recibo', 'vencimiento', 'pendiente de pago'], score: 0 }
+    };
+
+    for (const [cat, cfg] of Object.entries(categories)) {
+        for (const kw of cfg.keywords) {
+            if (subjectLower.includes(kw)) cfg.score += 3; // Subject match = 3x weight
+            else if (text.includes(kw)) cfg.score += 1;    // Body match = 1x weight
+        }
+    }
+
+    // Find highest score
+    let best = 'otro';
+    let bestScore = 0;
+    for (const [cat, cfg] of Object.entries(categories)) {
+        if (cfg.score > bestScore) {
+            bestScore = cfg.score;
+            best = cat;
+        }
+    }
+
+    return best;
+}
+
+// ============ EXTRACT ATTACHMENT INFO (metadata only, not content) ============
+function extractAttachmentInfo(attachments) {
+    if (!attachments || !attachments.length) return [];
+    return attachments.map(att => ({
+        filename: att.filename || 'sin_nombre',
+        contentType: att.contentType || 'application/octet-stream',
+        size: att.size || 0
+    }));
 }
 
 // Extract ticket references from text (150200209, NP-00001, NP00234, etc.)
@@ -89,6 +164,67 @@ function extractTicketRef(text) {
     }
 
     return null;
+}
+
+// ============ POD TICKET LOOKUP ============
+async function lookupTicketPOD(db, ticketRef) {
+    try {
+        // Search in tickets collection by document ID or ticketId field
+        let ticketDoc = await db.collection('tickets').doc(ticketRef).get();
+
+        // If not found by doc ID, try querying by ticketId field
+        if (!ticketDoc.exists) {
+            const query = await db.collection('tickets')
+                .where('ticketId', '==', ticketRef)
+                .limit(1)
+                .get();
+            if (!query.empty) {
+                ticketDoc = query.docs[0];
+            } else {
+                // Try with albaranNumber field
+                const query2 = await db.collection('tickets')
+                    .where('albaranNumber', '==', ticketRef)
+                    .limit(1)
+                    .get();
+                if (!query2.empty) {
+                    ticketDoc = query2.docs[0];
+                }
+            }
+        }
+
+        if (!ticketDoc || !ticketDoc.exists) {
+            console.log(`[MAIL ENGINE] POD lookup: ticket ${ticketRef} not found`);
+            return { ready: false, reason: 'albaran_no_encontrado' };
+        }
+
+        const t = ticketDoc.data();
+        const isDelivered = t.status === 'Entregado' || t.delivered === true;
+
+        if (!isDelivered) {
+            return { ready: false, reason: 'pendiente_entrega' };
+        }
+
+        const hasSignature = !!t.signatureURL;
+        const hasPhoto = !!t.photoURL;
+
+        if (!hasSignature && !hasPhoto) {
+            return { ready: false, reason: 'entregado_sin_pod', deliveredAt: t.deliveredAt || null };
+        }
+
+        return {
+            ready: true,
+            reason: 'pod_disponible',
+            ticketDocId: ticketDoc.id,
+            signatureURL: t.signatureURL || null,
+            photoURL: t.photoURL || null,
+            deliveredAt: t.deliveredAt || null,
+            receiverName: t.deliveryReceiverName || t.receiverName || 'N/A',
+            driverName: t.deliveredByDriver || 'N/A'
+        };
+    } catch(e) {
+        console.error(`[MAIL ENGINE] POD lookup error for ${ticketRef}:`, e.message);
+        return { ready: false, reason: 'error_consulta' };
+    }
 }
 
 async function run() {
@@ -184,9 +320,29 @@ async function run() {
                                 const parsed = await simpleParser(buffer);
                                 const from = parsed.from ? parsed.from.text : 'Desconocido';
                                 const subject = parsed.subject || '(Sin Asunto)';
-                                const body = parsed.text ? parsed.text.substring(0, MAX_BODY_LENGTH) : '';
                                 const date = parsed.date || new Date();
                                 const messageId = parsed.messageId || `imap_${seqno}_${Date.now()}`;
+
+                                // Body: prefer text, fallback to HTML→text
+                                let body = '';
+                                if (parsed.text) {
+                                    body = parsed.text.substring(0, MAX_BODY_LENGTH);
+                                } else if (parsed.html) {
+                                    body = htmlToText(parsed.html).substring(0, MAX_BODY_LENGTH);
+                                }
+
+                                // Spam/publicity filter
+                                if (isSpamOrPublicity(from, subject, body, parsed.headers)) {
+                                    console.log(`[MAIL ENGINE] Filtered (spam/publicity): "${subject}" from ${from}`);
+                                    processed++;
+                                    return;
+                                }
+
+                                // Attachment metadata (not content)
+                                const attachments = extractAttachmentInfo(parsed.attachments);
+
+                                const category = categorizeEmail(subject, body);
+                                const ticketRef = extractTicketRef(subject + ' ' + body);
 
                                 emails.push({
                                     messageId,
@@ -194,8 +350,9 @@ async function run() {
                                     subject,
                                     body,
                                     date,
-                                    category: categorizeEmail(subject, body),
-                                    ticketRef: extractTicketRef(subject + ' ' + body),
+                                    category,
+                                    ticketRef,
+                                    attachments,
                                     status: 'nueva',
                                     source: 'imap_ionos'
                                 });
@@ -243,18 +400,39 @@ async function run() {
                                     continue;
                                 }
 
-                                await docRef.set({
+                                // POD auto-detection: if category is POD and we have a ticketRef, look up the ticket
+                                let podData = null;
+                                if (email.category === 'pod' && email.ticketRef) {
+                                    podData = await lookupTicketPOD(db, email.ticketRef);
+                                }
+
+                                const docData = {
                                     from: email.from,
                                     subject: email.subject,
                                     body: email.body,
                                     category: email.category,
                                     ticketRef: email.ticketRef || null,
+                                    attachments: email.attachments || [],
                                     status: email.status,
                                     source: email.source,
                                     messageId: email.messageId,
                                     createdAt: firebase.firestore.Timestamp.fromDate(email.date instanceof Date ? email.date : new Date(email.date))
-                                });
+                                };
+
+                                // If POD data found, enrich the mailbox doc
+                                if (podData) {
+                                    docData.podInfo = podData;
+                                    if (podData.ready) {
+                                        docData.status = 'pod_lista';
+                                    }
+                                }
+
+                                await docRef.set(docData);
                                 written++;
+
+                                if (podData) {
+                                    console.log(`[MAIL ENGINE] POD enriched: ticket ${email.ticketRef} → ${podData.ready ? 'READY' : 'NOT READY'}`);
+                                }
                             } catch(e) {
                                 console.error(`[MAIL ENGINE] Write error for "${email.subject}":`, e.message);
                             }

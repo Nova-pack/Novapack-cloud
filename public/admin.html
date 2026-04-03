@@ -1536,6 +1536,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <select id="mailbox-filter-status" class="form-control" style="width:180px; padding:10px;" onchange="renderMailbox()">
                     <option value="todas" selected>Todas</option>
                     <option value="nueva">Nuevas (🔴)</option>
+                    <option value="pod_lista">POD Lista (📄)</option>
+                    <option value="pod_autorizada">POD Autorizada (🚀)</option>
                     <option value="en_curso">En Curso (🟡)</option>
                     <option value="resuelta">Resueltas (🟢)</option>
                     <option value="archivada">Archivadas (⚫)</option>
@@ -1737,10 +1739,16 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="flex:1; display:flex; flex-direction:column; gap:20px; border-left:1px solid #333; padding-left:20px; overflow-y:auto; min-width:250px;">
                 <div style="background:rgba(255,255,255,0.02); padding:15px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
                     <strong style="color:var(--brand-primary); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:10px;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">receipt_long</span> Ref. Albarán</strong>
-                    <div id="mailbox-modal-ticketref" style="font-size:1.2rem; font-weight:900; margin-bottom:10px; color:white; font-family:var(--font-logo); letter-spacing:1px;">NP-XXXX</div>
+                    <div id="mailbox-modal-ticketref" style="font-size:1.2rem; font-weight:900; margin-bottom:10px; color:white; font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif; letter-spacing:1px;">NP-XXXX</div>
                     <button id="mailbox-btn-ticket" class="btn btn-sm btn-outline" style="width:100%; border-color:#FF9800; color:#FF9800; font-weight:bold; letter-spacing:1px;" onclick="openTicketFromMailbox()"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle; margin-right:5px;">search</span> ABRIR ALBARÁN</button>
                     <div id="mailbox-no-ticket" style="font-size:0.8rem; color:#888; font-style:italic; display:none; text-align:center;">No detectado. Puedes añadirlo en la nota.</div>
                 </div>
+
+                <!-- POD Auto-response Panel -->
+                <div id="mailbox-pod-panel" style="display:none;"></div>
+
+                <!-- Attachments Panel -->
+                <div id="mailbox-modal-attachments" style="display:none; background:rgba(255,255,255,0.02); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);"></div>
 
                 <div style="background:rgba(255,255,255,0.02); padding:15px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
                     <strong style="color:var(--brand-primary); font-size:0.8rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:10px;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">reply</span> Respuesta</strong>
