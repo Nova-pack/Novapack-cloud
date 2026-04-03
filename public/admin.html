@@ -1568,8 +1568,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         <tr style="border-bottom:1px solid #333; text-align:left;">
                             <th style="padding:12px; width:40px; text-align:center;">Est.</th>
                             <th style="padding:12px; width:160px; text-align:center;">Categoría</th>
-                            <th style="padding:12px; width:250px;">Remitente</th>
-                            <th style="padding:12px;">Asunto</th>
+                            <th style="padding:12px; width:200px;">Remitente</th>
+                            <th style="padding:12px;">Asunto / Preview</th>
                             <th style="padding:12px; width:120px; text-align:center;">Albarán Ref.</th>
                             <th style="padding:12px; width:120px; text-align:center;">Fecha</th>
                             <th style="padding:12px; width:100px; text-align:center;">Acciones</th>
@@ -1716,7 +1716,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <div style="display:flex; justify-content:space-between; border-bottom:1px solid #333; padding-bottom:15px; margin-bottom:15px;">
             <h2 id="mailbox-modal-subject" style="margin:0; font-size:1.3rem; color:white; padding-right:40px; word-break:break-word;">Asunto</h2>
             <div id="mailbox-modal-badges" style="display:flex; gap:10px; align-items:center;">
-                <!-- Badges go here -->
+                <span id="mailbox-modal-category" style="background:rgba(255,255,255,0.08); padding:4px 12px; border-radius:20px; font-size:0.8rem; color:#ccc;"></span>
             </div>
         </div>
 
@@ -1749,12 +1749,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <div style="border-top:1px solid #333; margin-top:5px; padding-top:20px; flex:1; display:flex; flex-direction:column;">
                     <strong style="color:white; font-size:0.9rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:10px;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle; color:var(--text-dim);">edit_note</span> Notas Internas</strong>
-                    <textarea id="mailbox-modal-notes" class="form-control" placeholder="Añade notas sobre esta incidencia..." style="resize:none; flex:1; min-height:100px; margin-bottom:15px; font-size:0.85rem; padding:10px; background:rgba(0,0,0,0.5);"></textarea>
-                    
+                    <textarea id="mailbox-modal-notes" class="form-control" placeholder="Añade notas sobre esta incidencia..." style="resize:none; flex:1; min-height:100px; margin-bottom:10px; font-size:0.85rem; padding:10px; background:rgba(0,0,0,0.5);"></textarea>
+                    <button class="btn btn-sm" style="background:#2196F3; color:white; font-weight:bold; margin-bottom:15px; width:100%;" onclick="saveMailboxNotes()"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle; margin-right:5px;">save</span> GUARDAR NOTAS</button>
+
                     <div style="display:flex; flex-direction:column; gap:10px;">
-                        <button class="btn btn-sm btn-outline" style="border-color:#FFC107; color:#FFC107; font-weight:bold;" onclick="updateMailboxStatus('en_curso')">⏳ EN CURSO</button>
-                        <button class="btn btn-sm btn-outline" style="border-color:#4CAF50; color:#4CAF50; font-weight:bold;" onclick="updateMailboxStatus('resuelta')">✅ RESUELTA</button>
-                        <button class="btn btn-sm btn-outline" style="border-color:#9E9E9E; color:#9E9E9E; font-weight:bold;" onclick="updateMailboxStatus('archivada')">📦 ARCHIVAR</button>
+                        <button class="btn btn-sm btn-outline" style="border-color:#FFC107; color:#FFC107; font-weight:bold;" onclick="updateMailboxStatus(null,'en_curso')">⏳ EN CURSO</button>
+                        <button class="btn btn-sm btn-outline" style="border-color:#4CAF50; color:#4CAF50; font-weight:bold;" onclick="updateMailboxStatus(null,'resuelta')">✅ RESUELTA</button>
+                        <button class="btn btn-sm btn-outline" style="border-color:#9E9E9E; color:#9E9E9E; font-weight:bold;" onclick="updateMailboxStatus(null,'archivada')">📦 ARCHIVAR</button>
                     </div>
                 </div>
             </div>

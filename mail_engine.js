@@ -1,5 +1,5 @@
 /**
- * NOVAPACK MAIL ENGINE v1.0
+ * NOVAPACK MAIL ENGINE v1.1
  * Connects to IONOS IMAP, reads recent emails, and syncs them to Firestore 'mailbox' collection.
  * Run manually: node mail_engine.js
  * Or schedule via Task Scheduler / cron every 5 minutes.
@@ -33,6 +33,11 @@ const FIREBASE_CONFIG = {
 const DAYS_BACK = 3;
 // Max emails to process per run
 const MAX_EMAILS = 50;
+// Max body length to store (was 2000, now 10000 for full visibility)
+const MAX_BODY_LENGTH = 10000;
+// IMAP retry config
+const IMAP_MAX_RETRIES = 3;
+const IMAP_RETRY_DELAY_MS = 5000;
 // ================================
 
 // Categorize email by subject/body content
@@ -179,7 +184,7 @@ async function run() {
                                 const parsed = await simpleParser(buffer);
                                 const from = parsed.from ? parsed.from.text : 'Desconocido';
                                 const subject = parsed.subject || '(Sin Asunto)';
-                                const body = parsed.text ? parsed.text.substring(0, 2000) : '';
+                                const body = parsed.text ? parsed.text.substring(0, MAX_BODY_LENGTH) : '';
                                 const date = parsed.date || new Date();
                                 const messageId = parsed.messageId || `imap_${seqno}_${Date.now()}`;
 
@@ -321,13 +326,29 @@ async function main() {
         console.error('[MAIL ENGINE] Auth setup error:', e.message);
     }
 
-    try {
-        await run();
-    } catch(e) {
-        console.error('[MAIL ENGINE] Fatal error:', e.message);
+    let lastError = null;
+    for (let attempt = 1; attempt <= IMAP_MAX_RETRIES; attempt++) {
+        try {
+            console.log(`[MAIL ENGINE] Attempt ${attempt}/${IMAP_MAX_RETRIES}...`);
+            await run();
+            lastError = null;
+            break;
+        } catch(e) {
+            lastError = e;
+            console.error(`[MAIL ENGINE] Attempt ${attempt} failed: ${e.message}`);
+            if (attempt < IMAP_MAX_RETRIES) {
+                console.log(`[MAIL ENGINE] Retrying in ${IMAP_RETRY_DELAY_MS / 1000}s...`);
+                await new Promise(r => setTimeout(r, IMAP_RETRY_DELAY_MS));
+            }
+        }
     }
 
-    process.exit(0);
+    if (lastError) {
+        console.error('[MAIL ENGINE] ALL RETRIES EXHAUSTED. Last error:', lastError.message);
+        console.error('[MAIL ENGINE] ⚠️  ALERTA: El buzón no se ha podido sincronizar. Revisa la conexión IMAP o las credenciales.');
+    }
+
+    process.exit(lastError ? 1 : 0);
 }
 
 main();
