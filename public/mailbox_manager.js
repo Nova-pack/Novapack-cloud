@@ -494,10 +494,16 @@ window.updateMailboxStatus = async function(id, newStatus) {
     const notesEl = document.getElementById('mailbox-modal-notes');
     const notes = notesEl ? notesEl.value : undefined;
 
+    // Auto-archivar al resolver: guardar en su categoría como archivado
+    const finalStatus = (newStatus === 'resuelta') ? 'archivada' : newStatus;
+
     const updateData = {
-        status: newStatus,
+        status: finalStatus,
         updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
     };
+    if (newStatus === 'resuelta') {
+        updateData.resolvedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+    }
     if (notes !== undefined) {
         updateData.notes = notes;
     }
@@ -505,16 +511,22 @@ window.updateMailboxStatus = async function(id, newStatus) {
     try {
         await window.db.collection('mailbox').doc(id).update(updateData);
 
-        console.log(`[MAILBOX] Ref ${id} estado cambiado a ${newStatus}`);
+        console.log(`[MAILBOX] Ref ${id} estado cambiado a ${finalStatus}`);
 
         const item = _mailboxCache.find(i => i.id === id);
         if (item) {
-            item.status = newStatus;
+            item.status = finalStatus;
+            if (newStatus === 'resuelta') item.resolvedAt = new Date();
             if (notes !== undefined) item.notes = notes;
         }
 
-        const statusLabels = { en_curso: 'En Curso', resuelta: 'Resuelta', archivada: 'Archivada' };
-        showMailboxToast(`Estado actualizado: ${statusLabels[newStatus] || newStatus}`, 'success');
+        const cat = item ? getCategoryText(item.category || 'otro') : '';
+        const toastMsg = newStatus === 'resuelta'
+            ? `Resuelta y archivada en ${cat}`
+            : `Estado actualizado: ${{en_curso:'En Curso', archivada:'Archivada'}[finalStatus] || finalStatus}`;
+        showMailboxToast(toastMsg, 'success');
+
+        renderMailbox();
 
         // Close modal after brief delay so user sees the toast
         setTimeout(() => {
