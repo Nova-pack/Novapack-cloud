@@ -64,6 +64,28 @@ function setPrintPageSize(size) {
     s.innerHTML = `@media print { @page { size: ${parsedSize}; margin: 0; } }`;
 }
 
+// Global reference to current afterprint handler so we can remove stale listeners
+let _currentAfterPrintHandler = null;
+
+function cleanPrintArea() {
+    const area = document.getElementById('print-area');
+    if (area) area.innerHTML = '';
+    document.body.classList.remove('printing-labels');
+    if (_currentAfterPrintHandler) {
+        window.removeEventListener('afterprint', _currentAfterPrintHandler);
+        _currentAfterPrintHandler = null;
+    }
+}
+
+function registerAfterPrint(handler) {
+    // Remove any stale listener from a previous print job
+    if (_currentAfterPrintHandler) {
+        window.removeEventListener('afterprint', _currentAfterPrintHandler);
+    }
+    _currentAfterPrintHandler = handler;
+    window.addEventListener('afterprint', handler);
+}
+
 // --- CUSTOM STORAGE (Firestore-backed User Settings) ---
 async function getCustomData(key) {
     if (!currentUser) return null;
@@ -847,7 +869,7 @@ async function loadEditor(t) {
     const isBilled = !!(t.invoiceId || t.invoiceNum);
     const isPendingDelete = !!t.deleteRequested;
     const isPendingConfirmation = (t.status === 'pending_confirmation');
-    const isLocked = isBilled || isPendingDelete || isPendingConfirmation;
+    const isLocked = isBilled || isPendingDelete;
 
     // Base UI State
     document.getElementById('editor-title').textContent = "Visualizando Albarán";
@@ -914,12 +936,18 @@ async function loadEditor(t) {
         }
     }
 
+    // Pending confirmation: form editable but with warning header
+    if (isPendingConfirmation && !isLocked) {
+        document.getElementById('editor-title').innerHTML = `<span style="color:#FFA500; font-weight:900;">⚠️ ALBARÁN MODIFICADO (REQUIERE ACCIÓN)</span>`;
+        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FFA500; color:black; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">PENDIENTE CONFIRMACIÓN</span>`;
+        form.style.pointerEvents = 'auto';
+        form.style.opacity = '1';
+        form.style.filter = 'none';
+    }
+
     // Final lock state if billed or pending delete
     if (isLocked) {
-        if (isPendingConfirmation) {
-            document.getElementById('editor-title').innerHTML = `<span style="color:#FFA500; font-weight:900;">⚠️ ALBARÁN MODIFICADO (REQUIERE ACCIÓN)</span>`;
-            document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FFA500; color:black; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">PENDIENTE CONFIRMACIÓN</span>`;
-        } else if (isPendingDelete) {
+        if (isPendingDelete) {
             document.getElementById('editor-title').innerHTML = `<span style="color:#FF3B30; font-weight:900;">🚨 ANULACIÓN SOLICITADA</span>`;
             document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">ESPERANDO APROBACIÓN</span>`;
         } else {
@@ -1702,6 +1730,13 @@ async function handleFormSubmit(e) {
                 alert("Albarán bloqueado por facturación.");
                 hideLoading();
                 return;
+            }
+            // If pending_confirmation, clear the pending state on save
+            if (currentDoc.exists && currentDoc.data().status === 'pending_confirmation') {
+                data.status = 'Aceptado';
+                data.pendingChanges = firebase.firestore.FieldValue.delete();
+                data.pendingChangesText = firebase.firestore.FieldValue.delete();
+                data.notes = (currentDoc.data().notes || '') + ` | [MODIFICADO Y ACEPTADO POR CLIENTE - ${new Date().toLocaleString()}]`;
             }
             Object.assign(data, getOperatorStamp());
             await db.collection('tickets').doc(editingId).update(data);
@@ -3151,9 +3186,9 @@ function printReportResults() {
         return;
     }
 
+    cleanPrintArea();
     const area = document.getElementById('print-area');
     setPrintPageSize('A4');
-    area.innerHTML = '';
 
     const dateStart = document.getElementById('report-date-start').value;
     const dateEnd = document.getElementById('report-date-end').value;
@@ -3230,12 +3265,11 @@ function printReportResults() {
 
     setTimeout(() => {
         const handleAfterPrint = () => {
-            area.innerHTML = '';
-            window.removeEventListener('afterprint', handleAfterPrint);
+            cleanPrintArea();
         };
-        window.addEventListener('afterprint', handleAfterPrint);
+        registerAfterPrint(handleAfterPrint);
         window.print();
-        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
+        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
     }, 600);
 }
 
@@ -3398,9 +3432,9 @@ function generateTicketHTML(t, footerLabel) {
 }
 
 async function printTicket(t) {
+    cleanPrintArea();
     const area = document.getElementById('print-area');
     setPrintPageSize('A4');
-    area.innerHTML = '';
 
     const includeManifest = confirm("¿Deseas imprimir también el Manifiesto para este albarán?");
 
@@ -3444,12 +3478,11 @@ async function printTicket(t) {
 
     setTimeout(() => {
         const handleAfterPrint = () => {
-            area.innerHTML = '';
-            window.removeEventListener('afterprint', handleAfterPrint);
+            cleanPrintArea();
         };
-        window.addEventListener('afterprint', handleAfterPrint);
+        registerAfterPrint(handleAfterPrint);
         window.print();
-        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
+        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
     }, 800);
 }
 
@@ -3574,6 +3607,7 @@ function generateManifestHTML(tickets) {
 // --- SHIFT BATCH PRINTING ---
 
 async function printManifestOnlyBatch(slot = 'AMBOS') {
+    cleanPrintArea();
     const area = document.getElementById('print-area');
     setPrintPageSize('A4');
     if (!area) return;
@@ -3610,13 +3644,11 @@ async function printManifestOnlyBatch(slot = 'AMBOS') {
     hideLoading();
     setTimeout(() => {
         const handleAfterPrint = () => {
-            area.innerHTML = '';
-            window.removeEventListener('afterprint', handleAfterPrint);
+            cleanPrintArea();
         };
-        window.addEventListener('afterprint', handleAfterPrint);
+        registerAfterPrint(handleAfterPrint);
         window.print();
-        // Fallback cleanup if afterprint doesn't fire (some mobile browsers)
-        setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
+        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
     }, 250);
 }
 function handleExportCSV() {
@@ -3638,6 +3670,7 @@ function handleExportCSV() {
 
 async function printShiftBatch(slot, reprint = false) {
     const today = getTodayLocal();
+    cleanPrintArea();
     setPrintPageSize('A4');
     showLoading();
     try {
@@ -3645,7 +3678,7 @@ async function printShiftBatch(slot, reprint = false) {
         (lastTicketsBatch || []).forEach(d => {
             const ts = parseSafeDate(d.createdAt);
             const dStr = formatDateLocal(ts);
-            
+
             // Los turnos sí deben ocultar los ya impresos (a menos que se ordene reimprimir explícitamente)
             if (dStr === today && d.timeSlot === slot && (!d.printed || reprint)) {
                 tickets.push({ ...d });
@@ -3657,7 +3690,6 @@ async function printShiftBatch(slot, reprint = false) {
         if (!confirm(`¿Imprimir ${tickets.length} albaranes y Manifiesto ? `)) return;
 
         const area = document.getElementById('print-area');
-        area.innerHTML = '';
         window.printingTickets = tickets; // Prevent sidebar corruption
 
         const updatePromises = [];
@@ -3693,13 +3725,11 @@ async function printShiftBatch(slot, reprint = false) {
 
         setTimeout(() => {
             const handleAfterPrint = () => {
-                area.innerHTML = '';
-                window.removeEventListener('afterprint', handleAfterPrint);
+                cleanPrintArea();
             };
-            window.addEventListener('afterprint', handleAfterPrint);
+            registerAfterPrint(handleAfterPrint);
             window.print();
-            // Fallback cleanup if afterprint doesn't fire
-            setTimeout(() => { if (area.innerHTML.length > 0) { area.innerHTML = ''; window.removeEventListener('afterprint', handleAfterPrint); } }, 60000);
+            setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
         }, 800);
     } catch (e) {
         console.error("Print batch error:", e);
@@ -3810,8 +3840,8 @@ async function printLabelShiftBatch(slot) {
         
         // Show paper selector before printing
         showPaperSelectModal((paperMode) => {
+            cleanPrintArea();
             const area = document.getElementById('print-area');
-            area.innerHTML = '';
             window.printingTickets = tickets;
             
             if (paperMode === 'a4') {
@@ -3841,11 +3871,12 @@ async function printLabelShiftBatch(slot) {
             renderTicketsList();
 
             setTimeout(() => {
+                const handleAfterPrint = () => {
+                    cleanPrintArea();
+                };
+                registerAfterPrint(handleAfterPrint);
                 window.print();
-                setTimeout(() => {
-                    area.innerHTML = '';
-                    document.body.classList.remove('printing-labels');
-                }, 5000);
+                setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
             }, 800);
         });
     } catch (e) {
@@ -3940,8 +3971,8 @@ function showPaperSelectModal(callback) {
 async function printLabel(t) {
     // Show paper type selection first
     showPaperSelectModal(async (paperMode) => {
+        cleanPrintArea();
         const area = document.getElementById('print-area');
-        area.innerHTML = '';
         
         if (paperMode === 'a4') {
             setPrintPageSize('A4 portrait');
@@ -3971,16 +4002,13 @@ async function printLabel(t) {
 
         // Improved printing sequence for mobile
         const handleAfterPrint = () => {
-            area.innerHTML = '';
-            document.body.classList.remove('printing-labels');
-            window.removeEventListener('afterprint', handleAfterPrint);
+            cleanPrintArea();
         };
-        window.addEventListener('afterprint', handleAfterPrint);
+        registerAfterPrint(handleAfterPrint);
 
         setTimeout(() => {
             window.print();
-            // Fallback cleanup if afterprint doesn't fire (some mobile browsers)
-            setTimeout(handleAfterPrint, 10000);
+            setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
         }, 800);
     });
 }
