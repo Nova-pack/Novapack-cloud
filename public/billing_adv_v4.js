@@ -321,7 +321,7 @@ window.advLoadClientDetails = async (uid) => {
                 
                 advGridRows.push({
                     id: 'row_' + Date.now() + Math.random(),
-                    description: `Albarán ${t.id} - Destino: ${t.receiver}`,
+                    description: `Albarán ${t.id || '-'} - Destino: ${t.receiver}`,
                     qty: pkgs,
                     price: price,
                     discount: 0,
@@ -555,7 +555,7 @@ window.advConfirmTicketImport = () => {
         // Push into Grid Rows
         advGridRows.push({
             id: 'row_' + Date.now() + Math.random(),
-            description: `Albarán ${t.id} - Destino: ${t.receiver}`,
+            description: `Albarán ${t.id || '-'} - Destino: ${t.receiver}`,
             qty: pkgs,
             price: t.calculatedPrice || 0,
             discount: 0,
@@ -932,7 +932,7 @@ window.advLoadInvoice = async (invoiceId) => {
              inv.ticketsDetail.forEach((t, i) => {
                  advGridRows.push({
                      id: 'row_loaded_' + i,
-                     description: `Albarán ${t.id} - ${t.compName || ''}`,
+                     description: `Albarán ${t.id || '-'} - ${t.compName || ''}`,
                      qty: 1,
                      price: t.price,
                      discount: 0,

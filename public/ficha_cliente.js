@@ -458,7 +458,7 @@
             <tr style="border-bottom:1px solid #2d2d30;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background='transparent'">
                 <td style="padding:6px; text-align:center;">${!isBilled ? `<input type="checkbox" class="fc-ticket-chk" value="${t.docId}" style="scale:1.1;">` : ''}</td>
                 <td style="padding:6px; color:#ccc;">${date}</td>
-                <td style="padding:6px; color:#FFD700; font-weight:bold;">${t.id || t.docId || '-'}</td>
+                <td style="padding:6px; color:#FFD700; font-weight:bold;">${t.id || '-'}</td>
                 <td style="padding:6px; color:#fff;">${t.receiver || t.receiverName || '-'}</td>
                 <td style="padding:6px; color:#888;">${t.city || t.receiverCity || '-'}</td>
                 <td style="padding:6px; text-align:center; color:#ccc;">${pkgs}</td>

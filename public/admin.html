@@ -5196,7 +5196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <td style="font-weight:900; color:var(--brand-primary); padding-left:20px;">${data.isGlobal ? '<span style="color:#FF9800;">🌍 GLOBAL</span>' : '#' + (data.idNum || '---')}</td>
                             <td>
                                 <div style="font-weight:700">${data.name || 'Sin Nombre'}</div>
-                                <div style="font-size:0.8rem; color:#888">${data.email || data.nif || data.id}</div>
+                                <div style="font-size:0.8rem; color:#888">${data.email || data.nif || ''}</div>
                                 ${data.isGlobal ? '' : `<div style="font-size:0.7rem; color:var(--brand-primary); margin-top:2px;">Clave: ${data.password || '****'}</div>`}
                                 ${data.parentClientId ? `<div style="font-size:0.7rem; color:#2196F3; margin-top:2px;"><span class="material-symbols-outlined" style="font-size:0.75rem; vertical-align:middle;">account_tree</span> ↳ Hijo de #${(userMap[data.parentClientId] || {}).idNum || '?'} (${(userMap[data.parentClientId] || {}).name || data.parentClientId})</div>` : ''}
                             </td>
