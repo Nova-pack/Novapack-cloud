@@ -1485,10 +1485,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pin.length !== 4) return;
 
         if (pin === FACTURA_PINS[_pendingIdentity]) {
+            var confirmedName = _pendingIdentity;
             closePinModal();
             // PIN correct → set identity and proceed
             if (typeof erpSetIdentityFromInicio === 'function') {
-                erpSetIdentityFromInicio(_pendingIdentity);
+                erpSetIdentityFromInicio(confirmedName);
             }
         } else {
             _pinAttempts++;
