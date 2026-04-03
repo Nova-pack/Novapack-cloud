@@ -2418,6 +2418,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button onclick="showTariffTab('global')" id="btn-tab-global" style="background:transparent; border:1px solid transparent; color:#4CAF50; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='transparent'"><span class="material-symbols-outlined">bar_chart</span> Tarifas Globales</button>
                 <button onclick="showTariffTab('client')" id="btn-tab-client" style="background:transparent; border:1px solid transparent; color:#FFD700; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='transparent'"><span class="material-symbols-outlined">person</span> Tarifas por Cliente</button>
                 <button onclick="showTariffTab('articles')" id="btn-tab-articles" style="background:transparent; border:1px solid transparent; color:#2196F3; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='transparent'"><span class="material-symbols-outlined">inventory_2</span> Artículos</button>
+                <button onclick="showTariffTab('exclusive')" id="btn-tab-exclusive" style="background:transparent; border:1px solid transparent; color:#E040FB; padding:4px 10px; font-size:0.85rem; cursor:pointer; font-weight:bold;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='transparent'"><span class="material-symbols-outlined">star</span> Exclusivas</button>
                 <div style="width:1px; height:20px; background:#fff; opacity:0.3; margin:0 5px;"></div>
                 <button onclick="promptNewArticlePRO()" style="background:transparent; border:1px solid transparent; color:#66BB6A; padding:4px 10px; font-size:0.85rem; cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='transparent'">+ Nuevo Artículo</button>
                 <div style="margin-left:auto; color:white; font-size:0.85rem; font-weight:bold;"><span class="material-symbols-outlined">paid</span> Gestión de Tarifas</div>
@@ -2530,6 +2531,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     </thead>
                     <tbody id="articles-pro-body" style="color:#d4d4d4;"></tbody>
                 </table>
+            </div>
+
+            <!-- TAB: Exclusive Client Tariffs -->
+            <div id="tariff-tab-exclusive" style="display:none; flex:1; padding:15px;">
+                <div style="background:#252526; border-bottom:1px solid #3c3c3c; padding:10px 15px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+                    <span style="color:#E040FB; font-weight:bold; font-size:0.9rem;"><span class="material-symbols-outlined">star</span> Tarifas Exclusivas de Clientes</span>
+                    <span id="exclusive-tariff-count" style="color:#888; font-size:0.8rem; margin-left:10px;"></span>
+                    <button onclick="loadExclusiveTariffs()" style="margin-left:auto; background:transparent; border:1px solid #555; color:#ccc; padding:5px 12px; font-size:0.85rem; cursor:pointer; border-radius:4px;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">refresh</span> Actualizar</button>
+                </div>
+                <div id="exclusive-tariff-body" style="color:#888; padding:20px; text-align:center;">
+                    Cargando tarifas exclusivas...
+                </div>
             </div>
         </div>
 
@@ -9155,8 +9168,13 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     }
 
                     if (baseT) {
-                        const tariffItems = baseT.items ? Object.keys(baseT.items) : Object.keys(baseT).filter(k => k !== 'subTariff' && k !== 'id');
+                        const tariffItems = baseT.items ? Object.keys(baseT.items) : Object.keys(baseT).filter(k => k !== 'subTariff' && k !== 'id' && k !== 'customPrices' && k !== 'customPricesUpdatedAt');
                         items = [...new Set([...items, ...tariffItems])];
+
+                        // Include custom prices keys
+                        if (baseT.customPrices) {
+                            items = [...new Set([...items, ...Object.keys(baseT.customPrices)])];
+                        }
 
                         // Overlay sub-tariff if applicable
                         if (compId && compId !== 'ALL' && adminCompaniesCache[compId] && adminCompaniesCache[compId].subTariffId) {
@@ -9503,11 +9521,18 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     Object.assign(activeTariffRaw, baseT.subTariff[uData.subTariffId]);
                 }
 
-                // 4. Case-Insensitive Key Mapping
+                // 4. Custom Prices Override (Subtarifa Especial)
+                if (baseT.customPrices) {
+                    Object.keys(baseT.customPrices).forEach(k => {
+                        activeTariffRaw[k] = baseT.customPrices[k];
+                    });
+                }
+
+                // 5. Case-Insensitive Key Mapping
                 const activeTariff = {};
                 Object.keys(activeTariffRaw).forEach(k => { activeTariff[k.toLowerCase()] = activeTariffRaw[k]; });
 
-                // 5. Final Calculation
+                // 6. Final Calculation
                 let price = 0;
                 if (t.packagesList && t.packagesList.length > 0) {
                     t.packagesList.forEach(p => {

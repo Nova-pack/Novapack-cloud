@@ -282,6 +282,26 @@
             ${_field('Importe Cuota Plana (€)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number' })}
         </div>
 
+        ${_sectionTitle('tune', 'Subtarifa Especial (Precios Exclusivos)', '#E040FB')}
+        <div style="background:rgba(224,64,251,0.05); border:1px solid rgba(224,64,251,0.2); border-radius:10px; padding:16px; margin-bottom:20px;">
+            <div id="fc-custom-tariff-status" style="margin-bottom:12px; font-size:0.85rem; color:#aaa;">Cargando subtarifa...</div>
+            <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px;">
+                <div style="flex:2; min-width:150px;">
+                    <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Articulo / Medida</label>
+                    <input type="text" id="fc-custom-item-name" placeholder="Ej: Bulto, Palet, Sobre..." list="fc-custom-suggest" style="width:100%; padding:8px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+                    <datalist id="fc-custom-suggest"></datalist>
+                </div>
+                <div style="flex:1; min-width:100px;">
+                    <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Precio Especial</label>
+                    <input type="number" step="0.01" id="fc-custom-item-price" placeholder="0.00" style="width:100%; padding:8px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+                </div>
+                <button onclick="window._fichaAddCustomPrice()" style="background:linear-gradient(135deg,#E040FB,#9C27B0); border:none; color:#fff; padding:8px 16px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; white-space:nowrap;">
+                    <span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">add</span> Anadir
+                </button>
+            </div>
+            <div id="fc-custom-tariff-table" style="max-height:300px; overflow-y:auto;"></div>
+        </div>
+
         ${_sectionTitle('account_balance_wallet', 'Saldo y Estado de Cuenta', '#4CAF50')}
         <div id="fc-balance-container" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:20px;">
             <div style="background:linear-gradient(135deg, #1a237e, #283593); border-radius:10px; padding:18px; text-align:center;">
@@ -301,7 +321,149 @@
 
         // Load balance data asynchronously
         _fichaLoadBalance();
+        // Load custom tariff
+        _fichaLoadCustomTariff();
     }
+
+    // ============================================================
+    //  SUBTARIFA ESPECIAL (Custom Prices per Client)
+    // ============================================================
+    let _fichaCustomPrices = {};
+
+    async function _fichaLoadCustomTariff() {
+        const statusEl = document.getElementById('fc-custom-tariff-status');
+        const tableEl = document.getElementById('fc-custom-tariff-table');
+        if (!statusEl || !tableEl) return;
+
+        try {
+            const doc = await db.collection('tariffs').doc(_fichaClientId).get();
+            if (doc.exists && doc.data().customPrices && Object.keys(doc.data().customPrices).length > 0) {
+                _fichaCustomPrices = doc.data().customPrices;
+                statusEl.innerHTML = '<span style="color:#E040FB; font-weight:bold;">Subtarifa activa</span> — <span style="color:#aaa;">' + Object.keys(_fichaCustomPrices).length + ' precios exclusivos</span>';
+            } else {
+                _fichaCustomPrices = {};
+                statusEl.innerHTML = '<span style="color:#888;">Sin subtarifa especial. Anade articulos para crear precios exclusivos para este cliente.</span>';
+            }
+            _fichaRenderCustomTable();
+
+            // Populate datalist suggestions from global tariff
+            const suggestEl = document.getElementById('fc-custom-suggest');
+            if (suggestEl && doc.exists && doc.data().items) {
+                suggestEl.innerHTML = Object.keys(doc.data().items).map(k => '<option value="' + k + '">').join('');
+            } else if (suggestEl) {
+                // Try from global tariff
+                const tid = _fichaClientData.tariffId;
+                if (tid) {
+                    const globalDoc = await db.collection('tariffs').doc('GLOBAL_' + tid).get();
+                    if (globalDoc.exists && globalDoc.data().items) {
+                        suggestEl.innerHTML = Object.keys(globalDoc.data().items).map(k => '<option value="' + k + '">').join('');
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Ficha] Error loading custom tariff:', e);
+            statusEl.innerHTML = '<span style="color:#f44336;">Error cargando subtarifa</span>';
+        }
+    }
+
+    function _fichaRenderCustomTable() {
+        const tableEl = document.getElementById('fc-custom-tariff-table');
+        if (!tableEl) return;
+
+        const keys = Object.keys(_fichaCustomPrices);
+        if (keys.length === 0) {
+            tableEl.innerHTML = '';
+            return;
+        }
+
+        keys.sort((a, b) => a.localeCompare(b));
+        let html = '<table style="width:100%; border-collapse:collapse;">';
+        html += '<thead><tr style="border-bottom:1px solid #444;">';
+        html += '<th style="padding:8px; text-align:left; color:#E040FB; font-size:0.75rem;">ARTICULO</th>';
+        html += '<th style="padding:8px; text-align:right; color:#E040FB; font-size:0.75rem;">PRECIO ESPECIAL</th>';
+        html += '<th style="padding:8px; text-align:center; color:#E040FB; font-size:0.75rem; width:100px;">ACCIONES</th>';
+        html += '</tr></thead><tbody>';
+
+        keys.forEach(k => {
+            const price = _fichaCustomPrices[k];
+            html += '<tr style="border-bottom:1px solid #333;">';
+            html += '<td style="padding:6px 8px; color:#ddd; font-weight:600; font-size:0.85rem;">' + k + '</td>';
+            html += '<td style="padding:6px 8px; text-align:right; color:#4CAF50; font-weight:bold; font-size:0.85rem;">' + parseFloat(price).toFixed(2) + ' &euro;</td>';
+            html += '<td style="padding:6px 8px; text-align:center;">';
+            html += '<button onclick="window._fichaEditCustomPrice(\'' + k.replace(/'/g, "\\'") + '\')" style="background:transparent; border:1px solid #555; color:#2196F3; padding:3px 8px; font-size:0.75rem; cursor:pointer; border-radius:3px; margin-right:4px;" title="Editar precio"><span class="material-symbols-outlined" style="font-size:0.9rem;">edit</span></button>';
+            html += '<button onclick="window._fichaDeleteCustomPrice(\'' + k.replace(/'/g, "\\'") + '\')" style="background:transparent; border:1px solid #555; color:#FF3B30; padding:3px 8px; font-size:0.75rem; cursor:pointer; border-radius:3px;" title="Eliminar"><span class="material-symbols-outlined" style="font-size:0.9rem;">delete</span></button>';
+            html += '</td></tr>';
+        });
+
+        html += '</tbody></table>';
+        tableEl.innerHTML = html;
+    }
+
+    window._fichaAddCustomPrice = async function() {
+        const nameEl = document.getElementById('fc-custom-item-name');
+        const priceEl = document.getElementById('fc-custom-item-price');
+        if (!nameEl || !priceEl) return;
+
+        const name = nameEl.value.trim();
+        const price = parseFloat(priceEl.value);
+        if (!name) { alert('Introduce el nombre del articulo'); return; }
+        if (isNaN(price) || price < 0) { alert('Introduce un precio valido'); return; }
+
+        try {
+            _fichaCustomPrices[name] = price;
+            await db.collection('tariffs').doc(_fichaClientId).set({
+                customPrices: _fichaCustomPrices,
+                customPricesUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            nameEl.value = '';
+            priceEl.value = '';
+
+            const statusEl = document.getElementById('fc-custom-tariff-status');
+            if (statusEl) statusEl.innerHTML = '<span style="color:#E040FB; font-weight:bold;">Subtarifa activa</span> — <span style="color:#aaa;">' + Object.keys(_fichaCustomPrices).length + ' precios exclusivos</span>';
+            _fichaRenderCustomTable();
+        } catch (e) {
+            console.error('[Ficha] Error saving custom price:', e);
+            alert('Error al guardar: ' + e.message);
+        }
+    };
+
+    window._fichaEditCustomPrice = function(key) {
+        const newPrice = prompt('Nuevo precio para "' + key + '" (actual: ' + parseFloat(_fichaCustomPrices[key]).toFixed(2) + ' EUR):', _fichaCustomPrices[key]);
+        if (newPrice === null) return;
+        const parsed = parseFloat(newPrice);
+        if (isNaN(parsed) || parsed < 0) { alert('Precio no valido'); return; }
+
+        _fichaCustomPrices[key] = parsed;
+        db.collection('tariffs').doc(_fichaClientId).set({
+            customPrices: _fichaCustomPrices,
+            customPricesUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).then(() => {
+            _fichaRenderCustomTable();
+        }).catch(e => alert('Error: ' + e.message));
+    };
+
+    window._fichaDeleteCustomPrice = async function(key) {
+        if (!confirm('Eliminar precio exclusivo de "' + key + '"?')) return;
+
+        delete _fichaCustomPrices[key];
+        try {
+            const updateData = { customPricesUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+            updateData['customPrices.' + key] = firebase.firestore.FieldValue.delete();
+            await db.collection('tariffs').doc(_fichaClientId).update(updateData);
+
+            const statusEl = document.getElementById('fc-custom-tariff-status');
+            if (Object.keys(_fichaCustomPrices).length === 0) {
+                if (statusEl) statusEl.innerHTML = '<span style="color:#888;">Sin subtarifa especial.</span>';
+            } else {
+                if (statusEl) statusEl.innerHTML = '<span style="color:#E040FB; font-weight:bold;">Subtarifa activa</span> — <span style="color:#aaa;">' + Object.keys(_fichaCustomPrices).length + ' precios exclusivos</span>';
+            }
+            _fichaRenderCustomTable();
+        } catch (e) {
+            console.error('[Ficha] Error deleting custom price:', e);
+            alert('Error: ' + e.message);
+        }
+    };
 
     async function _fichaLoadBalance() {
         try {

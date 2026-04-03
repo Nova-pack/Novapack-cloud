@@ -1206,7 +1206,7 @@ window.advAddRowFromDrawer = (desc, price) => {
 
 // --- TAB SWITCHING FOR TARIFFS WORKSPACE ---
 window.showTariffTab = (tab) => {
-    const tabs = ['global', 'client', 'articles'];
+    const tabs = ['global', 'client', 'articles', 'exclusive'];
     tabs.forEach(t => {
         const el = document.getElementById('tariff-tab-' + t);
         if(el) el.style.display = (t === tab) ? 'block' : 'none';
@@ -1219,6 +1219,9 @@ window.showTariffTab = (tab) => {
     if(tab === 'client' && typeof window.loadTariffClients === 'function') {
         window.loadTariffClients();
         loadImportGlobalSelect();
+    }
+    if(tab === 'exclusive') {
+        loadExclusiveTariffs();
     }
 };
 
@@ -1480,5 +1483,80 @@ window.resetArticleForm = () => {
     document.getElementById('art-price').value = '';
     document.getElementById('art-weight').value = '';
     document.getElementById('art-category').value = '';
+};
+
+// ============================================================
+//  EXCLUSIVE TARIFFS TAB — List all clients with customPrices
+// ============================================================
+window.loadExclusiveTariffs = async () => {
+    const body = document.getElementById('exclusive-tariff-body');
+    const countEl = document.getElementById('exclusive-tariff-count');
+    if (!body) return;
+    body.innerHTML = '<div style="text-align:center; padding:30px; color:#aaa;">Buscando tarifas exclusivas...</div>';
+
+    try {
+        const snap = await db.collection('tariffs').get();
+        const exclusiveClients = [];
+
+        snap.forEach(doc => {
+            if (doc.id.startsWith('GLOBAL_')) return;
+            const data = doc.data();
+            if (!data.customPrices || Object.keys(data.customPrices).length === 0) return;
+
+            const clientId = doc.id;
+            const uData = window.userMap ? (window.userMap[clientId] || {}) : {};
+            exclusiveClients.push({
+                docId: clientId,
+                clientName: uData.name || uData.email || clientId,
+                clientIdNum: uData.idNum || '-',
+                customPrices: data.customPrices,
+                basedOn: data.basedOn || '-',
+                updatedAt: data.customPricesUpdatedAt
+            });
+        });
+
+        if (countEl) countEl.textContent = exclusiveClients.length + ' cliente' + (exclusiveClients.length !== 1 ? 's' : '') + ' con tarifa exclusiva';
+
+        if (exclusiveClients.length === 0) {
+            body.innerHTML = '<div style="text-align:center; padding:40px; color:#888;"><span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:10px;">info</span>No hay clientes con tarifas exclusivas.<br><span style="font-size:0.8rem;">Puedes crear subtarifas desde la Ficha de Cliente &gt; Datos Economicos.</span></div>';
+            return;
+        }
+
+        exclusiveClients.sort((a, b) => a.clientName.localeCompare(b.clientName));
+
+        let html = '';
+        exclusiveClients.forEach(c => {
+            const priceKeys = Object.keys(c.customPrices).sort();
+            const count = priceKeys.length;
+
+            let pricesHtml = '<table style="width:100%; border-collapse:collapse; margin-top:8px;">';
+            pricesHtml += '<tr style="border-bottom:1px solid #444;"><th style="padding:4px 8px; text-align:left; color:#E040FB; font-size:0.7rem;">ARTICULO</th><th style="padding:4px 8px; text-align:right; color:#E040FB; font-size:0.7rem;">PRECIO</th></tr>';
+            priceKeys.forEach(k => {
+                pricesHtml += '<tr style="border-bottom:1px solid #333;"><td style="padding:4px 8px; color:#ddd; font-size:0.8rem;">' + k + '</td><td style="padding:4px 8px; text-align:right; color:#4CAF50; font-weight:bold; font-size:0.8rem;">' + parseFloat(c.customPrices[k]).toFixed(2) + ' &euro;</td></tr>';
+            });
+            pricesHtml += '</table>';
+
+            html += '<div style="background:#252526; border:1px solid #3c3c3c; border-radius:8px; padding:14px; margin-bottom:10px;">';
+            html += '<div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === \'none\' ? \'block\' : \'none\'">';
+            html += '<div style="display:flex; align-items:center; gap:10px;">';
+            html += '<span class="material-symbols-outlined" style="color:#E040FB;">star</span>';
+            html += '<span style="color:#fff; font-weight:bold; font-size:0.9rem;">' + c.clientName + '</span>';
+            html += '<span style="color:#888; font-size:0.8rem;">#' + c.clientIdNum + '</span>';
+            html += '</div>';
+            html += '<div style="display:flex; align-items:center; gap:10px;">';
+            html += '<span style="color:#E040FB; font-size:0.8rem; font-weight:bold;">' + count + ' precio' + (count > 1 ? 's' : '') + ' exclusivo' + (count > 1 ? 's' : '') + '</span>';
+            html += '<span style="color:#888; font-size:0.8rem;">Base: ' + c.basedOn + '</span>';
+            html += '<button onclick="event.stopPropagation(); if(typeof window.openFichaCliente === \'function\') window.openFichaCliente(\'' + c.docId + '\')" style="background:transparent; border:1px solid #555; color:#2196F3; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px;"><span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">open_in_new</span> Ficha</button>';
+            html += '<span class="material-symbols-outlined" style="color:#666; font-size:1rem;">expand_more</span>';
+            html += '</div></div>';
+            html += '<div style="display:none;">' + pricesHtml + '</div>';
+            html += '</div>';
+        });
+
+        body.innerHTML = html;
+    } catch (e) {
+        console.error('[Tariffs] Error loading exclusive:', e);
+        body.innerHTML = '<div style="text-align:center; padding:20px; color:#FF3B30;">Error: ' + e.message + '</div>';
+    }
 };
 
