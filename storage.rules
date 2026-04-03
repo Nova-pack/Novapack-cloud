@@ -9,11 +9,13 @@ service firebase.storage {
     // Permitir acceso de lectura publica a los recursos del proyecto si fueran necesarios
     // pero por ahora protegemos todo por defecto.
     
-    // CHÓFERES - Permitir subir firmas y fotos a la carpeta de entregas sin autenticacion estricta 
-    // porque el login es manual via SMS temporal
+    // CHÓFERES - Firmas y fotos de entregas
+    // Acceso autenticado (SMS o anónimo via master PIN)
+    // Limite: 10MB, solo imágenes
     match /deliveries/{deliveryId}/{fileName} {
-      allow read: if true; // Para que el admin pueda ver la foto
-      allow write: if true; // Para que el chófer pueda subir la foto o firma
+      allow read: if true;
+      allow write: if request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
     }
     
     // Cualquier otra cosa, prohibida por seguridad

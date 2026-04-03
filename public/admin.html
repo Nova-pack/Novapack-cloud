@@ -7,9 +7,11 @@
     <script>
         window.addEventListener('error', function(e) {
             console.error("FATAL JS CRASH:\n" + e.message + "\nLinea: " + e.lineno);
+            if (typeof Sentry !== 'undefined' && Sentry.captureException && e.error) Sentry.captureException(e.error);
         });
         window.addEventListener('unhandledrejection', function(e) {
             console.error("ASYNC CRASH:\n" + (e.reason ? e.reason.message : "Desconocida"));
+            if (typeof Sentry !== 'undefined' && Sentry.captureException && e.reason) Sentry.captureException(e.reason);
         });
     </script>
     <title>novapaack.login</title>
@@ -6885,7 +6887,8 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             window.executeReassign = async () => {
-                const targetPhone = document.getElementById('reassign-target-route').value;
+                const targetPhoneRaw = document.getElementById('reassign-target-route').value;
+                const targetPhone = targetPhoneRaw.replace(/\D/g, '').replace(/^34/, '');
                 if (!targetPhone) {
                     alert("Selecciona una ruta destino.");
                     return;
@@ -11701,8 +11704,9 @@ window.openTicketReassignModal = async (docId) => {
 
 window.saveTicketReassign = async () => {
     const docId = document.getElementById('reassign-doc-id').value;
-    const driverPhone = document.getElementById('reassign-driver-select').value;
-    
+    const driverPhoneRaw = document.getElementById('reassign-driver-select').value;
+    const driverPhone = driverPhoneRaw.replace(/\D/g, '').replace(/^34/, '');
+
     showLoading();
     try {
         await db.collection('tickets').doc(docId).update({ driverPhone });

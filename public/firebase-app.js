@@ -1,13 +1,15 @@
 // --- GLOBAL STATE ---
 console.log("NOVAPACK CLOUD - ENGINE v2.2 ACTIVE");
-const DEBUG_MODE = true;
+const DEBUG_MODE = location.hostname === 'localhost';
 
 window.onerror = function(msg, url, lineNo, columnNo, error) {
-    alert("GLOBAL JS ERROR: " + msg + " (Línea " + lineNo + ")");
+    console.error("GLOBAL JS ERROR:", msg, "Line:", lineNo, "Col:", columnNo, error);
+    if (typeof Sentry !== 'undefined' && Sentry.captureException && error) Sentry.captureException(error);
 };
 window.addEventListener('unhandledrejection', function(event) {
     if (event.reason && event.reason.message && event.reason.message.includes("offline")) return;
-    alert("PROMISE ERROR: " + (event.reason ? event.reason.message || event.reason : "Desconocido"));
+    console.error("PROMISE ERROR:", event.reason);
+    if (typeof Sentry !== 'undefined' && Sentry.captureException && event.reason) Sentry.captureException(event.reason);
 });
 
 // ============ AUDIT TRAIL: Operador oculto ============

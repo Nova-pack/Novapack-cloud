@@ -27,6 +27,7 @@ var scannedPackages = {}; // { ticketId: Set([1, 2, 3]) } — tracks scanned bul
 var currentPkgTotal = 0; // total packages expected for current scan
 var isFirstSnapshot = true; // Skip notifications on initial load
 var notificationSound = null;
+var _isMasterPinSession = false; // Flag to prevent onAuthStateChanged interference
 
 // --- NOTIFICATION SYSTEM ---
 function requestNotificationPermission() {
@@ -312,6 +313,18 @@ function initApp() {
                 return;
             }
 
+            // Anonymous auth needed so Firestore rules (request.auth != null) allow ticket queries
+            _isMasterPinSession = true;
+            try {
+                await auth.signInAnonymously();
+                console.log('[REPARTO] Master PIN: anonymous auth OK');
+            } catch (authErr) {
+                console.error('[REPARTO] Anonymous auth failed:', authErr);
+                document.getElementById('login-error').textContent = 'Error de autenticación. Contacta al administrador.';
+                hideLoading();
+                return;
+            }
+
             showAdminRouteSelector();
         } catch (e) {
             console.error('Master PIN error:', e);
@@ -362,6 +375,9 @@ function initApp() {
 
     // --- AUTH STATE ---
     auth.onAuthStateChanged(async function(user) {
+        // Skip if master PIN session (anonymous auth) — route selector handles the flow
+        if (_isMasterPinSession) return;
+
         if (user && user.phoneNumber) {
             showLoading();
             try {
@@ -484,6 +500,7 @@ function initApp() {
             scannedPackages = {};
             isFirstSnapshot = true;
             _adminRoutes = [];
+            _isMasterPinSession = false;
             // Hide all views, show login
             document.getElementById('main-app').style.display = 'none';
             document.getElementById('driver-selector-view').style.display = 'none';
@@ -615,7 +632,9 @@ function initApp() {
                 updateStats();
             }, function(err) {
                 console.error('Listener error:', err);
-                if (err.code === 'failed-precondition') {
+                if (err.code === 'permission-denied') {
+                    showToast('Sin permisos para ver albaranes. Reinicia la app.', 'error', 8000);
+                } else if (err.code === 'failed-precondition') {
                     showToast('Índice Firestore necesario. Contacta al admin.', 'error', 8000);
                 }
             });
