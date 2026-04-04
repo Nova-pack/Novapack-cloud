@@ -1900,6 +1900,57 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 
+<!-- Tab wrapper: NIF Enrichment -->
+<div id="erp-tab-nif-enrichment" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
+    <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;">
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:15px;">
+            <div>
+                <h1 style="color:var(--brand-primary); margin:0; display:flex; align-items:center; gap:10px;">
+                    <span class="material-symbols-outlined" style="font-size:2rem;">badge</span> Enriquecimiento CIF/NIF
+                </h1>
+                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Buscar y completar NIF/CIF de clientes usando fuentes online</p>
+            </div>
+            <div id="nif-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- API Config -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase; white-space:nowrap;">Fuente:</label>
+                <select id="nif-source" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.85rem;">
+                    <option value="apiempresas">APIEmpresas.es (API)</option>
+                    <option value="datoscif">DatosCif.es (Web)</option>
+                </select>
+                <input type="text" id="nif-api-key" placeholder="API Key (si aplica)" style="flex:1; min-width:200px; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.85rem;">
+                <button onclick="nifScanMissing()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">search</span> Escanear Clientes sin NIF
+                </button>
+            </div>
+        </div>
+
+        <!-- Manual Search -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
+            <h3 style="margin:0 0 12px; color:#2196F3; font-size:0.9rem; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">manage_search</span> Búsqueda Manual
+            </h3>
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <input type="text" id="nif-manual-search" placeholder="Nombre de empresa..." style="flex:1; min-width:250px; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px 14px; border-radius:6px; font-size:0.9rem;" onkeypress="if(event.key==='Enter') nifManualSearch()">
+                <button onclick="nifManualSearch()" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer;">Buscar</button>
+            </div>
+            <div id="nif-manual-results" style="margin-top:12px;"></div>
+        </div>
+
+        <!-- Clients without NIF -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px;">
+            <h3 style="margin:0 0 15px; color:#FF9800; font-size:1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">warning</span> Clientes sin NIF/CIF
+            </h3>
+            <div id="nif-client-list" style="max-height:500px; overflow-y:auto; color:#888; font-size:0.85rem;">Pulsa "Escanear" para detectar clientes sin NIF.</div>
+        </div>
+    </div>
+</div>
+
 <!-- Tab wrapper: Ticket Search -->
 <div id="erp-tab-ticket-search" style="display:none; flex:1; overflow:hidden; background:#0a0a0a; color:#d4d4d4;">
     
@@ -15084,6 +15135,7 @@ window.importTarifas50 = async () => {
 <script src="facturas_central.js?v=20260404"></script>
 <script src="monthly_billing_flow.js?v=20260404"></script>
 <script src="comunicaciones.js?v=20260404"></script>
+<script src="nif_enrichment.js?v=20260404"></script>
 <script src="erp_tabs.js?v=20260404"></script>
 
 </body>

@@ -22,7 +22,7 @@
         'erp-tab-debidos', 'erp-tab-rutas', 'erp-tab-phones', 'erp-tab-config',
         'erp-tab-maintenance', 'erp-tab-pod', 'erp-tab-pending-deletes', 'erp-tab-driver-incidents', 'erp-tab-users',
         'erp-tab-ticket-search', 'erp-tab-ficha-cliente', 'erp-tab-albaranes-central', 'erp-tab-mailbox',
-        'erp-tab-facturas-central', 'erp-tab-route-details', 'erp-tab-comunicaciones'
+        'erp-tab-facturas-central', 'erp-tab-route-details', 'erp-tab-comunicaciones', 'erp-tab-nif-enrichment'
     ];
 
     // --- TAB DEFINITIONS (built-in tabs that map to existing workspaces) ---
@@ -54,6 +54,7 @@
         'facturas-central':{ wsId: 'erp-tab-facturas-central',    title: 'Centro Facturación', icon: 'receipt_long',       closeable: true },
         'route-details':   { wsId: 'erp-tab-route-details',       title: 'Albaranes Ruta',     icon: 'route',              closeable: true },
         'comunicaciones':  { wsId: 'erp-tab-comunicaciones',      title: 'Comunicaciones',     icon: 'campaign',           closeable: true },
+        'nif-enrichment':  { wsId: 'erp-tab-nif-enrichment',      title: 'Enriquecer NIF',     icon: 'badge',              closeable: true },
     };
 
     // --- CORE API ---
@@ -277,6 +278,9 @@
                 break;
             case 'comunicaciones':
                 if (typeof window.loadComunicaciones === 'function') window.loadComunicaciones();
+                break;
+            case 'nif-enrichment':
+                if (typeof window.loadNifEnrichment === 'function') window.loadNifEnrichment();
                 break;
             case 'facturas-central':
                 if (typeof window.facCentralInit === 'function') window.facCentralInit();
