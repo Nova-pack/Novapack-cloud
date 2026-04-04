@@ -12345,25 +12345,48 @@ window.importTarifas50 = async () => {
         const container = document.getElementById('adv-clients-content');
         if (!container) return;
         container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Cargando clientes...</div>';
-        
+
         try {
+            // Wait for PhantomDirectory to load (max 3s) if not ready yet
+            if (!window.isPhantomLoaded) {
+                await new Promise(resolve => {
+                    let tries = 0;
+                    const check = setInterval(() => {
+                        if (window.isPhantomLoaded || tries++ > 30) {
+                            clearInterval(check);
+                            resolve();
+                        }
+                    }, 100);
+                });
+            }
+
             const snap = await db.collection('users').get();
             window._advClientsCache = [];
             snap.forEach(doc => {
                 window._advClientsCache.push({ id: doc.id, ...doc.data() });
             });
-            
+
             // Inyectar Clientes Globales (Phantom / gesco_clients.json)
             if (window.PhantomDirectory && Array.isArray(window.PhantomDirectory) && window.PhantomDirectory.length > 0) {
                 console.log('[Clientes] Inyectando ' + window.PhantomDirectory.length + ' contactos globales...');
+                // Build lookup sets for fast dedup (only by real NIF, not idNum)
+                const localNifs = new Set();
+                const localNames = new Set();
+                window._advClientsCache.forEach(c => {
+                    const nif = (c.nif || '').toUpperCase().trim();
+                    if (nif) localNifs.add(nif);
+                    const name = (c.name || '').toUpperCase().trim();
+                    if (name) localNames.add(name);
+                });
+
                 window.PhantomDirectory.forEach(gl => {
-                    // Evitar duplicados por NIF
+                    // Dedup by NIF only (not idNum — idNum is a number, not a fiscal ID)
                     const glNif = (gl.nif || '').toUpperCase().trim();
-                    if (glNif && window._advClientsCache.some(c => (c.nif || c.idNum || '').toUpperCase().trim() === glNif)) return;
-                    // Evitar duplicados por nombre
+                    if (glNif && localNifs.has(glNif)) return;
+                    // Dedup by exact name
                     const glName = (gl.name || '').toUpperCase().trim();
-                    if (glName && window._advClientsCache.some(c => (c.name || '').toUpperCase().trim() === glName)) return;
-                    
+                    if (glName && localNames.has(glName)) return;
+
                     window._advClientsCache.push({
                         id: 'GLOBAL_' + (gl.nif || gl.idNum || Math.random().toString(36).substr(2,8)),
                         name: gl.name || 'Sin Nombre',
