@@ -2018,28 +2018,35 @@ function initApp() {
             var weekAgo = new Date();
             weekAgo.setDate(weekAgo.getDate() - 7);
 
-            var query = db.collection('cooper_photos')
+            var snap = await db.collection('cooper_photos')
                 .where('driverName', '==', currentDriverName || 'Desconocido')
-                .where('createdAt', '>=', weekAgo)
-                .orderBy('createdAt', 'desc');
+                .orderBy('createdAt', 'desc')
+                .limit(100)
+                .get();
 
-            var snap = await query.get();
-            if (snap.empty) {
+            // Filter last 7 days in JS to avoid composite index
+            var items = [];
+            snap.forEach(function(doc) {
+                var item = doc.data();
+                item.docId = doc.id;
+                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                if (d >= weekAgo) items.push({ data: item, date: d });
+            });
+
+            if (items.length === 0) {
                 panel.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:0.82rem;">No hay registros Cooper esta semana</div>';
                 return;
             }
 
             // Group by date then by shift
             var grouped = {};
-            snap.forEach(function(doc) {
-                var item = doc.data();
-                item.docId = doc.id;
-                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+            items.forEach(function(entry) {
+                var d = entry.date;
                 var dateKey = d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'short' });
                 var hour = d.getHours();
                 var shift = hour < 14 ? 'MAÑANA' : 'TARDE';
                 if (!grouped[dateKey]) grouped[dateKey] = { 'MAÑANA': [], 'TARDE': [] };
-                grouped[dateKey][shift].push({ data: item, date: d });
+                grouped[dateKey][shift].push(entry);
             });
 
             var html = '';
