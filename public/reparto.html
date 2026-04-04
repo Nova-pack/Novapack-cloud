@@ -298,6 +298,16 @@
             </div>
         </div>
 
+        <!-- Cooper Buttons -->
+        <div style="display:flex; gap:10px; padding:0 12px 10px; flex-wrap:wrap;">
+            <button onclick="openCooperPhoto('recogida')" style="flex:1; min-width:140px; background:linear-gradient(135deg,#FF9800,#E65100); border:none; color:white; padding:12px 16px; border-radius:10px; font-size:0.85rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 3px 12px rgba(255,152,0,0.4);">
+                <span style="font-size:1.2rem;">📥</span> RECOGIDA COOPER
+            </button>
+            <button onclick="openCooperPhoto('entrega')" style="flex:1; min-width:140px; background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:white; padding:12px 16px; border-radius:10px; font-size:0.85rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 3px 12px rgba(76,175,80,0.4);">
+                <span style="font-size:1.2rem;">📤</span> ENTREGA COOPER
+            </button>
+        </div>
+
         <!-- Delivery List -->
         <div class="delivery-list" id="delivery-list">
             <div class="empty-state">
@@ -413,6 +423,27 @@
             <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
                 <button class="btn btn-primary" id="btn-mod-send">📤 ENVIAR SOLICITUD</button>
                 <button class="btn btn-outline" id="btn-mod-cancel" style="color:var(--text-dim);">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== COOPER PHOTO MODAL ===== -->
+    <div class="modal-overlay" id="cooper-modal">
+        <div class="modal-sheet" style="max-width:420px;">
+            <div class="modal-handle"></div>
+            <h3 id="cooper-modal-title" style="color:#FF9800; font-size:1rem; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:8px;"></h3>
+            <p style="color:var(--text-dim); font-size:0.8rem; margin:0 0 16px;">Haz una foto al albaran de Cooper</p>
+            <input type="file" id="cooper-photo-input" accept="image/*" capture="environment" style="display:none;">
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <button class="btn btn-primary" id="btn-cooper-camera" style="font-size:1rem; padding:14px;">
+                    📷 ABRIR CAMARA
+                </button>
+                <img id="cooper-photo-preview" style="display:none; width:100%; border-radius:8px; border:2px solid var(--border); max-height:300px; object-fit:contain;">
+                <span id="cooper-photo-status" style="font-size:0.8rem; color:var(--text-dim); text-align:center;">Sin foto</span>
+                <button class="btn btn-success" id="btn-cooper-send" style="display:none; font-size:1rem; padding:14px;">
+                    📤 ENVIAR FOTO
+                </button>
+                <button class="btn btn-outline" id="btn-cooper-cancel" style="color:var(--text-dim);">CANCELAR</button>
             </div>
         </div>
     </div>

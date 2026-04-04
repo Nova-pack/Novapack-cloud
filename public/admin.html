@@ -1322,6 +1322,10 @@
                         <span class="material-symbols-outlined" style="font-size:16px;">delete</span> Papelera
                     </button>
                     <!-- Fin Botón Papelera -->
+                    <button onclick="if(typeof erpOpenTab === 'function') erpOpenTab('cooper');" style="background:linear-gradient(135deg, #FF9800, #E65100); border:1px solid #BF360C; color:white; padding:4px 12px; font-size:0.8rem; cursor:pointer; border-radius:18px; display:flex; align-items:center; gap:5px; font-weight:bold; box-shadow:0 0 8px rgba(255,152,0,0.4);" onmouseover="this.style.boxShadow='0 0 12px rgba(255,152,0,0.8)'" onmouseout="this.style.boxShadow='0 0 8px rgba(255,152,0,0.4)'" title="Archivo fotografico Cooper">
+                        <span class="material-symbols-outlined" style="font-size:16px;">local_shipping</span> Cooper
+                    </button>
+                    <!-- Fin Botón Cooper -->
                     <span id="erp-toolbar-identity" style="color:#aaa; font-size:0.78rem; font-weight:400;"></span>
                     <div style="width:1px; height:16px; background:#555;"></div>
                     <button onclick="logout()" title="Cerrar sesión" style="background:transparent; border:1px solid #555; color:#FF5252; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:4px;">
@@ -2347,6 +2351,206 @@ document.addEventListener('DOMContentLoaded', () => {
 
         alert('Papelera vaciada: ' + deleted + ' eliminados.' + (errors > 0 ? ' ' + errors + ' errores.' : ''));
         loadTrashBin();
+    };
+})();
+</script>
+
+<!-- Tab wrapper: Cooper -->
+<div id="erp-tab-cooper" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
+    <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;">
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:15px;">
+            <div>
+                <h1 style="color:#FF9800; margin:0; display:flex; align-items:center; gap:10px;">
+                    <span class="material-symbols-outlined" style="font-size:2rem;">local_shipping</span> Cooper — Archivo Fotografico
+                </h1>
+                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Fotos de albaranes Cooper capturadas por los repartidores. Solo informativo, sin valor contable.</p>
+            </div>
+            <div id="cooper-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div style="display:flex; gap:0; margin-bottom:20px; border-bottom:2px solid #333;">
+            <button id="cooper-subtab-recogida" onclick="cooperSwitchTab('recogida')" style="background:transparent; border:none; color:#FF9800; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid #FF9800; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">download</span> Recogidas <span id="cooper-count-recogida" style="background:#FF9800; color:#000; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
+            </button>
+            <button id="cooper-subtab-entrega" onclick="cooperSwitchTab('entrega')" style="background:transparent; border:none; color:#888; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">upload</span> Entregas <span id="cooper-count-entrega" style="background:#555; color:#ccc; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
+            </button>
+        </div>
+
+        <!-- Filters -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <label style="color:#aaa; font-size:0.8rem;">Desde:</label>
+                <input type="date" id="cooper-date-from" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:8px; font-size:0.85rem;">
+                <label style="color:#aaa; font-size:0.8rem;">Hasta:</label>
+                <input type="date" id="cooper-date-to" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:8px; font-size:0.85rem;">
+                <button onclick="loadCooperPanel()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">search</span> Buscar
+                </button>
+                <button onclick="loadCooperPanel()" style="background:#333; border:1px solid #555; color:#d4d4d4; padding:10px 20px; border-radius:8px; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">refresh</span> Recargar
+                </button>
+            </div>
+        </div>
+
+        <!-- Photo Grid -->
+        <div id="cooper-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;">
+            <div style="grid-column:1/-1; padding:30px; text-align:center; color:#aaa;">Cargando...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- COOPER PANEL FUNCTIONS ---
+(function() {
+    var _cooperRecogidas = [];
+    var _cooperEntregas = [];
+    var _cooperCurrentTab = 'recogida';
+
+    window.cooperSwitchTab = function(tab) {
+        _cooperCurrentTab = tab;
+        var tabs = ['recogida', 'entrega'];
+        var colors = { recogida: '#FF9800', entrega: '#4CAF50' };
+        tabs.forEach(function(t) {
+            var btn = document.getElementById('cooper-subtab-' + t);
+            var badge = document.getElementById('cooper-count-' + t);
+            if (t === tab) {
+                btn.style.color = colors[t];
+                btn.style.borderBottomColor = colors[t];
+                if (badge) { badge.style.background = colors[t]; badge.style.color = t === 'recogida' ? '#000' : '#fff'; }
+            } else {
+                btn.style.color = '#888';
+                btn.style.borderBottomColor = 'transparent';
+                if (badge) { badge.style.background = '#555'; badge.style.color = '#ccc'; }
+            }
+        });
+        _renderCooperGrid();
+    };
+
+    window.loadCooperPanel = async function() {
+        var grid = document.getElementById('cooper-grid');
+        if (grid) grid.innerHTML = '<div style="grid-column:1/-1; padding:30px; text-align:center; color:#aaa;">Cargando fotos...</div>';
+
+        // Set default dates if empty (last 30 days)
+        var fromEl = document.getElementById('cooper-date-from');
+        var toEl = document.getElementById('cooper-date-to');
+        if (fromEl && !fromEl.value) {
+            var d = new Date(); d.setDate(d.getDate() - 30);
+            fromEl.value = d.toISOString().split('T')[0];
+        }
+        if (toEl && !toEl.value) {
+            toEl.value = new Date().toISOString().split('T')[0];
+        }
+
+        try {
+            var fromDate = new Date(fromEl.value + 'T00:00:00');
+            var toDate = new Date(toEl.value + 'T23:59:59');
+
+            var snap = await db.collection('cooper_photos')
+                .where('createdAt', '>=', fromDate)
+                .where('createdAt', '<=', toDate)
+                .orderBy('createdAt', 'desc')
+                .limit(500)
+                .get();
+
+            _cooperRecogidas = [];
+            _cooperEntregas = [];
+            snap.forEach(function(doc) {
+                var data = { docId: doc.id, ...doc.data() };
+                if (data.type === 'recogida') _cooperRecogidas.push(data);
+                else _cooperEntregas.push(data);
+            });
+
+            // Update badges
+            var cR = document.getElementById('cooper-count-recogida');
+            var cE = document.getElementById('cooper-count-entrega');
+            if (cR) cR.textContent = _cooperRecogidas.length;
+            if (cE) cE.textContent = _cooperEntregas.length;
+
+            _renderCooperStats();
+            _renderCooperGrid();
+        } catch(err) {
+            if (grid) grid.innerHTML = '<div style="grid-column:1/-1; padding:30px; text-align:center; color:#FF5252;">Error: ' + err.message + '</div>';
+        }
+    };
+
+    function _renderCooperStats() {
+        var el = document.getElementById('cooper-stats');
+        if (!el) return;
+        var total = _cooperRecogidas.length + _cooperEntregas.length;
+        var html = '<div style="background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.3rem; font-weight:900; color:#FF9800;">' + total + '</div>' +
+            '<div style="font-size:0.7rem; color:#aaa;">Total fotos</div></div>';
+        html += '<div style="background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.1rem; font-weight:900; color:#FF9800;">' + _cooperRecogidas.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#888;">Recogidas</div></div>';
+        html += '<div style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.1rem; font-weight:900; color:#4CAF50;">' + _cooperEntregas.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#888;">Entregas</div></div>';
+        el.innerHTML = html;
+    }
+
+    function _renderCooperGrid() {
+        var grid = document.getElementById('cooper-grid');
+        if (!grid) return;
+
+        var items = _cooperCurrentTab === 'recogida' ? _cooperRecogidas : _cooperEntregas;
+        var typeLabel = _cooperCurrentTab === 'recogida' ? 'Recogida' : 'Entrega';
+
+        if (items.length === 0) {
+            grid.innerHTML = '<div style="grid-column:1/-1; padding:40px; text-align:center; color:#888;">' +
+                '<span class="material-symbols-outlined" style="font-size:2.5rem; display:block; margin-bottom:8px;">photo_library</span>' +
+                'No hay fotos de ' + typeLabel.toLowerCase() + 's en este periodo.</div>';
+            return;
+        }
+
+        var html = '';
+        items.forEach(function(item) {
+            var dateStr = '-';
+            if (item.createdAt) {
+                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                dateStr = d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) +
+                    ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            }
+            var driver = item.driverName || 'Desconocido';
+
+            html += '<div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden; transition:transform 0.2s;" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">';
+            html += '<a href="' + (item.photoURL || '#') + '" target="_blank" style="display:block;">';
+            html += '<img src="' + (item.photoURL || '') + '" style="width:100%; height:200px; object-fit:cover; display:block; background:#111;" loading="lazy">';
+            html += '</a>';
+            html += '<div style="padding:12px;">';
+            html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">';
+            html += '<span style="color:#aaa; font-size:0.78rem;">' + dateStr + '</span>';
+            html += '<button onclick="deleteCooperPhoto(\'' + item.docId + '\')" style="background:transparent; border:none; color:#FF3B30; cursor:pointer; font-size:0.9rem; padding:2px;" title="Eliminar foto">���️</button>';
+            html += '</div>';
+            html += '<div style="display:flex; align-items:center; gap:6px;">';
+            html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
+            html += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
+            html += '</div>';
+            html += '</div></div>';
+        });
+
+        grid.innerHTML = html;
+    }
+
+    window.deleteCooperPhoto = async function(docId) {
+        if (!confirm('Eliminar esta foto?')) return;
+        try {
+            var snap = await db.collection('cooper_photos').doc(docId).get();
+            if (snap.exists) {
+                var data = snap.data();
+                // Try to delete from storage too
+                if (data.storagePath) {
+                    try { await firebase.storage().ref(data.storagePath).delete(); } catch(e) {}
+                }
+            }
+            await db.collection('cooper_photos').doc(docId).delete();
+            loadCooperPanel();
+        } catch(err) {
+            alert('Error: ' + err.message);
+        }
     };
 })();
 </script>

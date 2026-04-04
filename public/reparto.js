@@ -1829,5 +1829,96 @@ function initApp() {
         console.log('[REPARTO] Limpieza automática programada cada 8 horas.');
     })();
 
+    // ============================================================
+    //  COOPER PHOTO — Recogidas & Entregas
+    // ============================================================
+    var _cooperType = null; // 'recogida' or 'entrega'
+
+    window.openCooperPhoto = function(type) {
+        _cooperType = type;
+        var modal = document.getElementById('cooper-modal');
+        var title = document.getElementById('cooper-modal-title');
+        if (!modal) return;
+        if (type === 'recogida') {
+            title.innerHTML = '<span style="font-size:1.3rem;">📥</span> RECOGIDA COOPER';
+            title.style.color = '#FF9800';
+        } else {
+            title.innerHTML = '<span style="font-size:1.3rem;">📤</span> ENTREGA COOPER';
+            title.style.color = '#4CAF50';
+        }
+        // Reset
+        document.getElementById('cooper-photo-preview').style.display = 'none';
+        document.getElementById('cooper-photo-preview').src = '';
+        document.getElementById('cooper-photo-input').value = '';
+        document.getElementById('cooper-photo-status').textContent = 'Sin foto';
+        document.getElementById('btn-cooper-send').style.display = 'none';
+        modal.classList.add('active');
+    };
+
+    // Camera button
+    document.getElementById('btn-cooper-camera').addEventListener('click', function() {
+        document.getElementById('cooper-photo-input').click();
+    });
+
+    // Photo selected
+    document.getElementById('cooper-photo-input').addEventListener('change', function(e) {
+        var f = e.target.files[0];
+        if (f) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                document.getElementById('cooper-photo-preview').src = ev.target.result;
+                document.getElementById('cooper-photo-preview').style.display = 'block';
+                document.getElementById('cooper-photo-status').textContent = 'Foto lista';
+                document.getElementById('btn-cooper-send').style.display = 'block';
+            };
+            reader.readAsDataURL(f);
+        }
+    });
+
+    // Cancel
+    document.getElementById('btn-cooper-cancel').addEventListener('click', function() {
+        document.getElementById('cooper-modal').classList.remove('active');
+        _cooperType = null;
+    });
+
+    // Send photo
+    document.getElementById('btn-cooper-send').addEventListener('click', async function() {
+        var photoFile = document.getElementById('cooper-photo-input').files[0];
+        if (!photoFile) { showToast('Haz una foto primero', 'error'); return; }
+
+        var sendBtn = document.getElementById('btn-cooper-send');
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Subiendo...';
+
+        try {
+            var ts = Date.now();
+            var ext = photoFile.name.split('.').pop() || 'jpg';
+            var storagePath = 'cooper/' + _cooperType + '/' + ts + '.' + ext;
+            var photoRef = storage.ref(storagePath);
+            await photoRef.put(photoFile, { contentType: photoFile.type });
+            var photoURL = await photoRef.getDownloadURL();
+
+            // Save record to Firestore
+            await db.collection('cooper_photos').add({
+                type: _cooperType,
+                photoURL: photoURL,
+                storagePath: storagePath,
+                driverName: currentDriverName || 'Desconocido',
+                driverPhone: currentDriverPhone || '',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                timestamp: ts
+            });
+
+            showToast((_cooperType === 'recogida' ? 'Recogida' : 'Entrega') + ' Cooper registrada', 'success');
+            document.getElementById('cooper-modal').classList.remove('active');
+            _cooperType = null;
+        } catch(err) {
+            showToast('Error: ' + err.message, 'error');
+        } finally {
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'ENVIAR FOTO';
+        }
+    });
+
 } // END initApp
 })();
