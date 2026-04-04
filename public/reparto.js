@@ -1968,6 +1968,7 @@ function initApp() {
                 photoURL: photoURL,
                 storagePath: storagePath,
                 note: noteVal,
+                route: currentRouteLabel || 'Sin ruta',
                 driverName: currentDriverName || 'Desconocido',
                 driverPhone: currentDriverPhone || '',
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),

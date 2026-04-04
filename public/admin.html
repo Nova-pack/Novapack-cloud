@@ -2395,6 +2395,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         </div>
 
+        <!-- Route Filter -->
+        <div id="cooper-route-filter" style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;"></div>
+
         <!-- Photo Grid -->
         <div id="cooper-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;">
             <div style="grid-column:1/-1; padding:30px; text-align:center; color:#aaa;">Cargando...</div>
@@ -2407,6 +2410,7 @@ document.addEventListener('DOMContentLoaded', () => {
 (function() {
     var _cooperRecogidas = [];
     var _cooperEntregas = [];
+    var _cooperRouteFilter = 'todas';
     var _cooperCurrentTab = 'recogida';
 
     window.cooperSwitchTab = function(tab) {
@@ -2469,7 +2473,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (cR) cR.textContent = _cooperRecogidas.length;
             if (cE) cE.textContent = _cooperEntregas.length;
 
+            _cooperRouteFilter = 'todas';
             _renderCooperStats();
+            _renderCooperRouteFilter();
             _renderCooperGrid();
 
             // Auto-cleanup: delete photos older than 3 months (runs once per session)
@@ -2523,6 +2529,66 @@ document.addEventListener('DOMContentLoaded', () => {
         el.innerHTML = html;
     }
 
+    function _renderCooperRouteFilter() {
+        var el = document.getElementById('cooper-route-filter');
+        if (!el) return;
+        // Collect all unique routes from both arrays
+        var routeSet = {};
+        _cooperRecogidas.concat(_cooperEntregas).forEach(function(item) {
+            var r = item.route || 'Sin ruta';
+            routeSet[r] = (routeSet[r] || 0) + 1;
+        });
+        var routes = Object.keys(routeSet).sort();
+        if (routes.length <= 1) { el.innerHTML = ''; return; }
+
+        var html = '';
+        var isAll = _cooperRouteFilter === 'todas';
+        html += '<button onclick="cooperSwitchRoute(\'todas\')" style="background:' + (isAll ? '#FF9800' : '#2a2a2d') + '; color:' + (isAll ? '#000' : '#aaa') + '; border:1px solid ' + (isAll ? '#FF9800' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (isAll ? 'bold' : 'normal') + '; cursor:pointer;">Todas (' + (_cooperRecogidas.length + _cooperEntregas.length) + ')</button>';
+        routes.forEach(function(r) {
+            var active = _cooperRouteFilter === r;
+            html += '<button onclick="cooperSwitchRoute(\'' + r.replace(/'/g, "\\'") + '\')" style="background:' + (active ? '#2196F3' : '#2a2a2d') + '; color:' + (active ? '#fff' : '#aaa') + '; border:1px solid ' + (active ? '#2196F3' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (active ? 'bold' : 'normal') + '; cursor:pointer; display:flex; align-items:center; gap:4px;">';
+            html += '<span class="material-symbols-outlined" style="font-size:0.85rem;">route</span>' + r + ' (' + routeSet[r] + ')</button>';
+        });
+        el.innerHTML = html;
+    }
+
+    window.cooperSwitchRoute = function(route) {
+        _cooperRouteFilter = route;
+        _renderCooperRouteFilter();
+        _renderCooperGrid();
+    };
+
+    function _renderCooperCard(item) {
+        var dateStr = '-';
+        if (item.createdAt) {
+            var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+            dateStr = d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) +
+                ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        }
+        var driver = item.driverName || 'Desconocido';
+        var html = '';
+        html += '<div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden; transition:transform 0.2s;" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">';
+        html += '<a href="' + (item.photoURL || '#') + '" target="_blank" style="display:block;">';
+        html += '<img src="' + (item.photoURL || '') + '" style="width:100%; height:200px; object-fit:cover; display:block; background:#111;" loading="lazy">';
+        html += '</a>';
+        html += '<div style="padding:12px;">';
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">';
+        html += '<span style="color:#aaa; font-size:0.78rem;">' + dateStr + '</span>';
+        html += '<button onclick="deleteCooperPhoto(\'' + item.docId + '\')" style="background:transparent; border:none; color:#FF3B30; cursor:pointer; font-size:0.9rem; padding:2px;" title="Eliminar foto">🗑️</button>';
+        html += '</div>';
+        html += '<div style="display:flex; align-items:center; gap:6px;">';
+        html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
+        html += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
+        html += '</div>';
+        if (item.note) {
+            html += '<div style="margin-top:6px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa;">';
+            html += '<span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:3px;">note</span>' + item.note;
+            html += '</div>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
     function _renderCooperGrid() {
         var grid = document.getElementById('cooper-grid');
         if (!grid) return;
@@ -2530,43 +2596,48 @@ document.addEventListener('DOMContentLoaded', () => {
         var items = _cooperCurrentTab === 'recogida' ? _cooperRecogidas : _cooperEntregas;
         var typeLabel = _cooperCurrentTab === 'recogida' ? 'Recogida' : 'Entrega';
 
+        // Apply route filter
+        if (_cooperRouteFilter !== 'todas') {
+            items = items.filter(function(item) { return (item.route || 'Sin ruta') === _cooperRouteFilter; });
+        }
+
         if (items.length === 0) {
             grid.innerHTML = '<div style="grid-column:1/-1; padding:40px; text-align:center; color:#888;">' +
                 '<span class="material-symbols-outlined" style="font-size:2.5rem; display:block; margin-bottom:8px;">photo_library</span>' +
-                'No hay fotos de ' + typeLabel.toLowerCase() + 's en este periodo.</div>';
+                'No hay fotos de ' + typeLabel.toLowerCase() + 's' + (_cooperRouteFilter !== 'todas' ? ' en la ruta ' + _cooperRouteFilter : '') + ' en este periodo.</div>';
             return;
         }
 
-        var html = '';
+        // Group by route
+        var routeGroups = {};
         items.forEach(function(item) {
-            var dateStr = '-';
-            if (item.createdAt) {
-                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
-                dateStr = d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }) +
-                    ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-            }
-            var driver = item.driverName || 'Desconocido';
-
-            html += '<div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden; transition:transform 0.2s;" onmouseover="this.style.transform=\'scale(1.02)\'" onmouseout="this.style.transform=\'scale(1)\'">';
-            html += '<a href="' + (item.photoURL || '#') + '" target="_blank" style="display:block;">';
-            html += '<img src="' + (item.photoURL || '') + '" style="width:100%; height:200px; object-fit:cover; display:block; background:#111;" loading="lazy">';
-            html += '</a>';
-            html += '<div style="padding:12px;">';
-            html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">';
-            html += '<span style="color:#aaa; font-size:0.78rem;">' + dateStr + '</span>';
-            html += '<button onclick="deleteCooperPhoto(\'' + item.docId + '\')" style="background:transparent; border:none; color:#FF3B30; cursor:pointer; font-size:0.9rem; padding:2px;" title="Eliminar foto">���️</button>';
-            html += '</div>';
-            html += '<div style="display:flex; align-items:center; gap:6px;">';
-            html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
-            html += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
-            html += '</div>';
-            if (item.note) {
-                html += '<div style="margin-top:6px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa;">';
-                html += '<span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:3px;">note</span>' + item.note;
-                html += '</div>';
-            }
-            html += '</div></div>';
+            var r = item.route || 'Sin ruta';
+            if (!routeGroups[r]) routeGroups[r] = [];
+            routeGroups[r].push(item);
         });
+        var routeNames = Object.keys(routeGroups).sort();
+
+        var html = '';
+        // If only one route (filtered or single), render flat grid
+        if (routeNames.length === 1) {
+            routeGroups[routeNames[0]].forEach(function(item) {
+                html += _renderCooperCard(item);
+            });
+        } else {
+            // Multiple routes: render grouped sections
+            routeNames.forEach(function(r) {
+                var rItems = routeGroups[r];
+                html += '<div style="grid-column:1/-1; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; gap:8px;">';
+                html += '<span class="material-symbols-outlined" style="color:#2196F3; font-size:1.1rem;">route</span>';
+                html += '<span style="color:#2196F3; font-weight:bold; font-size:0.9rem;">' + r + '</span>';
+                html += '<span style="color:#666; font-size:0.75rem;">(' + rItems.length + ' fotos)</span>';
+                html += '<div style="flex:1; height:1px; background:#333;"></div>';
+                html += '</div>';
+                rItems.forEach(function(item) {
+                    html += _renderCooperCard(item);
+                });
+            });
+        }
 
         grid.innerHTML = html;
     }
