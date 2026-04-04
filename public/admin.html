@@ -1917,14 +1917,27 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="erp-tab-trash" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
     <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;">
         <!-- Header -->
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:15px;">
             <div>
                 <h1 style="color:#FF3B30; margin:0; display:flex; align-items:center; gap:10px;">
-                    <span class="material-symbols-outlined" style="font-size:2rem;">delete</span> Papelera de Albaranes
+                    <span class="material-symbols-outlined" style="font-size:2rem;">delete</span> Papelera
                 </h1>
-                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Albaranes eliminados. Puedes restaurarlos o eliminarlos definitivamente.</p>
+                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Elementos eliminados. Puedes restaurarlos o eliminarlos definitivamente.</p>
             </div>
             <div id="trash-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div style="display:flex; gap:0; margin-bottom:20px; border-bottom:2px solid #333;">
+            <button id="trash-subtab-tickets" onclick="trashSwitchTab('tickets')" style="background:transparent; border:none; color:#FF9800; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid #FF9800; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">local_shipping</span> Albaranes <span id="trash-count-tickets" style="background:#FF9800; color:#000; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
+            </button>
+            <button id="trash-subtab-invoices" onclick="trashSwitchTab('invoices')" style="background:transparent; border:none; color:#888; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">receipt_long</span> Facturas <span id="trash-count-invoices" style="background:#555; color:#ccc; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
+            </button>
+            <button id="trash-subtab-abonos" onclick="trashSwitchTab('abonos')" style="background:transparent; border:none; color:#888; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">money_off</span> Abonos <span id="trash-count-abonos" style="background:#555; color:#ccc; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
+            </button>
         </div>
 
         <!-- Search + Actions -->
@@ -1955,78 +1968,135 @@ document.addEventListener('DOMContentLoaded', () => {
 </div>
 
 <script>
-// --- PAPELERA FUNCTIONS ---
+// --- PAPELERA FUNCTIONS (Albaranes + Facturas + Abonos) ---
 (function() {
-    var _trashItems = [];
+    var _trashTickets = [];
+    var _trashInvoices = [];
+    var _trashAbonos = [];
     var _trashFiltered = [];
+    var _currentTrashTab = 'tickets';
+
+    function _esc(str) {
+        var div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    function _formatDate(ts) {
+        if (!ts) return '-';
+        var d = typeof ts.toDate === 'function' ? ts.toDate() : new Date(ts);
+        return d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function _getCurrentItems() {
+        if (_currentTrashTab === 'invoices') return _trashInvoices;
+        if (_currentTrashTab === 'abonos') return _trashAbonos;
+        return _trashTickets;
+    }
+
+    window.trashSwitchTab = function(tab) {
+        _currentTrashTab = tab;
+        var tabs = ['tickets', 'invoices', 'abonos'];
+        var colors = { tickets: '#FF9800', invoices: '#2196F3', abonos: '#9C27B0' };
+        tabs.forEach(function(t) {
+            var btn = document.getElementById('trash-subtab-' + t);
+            var badge = document.getElementById('trash-count-' + t);
+            if (t === tab) {
+                btn.style.color = colors[t];
+                btn.style.borderBottomColor = colors[t];
+                if (badge) { badge.style.background = colors[t]; badge.style.color = t === 'tickets' ? '#000' : '#fff'; }
+            } else {
+                btn.style.color = '#888';
+                btn.style.borderBottomColor = 'transparent';
+                if (badge) { badge.style.background = '#555'; badge.style.color = '#ccc'; }
+            }
+        });
+        trashFilter();
+    };
 
     window.loadTrashBin = async function() {
         var listEl = document.getElementById('trash-list');
         if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#aaa;">Cargando papelera...</div>';
 
         try {
-            var snap = await db.collection('deleted_tickets').orderBy('_deletedAt', 'desc').limit(500).get();
-            _trashItems = [];
-            snap.forEach(function(doc) {
-                _trashItems.push({ docId: doc.id, ...doc.data() });
-            });
-            _trashFiltered = _trashItems.slice();
+            var results = await Promise.all([
+                db.collection('deleted_tickets').orderBy('_deletedAt', 'desc').limit(500).get(),
+                db.collection('deleted_invoices').orderBy('_deletedAt', 'desc').limit(500).get(),
+                db.collection('deleted_abonos').orderBy('_deletedAt', 'desc').limit(500).get()
+            ]);
+
+            _trashTickets = [];
+            results[0].forEach(function(doc) { _trashTickets.push({ docId: doc.id, ...doc.data() }); });
+            _trashInvoices = [];
+            results[1].forEach(function(doc) { _trashInvoices.push({ docId: doc.id, ...doc.data() }); });
+            _trashAbonos = [];
+            results[2].forEach(function(doc) { _trashAbonos.push({ docId: doc.id, ...doc.data() }); });
+
+            // Update badges
+            var cT = document.getElementById('trash-count-tickets');
+            var cI = document.getElementById('trash-count-invoices');
+            var cA = document.getElementById('trash-count-abonos');
+            if (cT) cT.textContent = _trashTickets.length;
+            if (cI) cI.textContent = _trashInvoices.length;
+            if (cA) cA.textContent = _trashAbonos.length;
+
             _renderTrashStats();
-            _renderTrashTable();
+            trashFilter();
         } catch(err) {
             if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF5252;">Error: ' + err.message + '</div>';
         }
     };
 
     window.trashFilter = function() {
-        var q = (document.getElementById('trash-search').value || '').trim().toLowerCase();
+        var q = (document.getElementById('trash-search') ? document.getElementById('trash-search').value : '').trim().toLowerCase();
+        var items = _getCurrentItems();
         if (!q) {
-            _trashFiltered = _trashItems.slice();
+            _trashFiltered = items.slice();
         } else {
-            _trashFiltered = _trashItems.filter(function(t) {
-                return [t.id, t.sender, t.receiver, t.erpId, t._deleteReason, t._deleteSource, t.docId]
+            _trashFiltered = items.filter(function(t) {
+                return [t.id, t.sender, t.receiver, t.erpId, t._deleteReason, t._deleteSource, t.docId,
+                        t.invoiceNum, t.clientName, t.name, t.numero]
                     .join(' ').toLowerCase().indexOf(q) !== -1;
             });
         }
-        _renderTrashTable();
+        if (_currentTrashTab === 'tickets') _renderTrashTableTickets();
+        else if (_currentTrashTab === 'invoices') _renderTrashTableInvoices();
+        else _renderTrashTableAbonos();
     };
 
     function _renderTrashStats() {
         var el = document.getElementById('trash-stats');
         if (!el) return;
-
-        var bySource = {};
-        _trashItems.forEach(function(t) {
-            var s = t._deleteSource || 'manual';
-            bySource[s] = (bySource[s] || 0) + 1;
-        });
-
-        var sourceLabels = { approval: 'Anulaciones', route_monitor: 'Rutas', bulk: 'Masiva', debidos: 'Debidos', manual: 'Manual' };
+        var total = _trashTickets.length + _trashInvoices.length + _trashAbonos.length;
         var html = '<div style="background:rgba(255,59,48,0.1); border:1px solid rgba(255,59,48,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
-            '<div style="font-size:1.3rem; font-weight:900; color:#FF3B30;">' + _trashItems.length + '</div>' +
-            '<div style="font-size:0.7rem; color:#aaa;">En papelera</div></div>';
-
-        Object.keys(bySource).forEach(function(s) {
-            html += '<div style="background:rgba(255,255,255,0.05); border:1px solid #333; border-radius:8px; padding:8px 14px; text-align:center;">' +
-                '<div style="font-size:1.1rem; font-weight:900; color:#aaa;">' + bySource[s] + '</div>' +
-                '<div style="font-size:0.7rem; color:#666;">' + (sourceLabels[s] || s) + '</div></div>';
-        });
-
+            '<div style="font-size:1.3rem; font-weight:900; color:#FF3B30;">' + total + '</div>' +
+            '<div style="font-size:0.7rem; color:#aaa;">Total papelera</div></div>';
+        html += '<div style="background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.1rem; font-weight:900; color:#FF9800;">' + _trashTickets.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#888;">Albaranes</div></div>';
+        html += '<div style="background:rgba(33,150,243,0.1); border:1px solid rgba(33,150,243,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.1rem; font-weight:900; color:#2196F3;">' + _trashInvoices.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#888;">Facturas</div></div>';
+        html += '<div style="background:rgba(156,39,176,0.1); border:1px solid rgba(156,39,176,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.1rem; font-weight:900; color:#9C27B0;">' + _trashAbonos.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#888;">Abonos</div></div>';
         el.innerHTML = html;
     }
 
-    function _renderTrashTable() {
+    function _emptyMsg() {
+        var labels = { tickets: 'albaranes', invoices: 'facturas', abonos: 'abonos' };
+        return '<div style="padding:30px; text-align:center; color:#888;">' +
+            '<span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:8px;">delete_outline</span>' +
+            'No hay ' + labels[_currentTrashTab] + ' en la papelera.</div>';
+    }
+
+    // --- TICKETS TABLE ---
+    function _renderTrashTableTickets() {
         var listEl = document.getElementById('trash-list');
         if (!listEl) return;
+        if (_trashFiltered.length === 0) { listEl.innerHTML = _emptyMsg(); return; }
 
-        if (_trashFiltered.length === 0) {
-            listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#888;">' +
-                '<span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:8px;">delete_outline</span>' +
-                'La papelera está vacía.</div>';
-            return;
-        }
-
-        var sourceLabels = { approval: 'Anulación', route_monitor: 'Rutas', bulk: 'Masiva', debidos: 'Debidos', manual: 'Manual' };
+        var sourceLabels = { approval: 'Anulacion', route_monitor: 'Rutas', bulk: 'Masiva', debidos: 'Debidos', manual: 'Manual' };
         var html = '<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">';
         html += '<thead><tr style="background:#1a1a2e; position:sticky; top:0; z-index:1;">';
         html += '<th style="padding:8px; text-align:left; color:#aaa;">ID</th>';
@@ -2040,11 +2110,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         _trashFiltered.forEach(function(t, i) {
             var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
-            var dateStr = '-';
-            if (t._deletedAt) {
-                var d = typeof t._deletedAt.toDate === 'function' ? t._deletedAt.toDate() : new Date(t._deletedAt);
-                dateStr = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-            }
             var srcLabel = sourceLabels[t._deleteSource] || t._deleteSource || '-';
             var reason = t._deleteReason || '-';
             if (reason.length > 40) reason = reason.substring(0, 40) + '...';
@@ -2053,101 +2118,216 @@ document.addEventListener('DOMContentLoaded', () => {
             html += '<td style="padding:6px 8px; color:#FF9800; font-weight:bold;">' + _esc(t.id || t._originalDocId || t.docId) + '</td>';
             html += '<td style="padding:6px 8px; color:#eee;">' + _esc(t.sender || '-') + '</td>';
             html += '<td style="padding:6px 8px; color:#ddd;">' + _esc(t.receiver || '-') + '</td>';
-            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + dateStr + '</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _formatDate(t._deletedAt) + '</td>';
             html += '<td style="padding:6px 8px;"><span style="background:#333; padding:2px 8px; border-radius:4px; font-size:0.7rem; color:#aaa;">' + _esc(srcLabel) + '</span></td>';
             html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _esc(reason) + '</td>';
             html += '<td style="padding:6px 8px; text-align:center; white-space:nowrap;">' +
                 '<button onclick="restoreTicket(\'' + t.docId + '\')" style="background:#4CAF50; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer; margin-right:4px; font-weight:bold;" title="Restaurar">Restaurar</button>' +
-                '<button onclick="permanentDeleteTicket(\'' + t.docId + '\')" style="background:#FF3B30; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Eliminar definitivamente">Eliminar</button>' +
+                '<button onclick="permanentDeleteTrash(\'tickets\',\'' + t.docId + '\')" style="background:#FF3B30; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Eliminar definitivamente">Eliminar</button>' +
                 '</td>';
             html += '</tr>';
         });
-
         html += '</tbody></table>';
         listEl.innerHTML = html;
     }
 
-    window.restoreTicket = async function(docId) {
-        if (!confirm('¿Restaurar este albarán? Volverá a la colección de tickets activos.')) return;
+    // --- INVOICES TABLE ---
+    function _renderTrashTableInvoices() {
+        var listEl = document.getElementById('trash-list');
+        if (!listEl) return;
+        if (_trashFiltered.length === 0) { listEl.innerHTML = _emptyMsg(); return; }
 
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">';
+        html += '<thead><tr style="background:#1a1a2e; position:sticky; top:0; z-index:1;">';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">N Factura</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Cliente</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Total</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Albaranes</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Eliminada</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Motivo</th>';
+        html += '<th style="padding:8px; text-align:center; color:#aaa; width:140px;">Acciones</th>';
+        html += '</tr></thead><tbody>';
+
+        _trashFiltered.forEach(function(inv, i) {
+            var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+            var num = inv.invoiceNum || inv.numero || inv.docId;
+            var client = inv.clientName || inv.client || '-';
+            var total = typeof inv.total === 'number' ? inv.total.toFixed(2) + ' EUR' : (inv.total || '-');
+            var linked = (inv._linkedTicketIds || []).length;
+            var reason = inv._deleteReason || '-';
+            if (reason.length > 40) reason = reason.substring(0, 40) + '...';
+
+            html += '<tr style="background:' + bg + '; border-bottom:1px solid #222;">';
+            html += '<td style="padding:6px 8px; color:#2196F3; font-weight:bold;">' + _esc(num) + '</td>';
+            html += '<td style="padding:6px 8px; color:#eee;">' + _esc(client) + '</td>';
+            html += '<td style="padding:6px 8px; color:#4CAF50; font-weight:bold;">' + _esc(total) + '</td>';
+            html += '<td style="padding:6px 8px; color:#aaa;">' + linked + ' alb.</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _formatDate(inv._deletedAt) + '</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _esc(reason) + '</td>';
+            html += '<td style="padding:6px 8px; text-align:center; white-space:nowrap;">' +
+                '<button onclick="restoreInvoice(\'' + inv.docId + '\')" style="background:#4CAF50; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer; margin-right:4px; font-weight:bold;" title="Restaurar">Restaurar</button>' +
+                '<button onclick="permanentDeleteTrash(\'invoices\',\'' + inv.docId + '\')" style="background:#FF3B30; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Eliminar definitivamente">Eliminar</button>' +
+                '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+    }
+
+    // --- ABONOS TABLE ---
+    function _renderTrashTableAbonos() {
+        var listEl = document.getElementById('trash-list');
+        if (!listEl) return;
+        if (_trashFiltered.length === 0) { listEl.innerHTML = _emptyMsg(); return; }
+
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">';
+        html += '<thead><tr style="background:#1a1a2e; position:sticky; top:0; z-index:1;">';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">ID Abono</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Remitente</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Destinatario</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Total</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Eliminado</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Motivo</th>';
+        html += '<th style="padding:8px; text-align:center; color:#aaa; width:140px;">Acciones</th>';
+        html += '</tr></thead><tbody>';
+
+        _trashFiltered.forEach(function(ab, i) {
+            var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+            var abId = ab.id || ab._originalDocId || ab.docId;
+            var total = typeof ab.total === 'number' ? ab.total.toFixed(2) + ' EUR' : (ab.total || '-');
+            var reason = ab._deleteReason || '-';
+            if (reason.length > 40) reason = reason.substring(0, 40) + '...';
+
+            html += '<tr style="background:' + bg + '; border-bottom:1px solid #222;">';
+            html += '<td style="padding:6px 8px; color:#9C27B0; font-weight:bold;">' + _esc(abId) + '</td>';
+            html += '<td style="padding:6px 8px; color:#eee;">' + _esc(ab.sender || '-') + '</td>';
+            html += '<td style="padding:6px 8px; color:#ddd;">' + _esc(ab.receiver || '-') + '</td>';
+            html += '<td style="padding:6px 8px; color:#FF5252; font-weight:bold;">' + _esc(total) + '</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _formatDate(ab._deletedAt) + '</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _esc(reason) + '</td>';
+            html += '<td style="padding:6px 8px; text-align:center; white-space:nowrap;">' +
+                '<button onclick="restoreAbono(\'' + ab.docId + '\')" style="background:#4CAF50; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer; margin-right:4px; font-weight:bold;" title="Restaurar">Restaurar</button>' +
+                '<button onclick="permanentDeleteTrash(\'abonos\',\'' + ab.docId + '\')" style="background:#FF3B30; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Eliminar definitivamente">Eliminar</button>' +
+                '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+    }
+
+    // --- RESTORE TICKET ---
+    window.restoreTicket = async function(docId) {
+        if (!confirm('Restaurar este albaran? Volvera a la coleccion de tickets activos.')) return;
         try {
             var snap = await db.collection('deleted_tickets').doc(docId).get();
-            if (!snap.exists) { alert('No se encontró el albarán en la papelera.'); return; }
-
+            if (!snap.exists) { alert('No se encontro el albaran en la papelera.'); return; }
             var data = snap.data();
-            // Remove trash metadata
-            delete data._deletedAt;
-            delete data._deletedBy;
-            delete data._deleteReason;
-            delete data._deleteSource;
-            delete data._originalDocId;
-            // Remove deletion request flags
-            delete data.deleteRequested;
-            delete data.deleteReason;
-            // Set status to Pendiente
+            delete data._deletedAt; delete data._deletedBy; delete data._deleteReason;
+            delete data._deleteSource; delete data._originalDocId;
+            delete data.deleteRequested; delete data.deleteReason;
             data.status = 'Pendiente';
             data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-
             await db.collection('tickets').doc(docId).set(data);
             await db.collection('deleted_tickets').doc(docId).delete();
-
-            // Remove from blacklist
-            if (data.erpId) {
-                try { await db.collection('deleted_erp_ids').doc(String(data.erpId)).delete(); } catch(e) {}
-            }
-            if (data.id && String(data.id) !== String(data.erpId)) {
-                try { await db.collection('deleted_erp_ids').doc(String(data.id)).delete(); } catch(e) {}
-            }
-
-            alert('Albarán restaurado correctamente.');
+            if (data.erpId) { try { await db.collection('deleted_erp_ids').doc(String(data.erpId)).delete(); } catch(e) {} }
+            if (data.id && String(data.id) !== String(data.erpId)) { try { await db.collection('deleted_erp_ids').doc(String(data.id)).delete(); } catch(e) {} }
+            alert('Albaran restaurado correctamente.');
             loadTrashBin();
-        } catch(err) {
-            alert('Error al restaurar: ' + err.message);
-        }
+        } catch(err) { alert('Error al restaurar: ' + err.message); }
     };
 
-    window.permanentDeleteTicket = async function(docId) {
-        if (!confirm('¿ELIMINAR DEFINITIVAMENTE este albarán?\n\nEsta acción NO se puede deshacer.')) return;
-
+    // --- RESTORE INVOICE ---
+    window.restoreInvoice = async function(docId) {
+        if (!confirm('Restaurar esta factura? Se re-creara la factura y se re-vincularan los albaranes asociados.')) return;
         try {
-            await db.collection('deleted_tickets').doc(docId).delete();
-            alert('Albarán eliminado definitivamente.');
+            var snap = await db.collection('deleted_invoices').doc(docId).get();
+            if (!snap.exists) { alert('No se encontro la factura en la papelera.'); return; }
+            var data = snap.data();
+            var linkedIds = data._linkedTicketIds || [];
+            delete data._deletedAt; delete data._deletedBy; delete data._deleteReason;
+            delete data._deleteSource; delete data._originalDocId; delete data._linkedTicketIds;
+            await db.collection('invoices').doc(docId).set(data);
+            // Re-link tickets to this invoice
+            if (linkedIds.length > 0) {
+                var batch = db.batch();
+                var invoiceNum = data.invoiceNum || data.numero || docId;
+                linkedIds.forEach(function(tId) {
+                    var tRef = db.collection('tickets').doc(tId);
+                    batch.update(tRef, { invoiceId: docId, invoiceNum: invoiceNum });
+                });
+                await batch.commit();
+            }
+            await db.collection('deleted_invoices').doc(docId).delete();
+            alert('Factura restaurada correctamente. ' + linkedIds.length + ' albaranes re-vinculados.');
             loadTrashBin();
-        } catch(err) {
-            alert('Error: ' + err.message);
-        }
+        } catch(err) { alert('Error al restaurar factura: ' + err.message); }
     };
 
-    window.emptyTrash = async function() {
-        if (_trashItems.length === 0) { alert('La papelera ya está vacía.'); return; }
+    // --- RESTORE ABONO ---
+    window.restoreAbono = async function(docId) {
+        if (!confirm('Restaurar este abono? Volvera a la coleccion de tickets activos.')) return;
+        try {
+            var snap = await db.collection('deleted_abonos').doc(docId).get();
+            if (!snap.exists) { alert('No se encontro el abono en la papelera.'); return; }
+            var data = snap.data();
+            delete data._deletedAt; delete data._deletedBy; delete data._deleteReason;
+            delete data._deleteSource; delete data._originalDocId;
+            data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+            await db.collection('tickets').doc(docId).set(data);
+            await db.collection('deleted_abonos').doc(docId).delete();
+            alert('Abono restaurado correctamente.');
+            loadTrashBin();
+        } catch(err) { alert('Error al restaurar abono: ' + err.message); }
+    };
 
-        var confirmText = prompt('⚠️ VACIAR PAPELERA\n\nSe eliminarán ' + _trashItems.length + ' albaranes DEFINITIVAMENTE.\n\nEscribe VACIAR para confirmar:');
-        if (confirmText !== 'VACIAR') { alert('Operación cancelada.'); return; }
+    // --- PERMANENT DELETE (generic) ---
+    window.permanentDeleteTrash = async function(type, docId) {
+        var labels = { tickets: 'albaran', invoices: 'factura', abonos: 'abono' };
+        var cols = { tickets: 'deleted_tickets', invoices: 'deleted_invoices', abonos: 'deleted_abonos' };
+        if (!confirm('ELIMINAR DEFINITIVAMENTE este ' + labels[type] + '?\n\nEsta accion NO se puede deshacer.')) return;
+        try {
+            await db.collection(cols[type]).doc(docId).delete();
+            alert((labels[type].charAt(0).toUpperCase() + labels[type].slice(1)) + ' eliminado definitivamente.');
+            loadTrashBin();
+        } catch(err) { alert('Error: ' + err.message); }
+    };
+
+    // Keep old name for backwards compat
+    window.permanentDeleteTicket = function(docId) { permanentDeleteTrash('tickets', docId); };
+
+    // --- EMPTY ALL TRASH ---
+    window.emptyTrash = async function() {
+        var total = _trashTickets.length + _trashInvoices.length + _trashAbonos.length;
+        if (total === 0) { alert('La papelera ya esta vacia.'); return; }
+
+        var confirmText = prompt('VACIAR PAPELERA\n\nSe eliminaran DEFINITIVAMENTE:\n- ' + _trashTickets.length + ' albaranes\n- ' + _trashInvoices.length + ' facturas\n- ' + _trashAbonos.length + ' abonos\n\nEscribe VACIAR para confirmar:');
+        if (confirmText !== 'VACIAR') { alert('Operacion cancelada.'); return; }
 
         var listEl = document.getElementById('trash-list');
         if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF3B30;">Vaciando papelera...</div>';
 
         var deleted = 0;
         var errors = 0;
-        for (var i = 0; i < _trashItems.length; i++) {
-            try {
-                await db.collection('deleted_tickets').doc(_trashItems[i].docId).delete();
-                deleted++;
-            } catch(e) { errors++; }
-            if (deleted % 20 === 0 && listEl) {
-                listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF3B30;">Vaciando... ' + deleted + '/' + _trashItems.length + '</div>';
+        var allItems = [
+            { items: _trashTickets, col: 'deleted_tickets' },
+            { items: _trashInvoices, col: 'deleted_invoices' },
+            { items: _trashAbonos, col: 'deleted_abonos' }
+        ];
+        for (var g = 0; g < allItems.length; g++) {
+            for (var i = 0; i < allItems[g].items.length; i++) {
+                try {
+                    await db.collection(allItems[g].col).doc(allItems[g].items[i].docId).delete();
+                    deleted++;
+                } catch(e) { errors++; }
+                if (deleted % 20 === 0 && listEl) {
+                    listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF3B30;">Vaciando... ' + deleted + '/' + total + '</div>';
+                }
             }
         }
 
         alert('Papelera vaciada: ' + deleted + ' eliminados.' + (errors > 0 ? ' ' + errors + ' errores.' : ''));
         loadTrashBin();
     };
-
-    function _esc(str) {
-        var div = document.createElement('div');
-        div.textContent = str || '';
-        return div.innerHTML;
-    }
 })();
 </script>
 
@@ -4510,6 +4690,54 @@ document.addEventListener('DOMContentLoaded', () => {
             await docRef.delete();
         };
 
+        // --- PAPELERA: Move invoice to trash ---
+        window.moveInvoiceToTrash = async function(docId, reason) {
+            const docRef = db.collection('invoices').doc(docId);
+            const snap = await docRef.get();
+            if (!snap.exists) return;
+            const data = snap.data();
+            // Save linked ticket IDs for restore
+            const linkedSnap = await db.collection('tickets').where('invoiceId', '==', docId).get();
+            const linkedTicketIds = [];
+            linkedSnap.forEach(function(t) { linkedTicketIds.push(t.id); });
+            await db.collection('deleted_invoices').doc(docId).set({
+                ...data,
+                _deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                _deletedBy: 'admin',
+                _deleteReason: reason || '',
+                _deleteSource: 'manual',
+                _originalDocId: docId,
+                _linkedTicketIds: linkedTicketIds
+            });
+            // Unlink tickets
+            const batch = db.batch();
+            linkedSnap.forEach(function(tDoc) {
+                batch.update(tDoc.ref, {
+                    invoiceId: firebase.firestore.FieldValue.delete(),
+                    invoiceNum: firebase.firestore.FieldValue.delete()
+                });
+            });
+            batch.delete(docRef);
+            await batch.commit();
+        };
+
+        // --- PAPELERA: Move abono to trash ---
+        window.moveAbonoToTrash = async function(docId, reason) {
+            const docRef = db.collection('tickets').doc(docId);
+            const snap = await docRef.get();
+            if (!snap.exists) return;
+            const data = snap.data();
+            await db.collection('deleted_abonos').doc(docId).set({
+                ...data,
+                _deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                _deletedBy: 'admin',
+                _deleteReason: reason || '',
+                _deleteSource: 'manual',
+                _originalDocId: docId
+            });
+            await docRef.delete();
+        };
+
         // --- ADMIN BULK DELETE ENGINE ---
         let _bulkDeleteCandidates = [];
 
@@ -5555,6 +5783,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <td style="color:#ff4d4d; font-weight:bold;">${data.total ? data.total.toFixed(2) : '0.00'}€</td>
                         <td>
                              <button class="btn btn-outline btn-sm" onclick="printTicketFromAdmin('${data.uid}', '${data.compId}', '${doc.id}')" title="Imprimir Comprobante">🖨️</button>
+                             <button class="btn btn-outline btn-sm" onclick="deleteAbono('${doc.id}', '${(data.id || '').replace(/'/g, "\\'")}')" title="Eliminar Abono" style="color:#FF3B30; border-color:#FF3B30;">🗑️</button>
                         </td>
                     `;
                         tbody.appendChild(row);
@@ -5564,6 +5793,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     tbody.innerHTML = '<tr><td colspan="6" style="color:#ff4444">Error al cargar datos.</td></tr>';
                 }
             }
+
+            window.deleteAbono = async (docId, abonoId) => {
+                if (!confirm('¿Eliminar el abono ' + abonoId + '? Se moverá a la papelera.')) return;
+                showLoading();
+                try {
+                    await moveAbonoToTrash(docId, 'Eliminado desde listado');
+                    alert('Abono movido a la papelera.');
+                    initCreditNotesListView();
+                } catch(e) { alert('Error: ' + e.message); }
+                finally { hideLoading(); }
+            };
 
 
 
@@ -9421,22 +9661,11 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             }
 
             window.deleteInvoice = async (id) => {
-                if (!confirm("¿Eliminar factura y marcar albaranes como No Facturados?")) return;
+                if (!confirm("¿Eliminar factura? Se moverá a la papelera y los albaranes quedarán como 'No Facturados'.")) return;
                 showLoading();
                 try {
-                    const doc = await db.collection('invoices').doc(id).get();
-                    const inv = doc.data();
-                    const batch = db.batch();
-                    const uSnap = await db.collection('tickets').where('invoiceId', '==', id).get();
-                    uSnap.forEach(tDoc => {
-                        batch.update(tDoc.ref, {
-                            invoiceId: firebase.firestore.FieldValue.delete(), invoiceNum:
-                                firebase.firestore.FieldValue.delete()
-                        });
-                    });
-                    batch.delete(db.collection('invoices').doc(id));
-                    await batch.commit();
-                    alert("Factura eliminada. Los albaranes vuelven a aparecer como 'No Facturados'.");
+                    await moveInvoiceToTrash(id, 'Eliminada desde listado');
+                    alert("Factura movida a la papelera. Los albaranes vuelven a aparecer como 'No Facturados'.");
                     loadInvoices();
                 } catch (e) { alert("Error: " + e.message); }
                 finally { hideLoading(); }
