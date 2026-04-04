@@ -1810,24 +1810,23 @@ function initApp() {
         });
     }
 
-    // --- LIMPIEZA AUTOMÁTICA A MEDIANOCHE ---
-    (function scheduleMidnightClean() {
-        var now = new Date();
-        var midnight = new Date(now);
-        midnight.setHours(24, 0, 0, 0); // próxima medianoche
-        var msUntilMidnight = midnight.getTime() - now.getTime();
+    // --- LIMPIEZA AUTOMÁTICA CADA 8 HORAS ---
+    (function schedulePeriodicClean() {
+        var INTERVAL_MS = 8 * 60 * 60 * 1000; // 8 horas
 
+        // Ejecutar la primera limpieza tras 5 minutos (dar tiempo a que cargue todo)
         setTimeout(function() {
-            console.log('[REPARTO] Limpieza automática de medianoche ejecutándose...');
+            console.log('[REPARTO] Limpieza automática inicial ejecutándose...');
             clearDeliveredFromRoute();
-            // Reprogramar para la siguiente medianoche
-            setInterval(function() {
-                console.log('[REPARTO] Limpieza automática diaria ejecutándose...');
-                clearDeliveredFromRoute();
-            }, 24 * 60 * 60 * 1000);
-        }, msUntilMidnight);
+        }, 5 * 60 * 1000);
 
-        console.log('[REPARTO] Limpieza automática programada en ' + Math.round(msUntilMidnight / 60000) + ' minutos (medianoche).');
+        // Repetir cada 8 horas
+        setInterval(function() {
+            console.log('[REPARTO] Limpieza automática periódica (cada 8h) ejecutándose...');
+            clearDeliveredFromRoute();
+        }, INTERVAL_MS);
+
+        console.log('[REPARTO] Limpieza automática programada cada 8 horas.');
     })();
 
 } // END initApp

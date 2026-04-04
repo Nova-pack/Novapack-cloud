@@ -142,6 +142,9 @@
                     <span class="material-symbols-outlined" style="font-size:1rem;">swap_horiz</span> DEBIDOS
                     <span id="alb-count-debidos" style="background:rgba(224,64,251,0.2); color:#EA80FC; padding:1px 7px; border-radius:8px; font-size:0.65rem;"></span>
                 </div>
+                <div onclick="window._albSetSubTab('pod')" style="${subTabStyle('pod', '#4CAF50')}">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">task</span> POD
+                </div>
             </div>
 
             <!-- TABLE AREA -->
@@ -207,10 +210,13 @@
     window._albSetSubTab = function(tab) {
         _albSubTab = tab;
         _albPage = 0;
-        _albApplyFiltersInternal();
         // Re-render sub-tab bar styles
         _albRender();
-        _albApplyFiltersInternal();
+        if (tab === 'pod') {
+            _albRenderPOD();
+        } else {
+            _albApplyFiltersInternal();
+        }
     };
 
     window._albApplyFilters = function() {
@@ -232,6 +238,9 @@
     };
 
     function _albApplyFiltersInternal() {
+        // Restore pagination when not on POD tab
+        var pagination = document.getElementById('alb-pagination');
+        if (pagination) pagination.style.display = '';
         let data = _albCache.slice();
         const q = _albTextFilter.toLowerCase().trim();
 
@@ -480,6 +489,300 @@
         a.download = `albaranes_${_albDateFrom}_${_albDateTo}.csv`;
         a.click();
         URL.revokeObjectURL(url);
+    };
+
+    // ============================================================
+    //  POD — Justificantes de Entrega (integrated sub-tab)
+    // ============================================================
+    let _podData = null;
+
+    function _albRenderPOD() {
+        const area = document.getElementById('alb-table-area');
+        const pagination = document.getElementById('alb-pagination');
+        if (!area) return;
+        if (pagination) pagination.style.display = 'none';
+
+        area.innerHTML = `
+        <div style="padding:24px; max-width:900px; margin:0 auto;">
+            <div style="background:#252526; border:1px solid #3c3c3c; border-radius:8px; padding:20px; margin-bottom:20px;">
+                <h3 style="color:#4CAF50; margin:0 0 12px 0; font-size:0.95rem; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1.1rem;">task</span> Buscador de Justificantes POD
+                </h3>
+                <div style="display:flex; gap:10px; align-items:flex-end;">
+                    <div style="flex:1;">
+                        <label style="font-size:0.7rem; color:#888; display:block; margin-bottom:4px;">ID de Albarán / Ticket</label>
+                        <input type="text" id="pod-search-input-alb" placeholder="Ej: NP12345" autocomplete="off"
+                            onkeypress="if(event.key==='Enter') window._albSearchPOD()"
+                            style="width:100%; background:#1e1e1e; border:1px solid #555; color:#fff; padding:8px 12px; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+                    </div>
+                    <button type="button" onclick="window._albSearchPOD()" style="background:#4CAF50; border:none; color:#fff; padding:8px 20px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px; height:38px;">
+                        <span class="material-symbols-outlined" style="font-size:1rem;">search</span> BUSCAR
+                    </button>
+                </div>
+            </div>
+
+            <div id="pod-alb-loading" style="display:none; text-align:center; padding:40px; color:#4CAF50;">
+                <span class="material-symbols-outlined" style="font-size:2.5rem; animation:spin 1.5s linear infinite;">autorenew</span>
+                <div style="margin-top:8px; font-weight:bold; font-size:0.85rem;">Buscando en servidor...</div>
+            </div>
+
+            <div id="pod-alb-not-found" style="display:none; text-align:center; padding:40px; color:#FF5252; font-weight:bold; font-size:0.9rem;">
+                <span class="material-symbols-outlined" style="font-size:2.5rem; display:block; margin-bottom:8px;">search_off</span>
+                No se ha encontrado el albarán o no tiene justificante de entrega.
+            </div>
+
+            <div id="pod-alb-result" style="display:none;">
+                <div style="background:#111; border:1px solid #333; border-radius:8px; padding:20px; box-shadow:0 4px 16px rgba(0,0,0,0.5);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px dashed #333; padding-bottom:12px; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+                        <h3 style="margin:0; font-size:1.1rem; font-weight:bold; color:#fff;">JUSTIFICANTE <span id="pod-alb-id" style="color:#4CAF50;"></span></h3>
+                        <span id="pod-alb-status" style="font-size:0.75rem; padding:3px 10px; border-radius:10px;"></span>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:20px;">
+                        <!-- Datos del envío -->
+                        <div style="background:rgba(255,255,255,0.02); padding:16px; border-radius:8px; border:1px solid #2d2d30;">
+                            <h4 style="color:#888; font-size:0.7rem; text-transform:uppercase; margin:0 0 12px 0; letter-spacing:1px;">
+                                <span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">local_shipping</span> Detalles del Envío
+                            </h4>
+                            <div style="display:flex; flex-direction:column; gap:8px; font-size:0.85rem;">
+                                <div><strong style="color:#4CAF50;">Destinatario:</strong> <span id="pod-alb-receiver" style="color:#fff; font-weight:bold;"></span></div>
+                                <div><strong style="color:#888;">Dirección:</strong> <span id="pod-alb-address" style="color:#ccc;"></span></div>
+                                <div><strong style="color:#888;">Fecha Emisión:</strong> <span id="pod-alb-date" style="color:#ccc;"></span></div>
+                                <div><strong style="color:#888;">Bultos:</strong> <span id="pod-alb-pkgs" style="color:#ccc;"></span></div>
+                                <div style="margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,0.05);">
+                                    <strong style="color:#4CAF50; display:block; margin-bottom:4px; font-size:0.75rem;">INFORMACIÓN DE ENTREGA:</strong>
+                                    <div style="color:#fff;"><strong style="color:#888;">Entregado a:</strong> <span id="pod-alb-delivery-name" style="font-weight:bold;"></span></div>
+                                    <div style="color:#fff;"><strong style="color:#888;">Fecha/Hora:</strong> <span id="pod-alb-delivery-time"></span></div>
+                                    <div style="color:#888; font-size:0.75rem; margin-top:4px; display:flex; gap:4px; align-items:center;">
+                                        <span class="material-symbols-outlined" style="font-size:0.9rem;">location_on</span>
+                                        <span id="pod-alb-gps"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Evidencias -->
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div style="background:rgba(255,255,255,0.02); border:1px solid #2d2d30; border-radius:8px; padding:14px; text-align:center;">
+                                <h4 style="color:#888; font-size:0.7rem; text-transform:uppercase; margin:0 0 8px 0; letter-spacing:1px; text-align:left;">
+                                    <span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">draw</span> Firma
+                                </h4>
+                                <div id="pod-alb-sig-box" style="height:120px; display:flex; align-items:center; justify-content:center; background:#fff; border-radius:6px;">
+                                    <img id="pod-alb-sig-img" src="" style="max-width:100%; max-height:100%; display:none;">
+                                    <span id="pod-alb-sig-empty" style="color:#888; font-style:italic; font-size:0.8rem;">No se adjuntó firma</span>
+                                </div>
+                            </div>
+                            <div style="background:rgba(255,255,255,0.02); border:1px solid #2d2d30; border-radius:8px; padding:14px; text-align:center;">
+                                <h4 style="color:#888; font-size:0.7rem; text-transform:uppercase; margin:0 0 8px 0; letter-spacing:1px; text-align:left;">
+                                    <span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">photo_camera</span> Fotografía
+                                </h4>
+                                <div id="pod-alb-photo-box" style="height:160px; display:flex; align-items:center; justify-content:center; background:#000; border-radius:6px; overflow:hidden;">
+                                    <img id="pod-alb-photo-img" src="" style="max-width:100%; max-height:100%; display:none; object-fit:contain; cursor:pointer;" onclick="window.open(this.src)">
+                                    <span id="pod-alb-photo-empty" style="color:#555; font-style:italic; font-size:0.8rem;">No se adjuntó fotografía</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botones -->
+                    <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:10px; border-top:1px solid #333; padding-top:14px; flex-wrap:wrap;">
+                        <button type="button" onclick="window._albEmailPOD()" style="background:transparent; border:1px solid #2196F3; color:#2196F3; padding:6px 16px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                            <span class="material-symbols-outlined" style="font-size:0.9rem;">mail</span> ENVIAR POR EMAIL
+                        </button>
+                        <button type="button" onclick="window._albPrintPOD()" style="background:transparent; border:1px solid #ccc; color:#ccc; padding:6px 16px; border-radius:5px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                            <span class="material-symbols-outlined" style="font-size:0.9rem;">print</span> IMPRIMIR
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // --- POD Search ---
+    window._albSearchPOD = async function() {
+        var input = document.getElementById('pod-search-input-alb');
+        if (!input) return;
+        var val = input.value.trim();
+        if (!val) { alert('Introduce un ID de albarán para buscar.'); return; }
+
+        document.getElementById('pod-alb-result').style.display = 'none';
+        document.getElementById('pod-alb-not-found').style.display = 'none';
+        document.getElementById('pod-alb-loading').style.display = 'block';
+
+        try {
+            var querySnap = await db.collection('tickets').where('id', '==', val).get();
+            var targetDoc = null;
+            if (!querySnap.empty) {
+                targetDoc = querySnap.docs[0];
+            } else {
+                var docGet = await db.collection('tickets').doc(val).get();
+                if (docGet.exists) targetDoc = docGet;
+            }
+
+            if (!targetDoc) {
+                document.getElementById('pod-alb-loading').style.display = 'none';
+                document.getElementById('pod-alb-not-found').style.display = 'block';
+                return;
+            }
+
+            var data = targetDoc.data();
+            _podData = data;
+
+            document.getElementById('pod-alb-id').textContent = data.id || targetDoc.id;
+
+            var statusEl = document.getElementById('pod-alb-status');
+            if (data.status === 'Entregado' || data.delivered) {
+                statusEl.style.background = 'rgba(76,175,80,0.2)';
+                statusEl.style.color = '#4CAF50';
+                statusEl.textContent = '✅ ENTREGADO';
+            } else {
+                statusEl.style.background = 'rgba(255,152,0,0.2)';
+                statusEl.style.color = '#FF9800';
+                statusEl.textContent = '⚠️ ' + (data.status ? data.status.toUpperCase() : 'PENDIENTE');
+            }
+
+            document.getElementById('pod-alb-receiver').textContent = (data.receiver || 'S/N').toUpperCase();
+            document.getElementById('pod-alb-address').textContent = data.address || '';
+
+            var dDate = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toLocaleDateString() : new Date(data.createdAt).toLocaleDateString()) : 'N/A';
+            document.getElementById('pod-alb-date').textContent = dDate;
+
+            var pkgs = data.packagesList ? data.packagesList.reduce(function(acc, p) { return acc + (parseInt(p.qty) || 1); }, 0) : (data.packages || 1);
+            document.getElementById('pod-alb-pkgs').textContent = pkgs + ' Bulto(s)';
+
+            document.getElementById('pod-alb-delivery-name').textContent = (data.deliveryReceiverName || 'Información no disponible').toUpperCase();
+
+            var dTime = data.deliveredAt ? (data.deliveredAt.toDate ? data.deliveredAt.toDate().toLocaleString() : new Date(data.deliveredAt).toLocaleString()) : 'N/A';
+            document.getElementById('pod-alb-delivery-time').textContent = dTime;
+
+            if (data.deliveryGPS) {
+                document.getElementById('pod-alb-gps').textContent = data.deliveryGPS.latitude + ', ' + data.deliveryGPS.longitude;
+            } else {
+                document.getElementById('pod-alb-gps').textContent = 'GPS no registrado';
+            }
+
+            var sigImg = document.getElementById('pod-alb-sig-img');
+            var sigEmpty = document.getElementById('pod-alb-sig-empty');
+            if (data.signatureURL) {
+                if (data.podCleaned) {
+                    sigEmpty.style.display = 'block';
+                    sigEmpty.innerHTML = '<span style="color:#FF9800;">Firma eliminada (Política > 6 meses)</span>';
+                    sigImg.style.display = 'none';
+                } else {
+                    sigImg.src = data.signatureURL;
+                    sigImg.style.display = 'block';
+                    sigEmpty.style.display = 'none';
+                }
+            } else {
+                sigImg.style.display = 'none';
+                sigEmpty.style.display = 'block';
+            }
+
+            var photoImg = document.getElementById('pod-alb-photo-img');
+            var photoEmpty = document.getElementById('pod-alb-photo-empty');
+            if (data.photoURL) {
+                if (data.podCleaned) {
+                    photoEmpty.style.display = 'block';
+                    photoEmpty.innerHTML = '<span style="color:#FF9800;">Foto eliminada (Política > 6 meses)</span>';
+                    photoImg.style.display = 'none';
+                } else {
+                    photoImg.src = data.photoURL;
+                    photoImg.style.display = 'block';
+                    photoEmpty.style.display = 'none';
+                }
+            } else {
+                photoImg.style.display = 'none';
+                photoEmpty.style.display = 'block';
+            }
+
+            document.getElementById('pod-alb-loading').style.display = 'none';
+            document.getElementById('pod-alb-result').style.display = 'block';
+        } catch (err) {
+            console.error('Error buscando POD:', err);
+            document.getElementById('pod-alb-loading').style.display = 'none';
+            alert('Error técnico al buscar: ' + err.message);
+        }
+    };
+
+    // --- POD Print ---
+    window._albPrintPOD = function() {
+        var id = document.getElementById('pod-alb-id').textContent;
+        var w = window.open('', 'PRINT', 'height=800,width=600');
+        w.document.write('<html><head><title>Justificante POD - ' + id + '</title>');
+        w.document.write('<style>body{font-family:sans-serif;color:#333;} .box{border:1px solid #ddd;padding:15px;margin-bottom:15px;border-radius:5px;} img{max-width:100%;}</style>');
+        w.document.write('</head><body>');
+        w.document.write('<h2 style="text-align:center;border-bottom:2px solid;padding-bottom:10px;">CERTIFICADO DE ENTREGA</h2>');
+        w.document.write('<h3>ALBARÁN: ' + id + '</h3>');
+        w.document.write('<div class="box">');
+        w.document.write('<p><strong>Destinatario:</strong> ' + document.getElementById('pod-alb-receiver').textContent + '</p>');
+        w.document.write('<p><strong>Dirección:</strong> ' + document.getElementById('pod-alb-address').textContent + '</p>');
+        w.document.write('<p><strong>Bultos:</strong> ' + document.getElementById('pod-alb-pkgs').textContent + '</p>');
+        w.document.write('</div>');
+        w.document.write('<div class="box" style="background:#f9f9f9;">');
+        w.document.write('<h4>DATOS DE LA RECEPCIÓN</h4>');
+        w.document.write('<p><strong>Entregado a:</strong> ' + document.getElementById('pod-alb-delivery-name').textContent + '</p>');
+        w.document.write('<p><strong>Fecha/Hora:</strong> ' + document.getElementById('pod-alb-delivery-time').textContent + '</p>');
+        w.document.write('<p><strong>GPS:</strong> ' + document.getElementById('pod-alb-gps').textContent + '</p>');
+        w.document.write('</div>');
+        var sigImg = document.getElementById('pod-alb-sig-img');
+        if (sigImg.style.display !== 'none') {
+            w.document.write('<div class="box"><h4>FIRMA:</h4><img src="' + sigImg.src + '" style="max-height:150px;background:#fff;"></div>');
+        }
+        var photoImg = document.getElementById('pod-alb-photo-img');
+        if (photoImg.style.display !== 'none') {
+            w.document.write('<div class="box"><h4>FOTOGRAFÍA:</h4><img src="' + photoImg.src + '" style="max-height:300px;"></div>');
+        }
+        w.document.write('<script>window.onload=function(){setTimeout(function(){window.print();},200);}<\/script>');
+        w.document.write('</body></html>');
+        w.document.close();
+        w.focus();
+    };
+
+    // --- POD Email ---
+    window._albEmailPOD = function() {
+        var id = document.getElementById('pod-alb-id').textContent;
+        var data = _podData || {};
+        var defaultEmail = '';
+        if (data.sender) {
+            var c = Object.values(window.userMap || {}).find(function(u) {
+                return u.name === data.sender || u.id === data.sender || String(u.idNum) === String(data.sender);
+            });
+            if (c && c.email) defaultEmail = c.email;
+        }
+        if (!defaultEmail && data.receiverEmail) defaultEmail = data.receiverEmail;
+
+        var email = prompt('Email del destinatario para enviar el POD:', defaultEmail);
+        if (!email || !email.trim()) return;
+
+        var subject = encodeURIComponent('Justificante de Entrega (POD) — Albarán ' + id + ' — NOVAPACK');
+        var body = '══════════════════════════════════════\n';
+        body += '   CERTIFICADO DE ENTREGA — NOVAPACK\n';
+        body += '══════════════════════════════════════\n\n';
+        body += 'ALBARÁN: ' + id + '\n\n';
+        body += '── DATOS DEL ENVÍO ──\n';
+        body += 'Destinatario: ' + document.getElementById('pod-alb-receiver').textContent + '\n';
+        body += 'Dirección: ' + document.getElementById('pod-alb-address').textContent + '\n';
+        body += 'Bultos: ' + document.getElementById('pod-alb-pkgs').textContent + '\n\n';
+        body += '── DATOS DE LA RECEPCIÓN ──\n';
+        body += 'Entregado a: ' + document.getElementById('pod-alb-delivery-name').textContent + '\n';
+        if (data.deliveryReceiverDNI) body += 'DNI Receptor: ' + data.deliveryReceiverDNI + '\n';
+        body += 'Fecha/Hora: ' + document.getElementById('pod-alb-delivery-time').textContent + '\n';
+        body += 'GPS: ' + document.getElementById('pod-alb-gps').textContent + '\n\n';
+        body += '── EVIDENCIAS ──\n';
+        if (data.signatureURL && !data.podCleaned) {
+            body += 'Firma digital: ' + data.signatureURL + '\n';
+        } else {
+            body += 'Firma digital: No disponible\n';
+        }
+        if (data.photoURL && !data.podCleaned) {
+            body += 'Fotografía: ' + data.photoURL + '\n';
+        } else {
+            body += 'Fotografía: No disponible\n';
+        }
+        body += '\n══════════════════════════════════════\n';
+        body += 'Generado por NOVAPACK CLOUD — ' + new Date().toLocaleString() + '\n';
+
+        window.open('mailto:' + encodeURIComponent(email.trim()) + '?subject=' + subject + '&body=' + encodeURIComponent(body));
     };
 
 })();
