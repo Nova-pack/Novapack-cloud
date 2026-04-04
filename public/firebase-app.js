@@ -3337,6 +3337,11 @@ function generateTicketHTML(t, footerLabel) {
     const ts = (t.createdAt && typeof t.createdAt.toDate === 'function') ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : new Date());
     const validDateStr = !isNaN(ts.getTime()) ? (ts.toLocaleDateString() + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : "Fecha pendiente";
 
+    // Company name for header (use client's company, fallback to NOVAPACK)
+    const _comp = (typeof companies !== 'undefined' && typeof currentCompanyId !== 'undefined') ? companies.find(c => c.id === currentCompanyId) : null;
+    const companyName = (_comp && _comp.name) ? _comp.name : (t.compName || t.sender || 'NOVAPACK');
+    const companyEmail = (_comp && _comp.email) ? _comp.email : (t.senderEmail || 'administracion@novapack.info');
+
     // Grouped Package List Logic (One line per UI row)
     let displayList = [];
     if (t.packagesList && t.packagesList.length > 0) {
@@ -3381,8 +3386,8 @@ function generateTicketHTML(t, footerLabel) {
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                 <!-- Left: Logo -->
                 <div style="flex: 1;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK</div>
-                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">administracion@novapack.info</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${companyName.toUpperCase()}</div>
+                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${companyEmail}</div>
                 </div>
 
                  <!-- Center: Zona Reparto -->
@@ -3775,6 +3780,11 @@ document.getElementById('btn-print-labels-morning').onclick = () => printLabelSh
 document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
 function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
+    // Company name for label header
+    const _lComp = (typeof companies !== 'undefined' && typeof currentCompanyId !== 'undefined') ? companies.find(c => c.id === currentCompanyId) : null;
+    const companyName = (_lComp && _lComp.name) ? _lComp.name : (t.compName || t.sender || 'NOVAPACK');
+    const companyEmail = (_lComp && _lComp.email) ? _lComp.email : (t.senderEmail || 'administracion@novapack.info');
+
     if (!weightStr) {
         let w = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : t.weight;
         if (typeof w === 'number') w = w + " kg";
@@ -3790,8 +3800,8 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
             <!-- Header: Logo & Sender -->
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #FF6600; padding-bottom: 8px; margin-bottom: 8px; z-index:1;">
                 <div style="width: 40%;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">NOVAPACK</div>
-                    <div style="font-size: 0.5rem; letter-spacing: 0.5px; color:#333;">administracion@novapack.info</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">${companyName.toUpperCase()}</div>
+                    <div style="font-size: 0.5rem; letter-spacing: 0.5px; color:#333;">${companyEmail}</div>
                     <div style="font-size: 0.65rem; color:#666; margin-top: 4px;">${new Date(t.createdAt).toLocaleDateString()} ${new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <div style="width: 60%; text-align: right; font-size: 0.7rem; color: #000; line-height: 1.1;">

@@ -8045,6 +8045,9 @@ document.addEventListener('DOMContentLoaded', () => {
             function generateUserTicketHTML(t) {
                 const ts = (t.createdAt && typeof t.createdAt.toDate === 'function') ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : new Date());
                 const validDateStr = !isNaN(ts.getTime()) ? (ts.toLocaleDateString() + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : "Fecha pendiente";
+                // Company name from ticket data
+                const companyName = t.compName || t.sender || 'NOVAPACK';
+                const companyEmail = t.senderEmail || 'administracion@novapack.info';
                 let displayList = t.packagesList && t.packagesList.length > 0 ? t.packagesList : [{ qty: parseInt(t.packages) || 1, weight: t.weight, size: t.size }];
                 const hasCod = t.cod && t.cod.toString().trim() !== '' && t.cod.toString() !== '0';
                 let rowsHtml = '';
@@ -8062,8 +8065,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="z-index: 2;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                             <div style="flex: 1;">
-                                <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK</div>
-                                <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">administracion@novapack.info</div>
+                                <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${companyName.toUpperCase()}</div>
+                                <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${companyEmail}</div>
                             </div>
                             <div style="flex: 1; text-align: center; padding: 0 10px;">
                                 <div style="padding: 5px; background:#FFF; display: inline-block; min-width: 140px;">
@@ -8128,8 +8131,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div style="z-index: 2;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                             <div style="flex: 1;">
-                                <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK</div>
-                                <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">administracion@novapack.info</div>
+                                <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${companyName.toUpperCase()}</div>
+                                <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${companyEmail}</div>
                             </div>
                             <div style="flex: 1; text-align: center; padding: 0 10px;">
                                 <div style="padding: 5px; background:#FFF; display: inline-block; min-width: 140px;">
