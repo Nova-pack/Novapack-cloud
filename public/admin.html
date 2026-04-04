@@ -2574,7 +2574,11 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '<div style="padding:12px;">';
         html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">';
         html += '<span style="color:#aaa; font-size:0.78rem;">' + dateStr + '</span>';
+        html += '<div style="display:flex; gap:6px; align-items:center;">';
+        var waMsg = '📦 Foto Cooper (' + (item.type === 'recogida' ? 'Recogida' : 'Entrega') + ')\n📅 ' + dateStr + '\n🚛 ' + (item.route || 'Sin ruta') + '\n👤 ' + driver + (item.note ? '\n📝 ' + item.note : '') + '\n\n' + (item.photoURL || '');
+        html += '<a href="https://wa.me/?text=' + encodeURIComponent(waMsg) + '" target="_blank" style="background:#25D366; border:none; color:#fff; cursor:pointer; font-size:0.75rem; padding:3px 8px; border-radius:4px; text-decoration:none; display:flex; align-items:center; gap:3px;" title="Enviar por WhatsApp">📲 WhatsApp</a>';
         html += '<button onclick="deleteCooperPhoto(\'' + item.docId + '\')" style="background:transparent; border:none; color:#FF3B30; cursor:pointer; font-size:0.9rem; padding:2px;" title="Eliminar foto">🗑️</button>';
+        html += '</div>';
         html += '</div>';
         html += '<div style="display:flex; align-items:center; gap:6px;">';
         html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
