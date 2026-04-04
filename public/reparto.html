@@ -308,6 +308,14 @@
             </button>
         </div>
 
+        <!-- Cooper Log Toggle -->
+        <div style="padding:0 12px 8px;">
+            <button id="btn-cooper-log" onclick="toggleCooperLog()" style="width:100%; background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #333; color:#FF9800; padding:10px 16px; border-radius:10px; font-size:0.82rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                📋 REGISTRO COOPER <span id="cooper-log-arrow" style="transition:transform 0.3s;">▼</span>
+            </button>
+        </div>
+        <div id="cooper-log-panel" style="display:none; padding:0 12px 10px; max-height:400px; overflow-y:auto;"></div>
+
         <!-- Delivery List -->
         <div class="delivery-list" id="delivery-list">
             <div class="empty-state">

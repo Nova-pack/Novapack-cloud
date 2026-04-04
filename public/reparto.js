@@ -1978,6 +1978,10 @@ function initApp() {
             showToast((_cooperType === 'recogida' ? 'Recogida' : 'Entrega') + ' Cooper registrada', 'success');
             document.getElementById('cooper-modal').classList.remove('active');
             _cooperType = null;
+            // Refresh log if open
+            if (document.getElementById('cooper-log-panel').style.display !== 'none') {
+                loadCooperLog();
+            }
         } catch(err) {
             showToast('Error: ' + err.message, 'error');
         } finally {
@@ -1985,6 +1989,97 @@ function initApp() {
             sendBtn.textContent = 'ENVIAR FOTO';
         }
     });
+
+    // =============================================
+    //  COOPER LOG — Registro semanal del repartidor
+    // =============================================
+    var _cooperLogOpen = false;
+
+    window.toggleCooperLog = function() {
+        var panel = document.getElementById('cooper-log-panel');
+        var arrow = document.getElementById('cooper-log-arrow');
+        _cooperLogOpen = !_cooperLogOpen;
+        if (_cooperLogOpen) {
+            panel.style.display = 'block';
+            arrow.style.transform = 'rotate(180deg)';
+            loadCooperLog();
+        } else {
+            panel.style.display = 'none';
+            arrow.style.transform = 'rotate(0deg)';
+        }
+    };
+
+    window.loadCooperLog = async function() {
+        var panel = document.getElementById('cooper-log-panel');
+        if (!panel) return;
+        panel.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Cargando...</div>';
+
+        try {
+            var weekAgo = new Date();
+            weekAgo.setDate(weekAgo.getDate() - 7);
+
+            var query = db.collection('cooper_photos')
+                .where('driverName', '==', currentDriverName || 'Desconocido')
+                .where('createdAt', '>=', weekAgo)
+                .orderBy('createdAt', 'desc');
+
+            var snap = await query.get();
+            if (snap.empty) {
+                panel.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:0.82rem;">No hay registros Cooper esta semana</div>';
+                return;
+            }
+
+            // Group by date then by shift
+            var grouped = {};
+            snap.forEach(function(doc) {
+                var item = doc.data();
+                item.docId = doc.id;
+                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                var dateKey = d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'short' });
+                var hour = d.getHours();
+                var shift = hour < 14 ? 'MAÑANA' : 'TARDE';
+                if (!grouped[dateKey]) grouped[dateKey] = { 'MAÑANA': [], 'TARDE': [] };
+                grouped[dateKey][shift].push({ data: item, date: d });
+            });
+
+            var html = '';
+            Object.keys(grouped).forEach(function(dateKey) {
+                html += '<div style="margin-bottom:12px;">';
+                html += '<div style="font-size:0.82rem; font-weight:700; color:#FF9800; padding:6px 0; border-bottom:1px solid #333; text-transform:capitalize;">' + dateKey + '</div>';
+
+                ['MAÑANA', 'TARDE'].forEach(function(shift) {
+                    var items = grouped[dateKey][shift];
+                    if (items.length === 0) return;
+                    var shiftIcon = shift === 'MAÑANA' ? '☀️' : '🌙';
+                    var shiftColor = shift === 'MAÑANA' ? '#FFD700' : '#7B68EE';
+                    html += '<div style="margin:6px 0 4px; font-size:0.75rem; color:' + shiftColor + '; font-weight:600;">' + shiftIcon + ' ' + shift + ' (' + items.length + ')</div>';
+
+                    items.forEach(function(entry) {
+                        var d = entry.date;
+                        var time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                        var typeIcon = entry.data.type === 'recogida' ? '📥' : '📤';
+                        var typeLabel = entry.data.type === 'recogida' ? 'Recogida' : 'Entrega';
+                        html += '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:4px;">';
+                        html += '<a href="' + (entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
+                        html += '<img src="' + (entry.data.photoURL || '') + '" style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #333;" loading="lazy">';
+                        html += '</a>';
+                        html += '<div style="flex:1; min-width:0;">';
+                        html += '<div style="font-size:0.78rem; color:#ddd;">' + typeIcon + ' ' + typeLabel + ' <span style="color:#888;">· ' + time + '</span></div>';
+                        if (entry.data.note) {
+                            html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + entry.data.note + '</div>';
+                        }
+                        html += '</div></div>';
+                    });
+                });
+
+                html += '</div>';
+            });
+
+            panel.innerHTML = html;
+        } catch(err) {
+            panel.innerHTML = '<div style="text-align:center; padding:20px; color:#FF3B30; font-size:0.8rem;">Error: ' + err.message + '</div>';
+        }
+    };
 
 } // END initApp
 })();
