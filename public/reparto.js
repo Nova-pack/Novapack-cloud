@@ -948,20 +948,29 @@ function initApp() {
 
     // --- STATS ---
     function updateStats() {
-        var total = deliveries.length;
         var pending = deliveries.filter(function(d) { return d.status !== 'Entregado' && !d.delivered; }).length;
         var delivered = deliveries.filter(function(d) { return d.status === 'Entregado' || d.delivered; }).length;
-        document.getElementById('stat-total').textContent = total;
+        var morning = deliveries.filter(function(d) { return d.timeSlot === 'MAÑANA'; }).length;
+        var afternoon = deliveries.filter(function(d) { return d.timeSlot === 'TARDE'; }).length;
         document.getElementById('stat-pending').textContent = pending;
         document.getElementById('stat-delivered').textContent = delivered;
+        document.getElementById('stat-morning').textContent = morning;
+        document.getElementById('stat-afternoon').textContent = afternoon;
     }
 
-    // --- FILTERS ---
-    document.querySelectorAll('.filter-chip').forEach(function(chip) {
-        chip.addEventListener('click', function() {
-            document.querySelectorAll('.filter-chip').forEach(function(c) { c.classList.remove('active'); });
-            chip.classList.add('active');
-            currentFilter = chip.dataset.filter;
+    // --- FILTERS (stat-box tap) ---
+    document.querySelectorAll('.stat-filter').forEach(function(box) {
+        box.addEventListener('click', function() {
+            var filter = box.dataset.filter;
+            if (currentFilter === filter) {
+                // Tap again = deselect → show all
+                box.classList.remove('active');
+                currentFilter = 'all';
+            } else {
+                document.querySelectorAll('.stat-filter').forEach(function(b) { b.classList.remove('active'); });
+                box.classList.add('active');
+                currentFilter = filter;
+            }
             renderDeliveries();
         });
     });

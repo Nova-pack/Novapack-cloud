@@ -278,28 +278,23 @@
 
     <!-- ===== VIEW: DELIVERIES ===== -->
     <div class="view active" id="view-deliveries">
-        <!-- Filters -->
-        <div class="delivery-filters">
-            <div class="filter-chip" data-filter="all">📋 Todos</div>
-            <div class="filter-chip active" data-filter="pending">⏱️ Pendientes</div>
-            <div class="filter-chip" data-filter="delivered">✅ Entregados</div>
-            <div class="filter-chip" data-filter="morning">☀️ Mañana</div>
-            <div class="filter-chip" data-filter="afternoon">🌙 Tarde</div>
-        </div>
-
-        <!-- Stats -->
+        <!-- Stats + Filters (tap to filter) -->
         <div class="delivery-stats">
-            <div class="stat-box">
-                <div class="num" id="stat-total">0</div>
-                <div class="lbl">Total</div>
-            </div>
-            <div class="stat-box">
+            <div class="stat-box stat-filter active" data-filter="pending">
                 <div class="num" id="stat-pending" style="color:var(--warning);">0</div>
-                <div class="lbl">Pendientes</div>
+                <div class="lbl">⏱️ Pendientes</div>
             </div>
-            <div class="stat-box">
+            <div class="stat-box stat-filter" data-filter="delivered">
                 <div class="num" id="stat-delivered" style="color:var(--success);">0</div>
-                <div class="lbl">Entregados</div>
+                <div class="lbl">✅ Entregados</div>
+            </div>
+            <div class="stat-box stat-filter" data-filter="morning">
+                <div class="num" id="stat-morning" style="color:#FFD700;">0</div>
+                <div class="lbl">☀️ Mañana</div>
+            </div>
+            <div class="stat-box stat-filter" data-filter="afternoon">
+                <div class="num" id="stat-afternoon" style="color:#7B68EE;">0</div>
+                <div class="lbl">🌙 Tarde</div>
             </div>
         </div>
 
