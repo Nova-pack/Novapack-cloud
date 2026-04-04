@@ -513,13 +513,13 @@ window.saveDebidoChanges = async () => {
 // ================= ELIMINAR ALBARÁN =================
 
 window.deleteDebidoTicket = async (docId, ticketId) => {
-    if (!confirm(`¿Estás seguro de que quieres ELIMINAR el albarán ${ticketId}?\n\nEsta acción no se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminar el albarán ${ticketId}?\n\nSe moverá a la papelera.`)) return;
 
     try {
-        await db.collection('tickets').doc(docId).delete();
+        await moveTicketToTrash(docId, 'Eliminado desde debidos', 'debidos');
         debidosTicketsCache = debidosTicketsCache.filter(t => t.docId !== docId);
         renderDebidosTable(debidosTicketsCache);
-        alert('🗑️ Albarán ' + ticketId + ' eliminado');
+        alert('🗑️ Albarán ' + ticketId + ' movido a la papelera');
     } catch(e) {
         alert('Error al eliminar: ' + e.message);
         console.error(e);

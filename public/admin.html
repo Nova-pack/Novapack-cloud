@@ -1318,6 +1318,10 @@
                         <span class="material-symbols-outlined" style="font-size:16px;">badge</span> CIF/NIF
                     </button>
                     <!-- Fin Botón CIF/NIF -->
+                    <button onclick="if(typeof erpOpenTab === 'function') erpOpenTab('trash');" style="background:linear-gradient(135deg, #FF3B30, #C62828); border:1px solid #B71C1C; color:white; padding:4px 12px; font-size:0.8rem; cursor:pointer; border-radius:18px; display:flex; align-items:center; gap:5px; font-weight:bold; box-shadow:0 0 8px rgba(255,59,48,0.4);" onmouseover="this.style.boxShadow='0 0 12px rgba(255,59,48,0.8)'" onmouseout="this.style.boxShadow='0 0 8px rgba(255,59,48,0.4)'" title="Papelera de albaranes eliminados">
+                        <span class="material-symbols-outlined" style="font-size:16px;">delete</span> Papelera
+                    </button>
+                    <!-- Fin Botón Papelera -->
                     <span id="erp-toolbar-identity" style="color:#aaa; font-size:0.78rem; font-weight:400;"></span>
                     <div style="width:1px; height:16px; background:#555;"></div>
                     <button onclick="logout()" title="Cerrar sesión" style="background:transparent; border:1px solid #555; color:#FF5252; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:4px;">
@@ -1908,6 +1912,244 @@ document.addEventListener('DOMContentLoaded', () => {
 <div id="erp-tab-nif-enrichment" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
     <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;"></div>
 </div>
+
+<!-- Tab wrapper: Trash (Papelera) -->
+<div id="erp-tab-trash" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
+    <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;">
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:15px;">
+            <div>
+                <h1 style="color:#FF3B30; margin:0; display:flex; align-items:center; gap:10px;">
+                    <span class="material-symbols-outlined" style="font-size:2rem;">delete</span> Papelera de Albaranes
+                </h1>
+                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Albaranes eliminados. Puedes restaurarlos o eliminarlos definitivamente.</p>
+            </div>
+            <div id="trash-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- Search + Actions -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                <div style="flex:1; min-width:250px; position:relative;">
+                    <span class="material-symbols-outlined" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#666; font-size:1.1rem;">search</span>
+                    <input type="text" id="trash-search" placeholder="Buscar por ID, remitente, destinatario..."
+                        style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px 14px 10px 36px; border-radius:8px; font-size:0.85rem; box-sizing:border-box;"
+                        oninput="trashFilter()">
+                </div>
+                <button onclick="loadTrashBin()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">refresh</span> Recargar
+                </button>
+                <button onclick="emptyTrash()" style="background:linear-gradient(135deg,#FF3B30,#C62828); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">delete_forever</span> Vaciar Papelera
+                </button>
+            </div>
+        </div>
+
+        <!-- Trash Table -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px;">
+            <div id="trash-list" style="max-height:600px; overflow-y:auto; color:#888; font-size:0.85rem;">
+                <div style="padding:30px; text-align:center; color:#aaa;">Cargando papelera...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- PAPELERA FUNCTIONS ---
+(function() {
+    var _trashItems = [];
+    var _trashFiltered = [];
+
+    window.loadTrashBin = async function() {
+        var listEl = document.getElementById('trash-list');
+        if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#aaa;">Cargando papelera...</div>';
+
+        try {
+            var snap = await db.collection('deleted_tickets').orderBy('_deletedAt', 'desc').limit(500).get();
+            _trashItems = [];
+            snap.forEach(function(doc) {
+                _trashItems.push({ docId: doc.id, ...doc.data() });
+            });
+            _trashFiltered = _trashItems.slice();
+            _renderTrashStats();
+            _renderTrashTable();
+        } catch(err) {
+            if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF5252;">Error: ' + err.message + '</div>';
+        }
+    };
+
+    window.trashFilter = function() {
+        var q = (document.getElementById('trash-search').value || '').trim().toLowerCase();
+        if (!q) {
+            _trashFiltered = _trashItems.slice();
+        } else {
+            _trashFiltered = _trashItems.filter(function(t) {
+                return [t.id, t.sender, t.receiver, t.erpId, t._deleteReason, t._deleteSource, t.docId]
+                    .join(' ').toLowerCase().indexOf(q) !== -1;
+            });
+        }
+        _renderTrashTable();
+    };
+
+    function _renderTrashStats() {
+        var el = document.getElementById('trash-stats');
+        if (!el) return;
+
+        var bySource = {};
+        _trashItems.forEach(function(t) {
+            var s = t._deleteSource || 'manual';
+            bySource[s] = (bySource[s] || 0) + 1;
+        });
+
+        var sourceLabels = { approval: 'Anulaciones', route_monitor: 'Rutas', bulk: 'Masiva', debidos: 'Debidos', manual: 'Manual' };
+        var html = '<div style="background:rgba(255,59,48,0.1); border:1px solid rgba(255,59,48,0.3); border-radius:8px; padding:8px 14px; text-align:center;">' +
+            '<div style="font-size:1.3rem; font-weight:900; color:#FF3B30;">' + _trashItems.length + '</div>' +
+            '<div style="font-size:0.7rem; color:#aaa;">En papelera</div></div>';
+
+        Object.keys(bySource).forEach(function(s) {
+            html += '<div style="background:rgba(255,255,255,0.05); border:1px solid #333; border-radius:8px; padding:8px 14px; text-align:center;">' +
+                '<div style="font-size:1.1rem; font-weight:900; color:#aaa;">' + bySource[s] + '</div>' +
+                '<div style="font-size:0.7rem; color:#666;">' + (sourceLabels[s] || s) + '</div></div>';
+        });
+
+        el.innerHTML = html;
+    }
+
+    function _renderTrashTable() {
+        var listEl = document.getElementById('trash-list');
+        if (!listEl) return;
+
+        if (_trashFiltered.length === 0) {
+            listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#888;">' +
+                '<span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:8px;">delete_outline</span>' +
+                'La papelera está vacía.</div>';
+            return;
+        }
+
+        var sourceLabels = { approval: 'Anulación', route_monitor: 'Rutas', bulk: 'Masiva', debidos: 'Debidos', manual: 'Manual' };
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">';
+        html += '<thead><tr style="background:#1a1a2e; position:sticky; top:0; z-index:1;">';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">ID</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Remitente</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Destinatario</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Eliminado</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Origen</th>';
+        html += '<th style="padding:8px; text-align:left; color:#aaa;">Motivo</th>';
+        html += '<th style="padding:8px; text-align:center; color:#aaa; width:140px;">Acciones</th>';
+        html += '</tr></thead><tbody>';
+
+        _trashFiltered.forEach(function(t, i) {
+            var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+            var dateStr = '-';
+            if (t._deletedAt) {
+                var d = typeof t._deletedAt.toDate === 'function' ? t._deletedAt.toDate() : new Date(t._deletedAt);
+                dateStr = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+            }
+            var srcLabel = sourceLabels[t._deleteSource] || t._deleteSource || '-';
+            var reason = t._deleteReason || '-';
+            if (reason.length > 40) reason = reason.substring(0, 40) + '...';
+
+            html += '<tr style="background:' + bg + '; border-bottom:1px solid #222;">';
+            html += '<td style="padding:6px 8px; color:#FF9800; font-weight:bold;">' + _esc(t.id || t._originalDocId || t.docId) + '</td>';
+            html += '<td style="padding:6px 8px; color:#eee;">' + _esc(t.sender || '-') + '</td>';
+            html += '<td style="padding:6px 8px; color:#ddd;">' + _esc(t.receiver || '-') + '</td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + dateStr + '</td>';
+            html += '<td style="padding:6px 8px;"><span style="background:#333; padding:2px 8px; border-radius:4px; font-size:0.7rem; color:#aaa;">' + _esc(srcLabel) + '</span></td>';
+            html += '<td style="padding:6px 8px; color:#888; font-size:0.78rem;">' + _esc(reason) + '</td>';
+            html += '<td style="padding:6px 8px; text-align:center; white-space:nowrap;">' +
+                '<button onclick="restoreTicket(\'' + t.docId + '\')" style="background:#4CAF50; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer; margin-right:4px; font-weight:bold;" title="Restaurar">Restaurar</button>' +
+                '<button onclick="permanentDeleteTicket(\'' + t.docId + '\')" style="background:#FF3B30; border:none; color:white; padding:4px 10px; border-radius:4px; font-size:0.72rem; cursor:pointer;" title="Eliminar definitivamente">Eliminar</button>' +
+                '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+    }
+
+    window.restoreTicket = async function(docId) {
+        if (!confirm('¿Restaurar este albarán? Volverá a la colección de tickets activos.')) return;
+
+        try {
+            var snap = await db.collection('deleted_tickets').doc(docId).get();
+            if (!snap.exists) { alert('No se encontró el albarán en la papelera.'); return; }
+
+            var data = snap.data();
+            // Remove trash metadata
+            delete data._deletedAt;
+            delete data._deletedBy;
+            delete data._deleteReason;
+            delete data._deleteSource;
+            delete data._originalDocId;
+            // Remove deletion request flags
+            delete data.deleteRequested;
+            delete data.deleteReason;
+            // Set status to Pendiente
+            data.status = 'Pendiente';
+            data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+
+            await db.collection('tickets').doc(docId).set(data);
+            await db.collection('deleted_tickets').doc(docId).delete();
+
+            // Remove from blacklist
+            if (data.erpId) {
+                try { await db.collection('deleted_erp_ids').doc(String(data.erpId)).delete(); } catch(e) {}
+            }
+            if (data.id && String(data.id) !== String(data.erpId)) {
+                try { await db.collection('deleted_erp_ids').doc(String(data.id)).delete(); } catch(e) {}
+            }
+
+            alert('Albarán restaurado correctamente.');
+            loadTrashBin();
+        } catch(err) {
+            alert('Error al restaurar: ' + err.message);
+        }
+    };
+
+    window.permanentDeleteTicket = async function(docId) {
+        if (!confirm('¿ELIMINAR DEFINITIVAMENTE este albarán?\n\nEsta acción NO se puede deshacer.')) return;
+
+        try {
+            await db.collection('deleted_tickets').doc(docId).delete();
+            alert('Albarán eliminado definitivamente.');
+            loadTrashBin();
+        } catch(err) {
+            alert('Error: ' + err.message);
+        }
+    };
+
+    window.emptyTrash = async function() {
+        if (_trashItems.length === 0) { alert('La papelera ya está vacía.'); return; }
+
+        var confirmText = prompt('⚠️ VACIAR PAPELERA\n\nSe eliminarán ' + _trashItems.length + ' albaranes DEFINITIVAMENTE.\n\nEscribe VACIAR para confirmar:');
+        if (confirmText !== 'VACIAR') { alert('Operación cancelada.'); return; }
+
+        var listEl = document.getElementById('trash-list');
+        if (listEl) listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF3B30;">Vaciando papelera...</div>';
+
+        var deleted = 0;
+        var errors = 0;
+        for (var i = 0; i < _trashItems.length; i++) {
+            try {
+                await db.collection('deleted_tickets').doc(_trashItems[i].docId).delete();
+                deleted++;
+            } catch(e) { errors++; }
+            if (deleted % 20 === 0 && listEl) {
+                listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#FF3B30;">Vaciando... ' + deleted + '/' + _trashItems.length + '</div>';
+            }
+        }
+
+        alert('Papelera vaciada: ' + deleted + ' eliminados.' + (errors > 0 ? ' ' + errors + ' errores.' : ''));
+        loadTrashBin();
+    };
+
+    function _esc(str) {
+        var div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+})();
+</script>
 
 <!-- Tab wrapper: Ticket Search -->
 <div id="erp-tab-ticket-search" style="display:none; flex:1; overflow:hidden; background:#0a0a0a; color:#d4d4d4;">
@@ -4251,6 +4493,23 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
 
         <script>
+        // --- PAPELERA: Move ticket to trash instead of hard delete ---
+        window.moveTicketToTrash = async function(docId, reason, source) {
+            const docRef = db.collection('tickets').doc(docId);
+            const snap = await docRef.get();
+            if (!snap.exists) return;
+            const data = snap.data();
+            await db.collection('deleted_tickets').doc(docId).set({
+                ...data,
+                _deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                _deletedBy: 'admin',
+                _deleteReason: reason || '',
+                _deleteSource: source || 'manual',
+                _originalDocId: docId
+            });
+            await docRef.delete();
+        };
+
         // --- ADMIN BULK DELETE ENGINE ---
         let _bulkDeleteCandidates = [];
 
@@ -4369,7 +4628,7 @@ document.addEventListener('DOMContentLoaded', () => {
         async function bulkDeleteConfirm() {
             if (_bulkDeleteCandidates.length === 0) return;
 
-            const confirmText = prompt(`⚠️ ACCIÓN IRREVERSIBLE\n\nVas a eliminar ${_bulkDeleteCandidates.length} albaranes PERMANENTEMENTE de la base de datos.\nDesaparecerán del terminal de los usuarios inmediatamente.\n\nEscribe ELIMINAR para confirmar:`);
+            const confirmText = prompt(`⚠️ ELIMINACIÓN MASIVA\n\nVas a eliminar ${_bulkDeleteCandidates.length} albaranes.\nSe moverán a la papelera y podrás restaurarlos si es necesario.\n\nEscribe ELIMINAR para confirmar:`);
             if (confirmText !== 'ELIMINAR') {
                 alert('Operación cancelada.');
                 return;
@@ -4377,39 +4636,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const resultsDiv = document.getElementById('bulk-del-results');
             const actionsDiv = document.getElementById('bulk-del-actions');
-            resultsDiv.innerHTML = '<div style="text-align:center; padding:30px; color:#FF3B30; font-size:1rem;">⏳ Eliminando albaranes... No cierres esta ventana.</div>';
+            resultsDiv.innerHTML = '<div style="text-align:center; padding:30px; color:#FF3B30; font-size:1rem;">⏳ Moviendo albaranes a papelera... No cierres esta ventana.</div>';
             actionsDiv.style.display = 'none';
 
             let deleted = 0;
             let errors = 0;
 
-            // Delete in batches of 10 (Firestore limit per batch is 500)
-            const batchSize = 10;
-            for (let i = 0; i < _bulkDeleteCandidates.length; i += batchSize) {
-                const chunk = _bulkDeleteCandidates.slice(i, i + batchSize);
-                const batch = db.batch();
-                chunk.forEach(t => {
-                    batch.delete(db.collection('tickets').doc(t.docId));
-                    // Blacklist ticket IDs so physical copies are detected later
-                    const blData = { deletedAt: firebase.firestore.FieldValue.serverTimestamp(), docId: t.docId, bulk: true };
-                    if (t.erpId) batch.set(db.collection('deleted_erp_ids').doc(String(t.erpId)), blData);
-                    if (t.id && String(t.id) !== String(t.erpId)) batch.set(db.collection('deleted_erp_ids').doc(String(t.id)), blData);
-                });
+            for (const t of _bulkDeleteCandidates) {
                 try {
-                    await batch.commit();
-                    deleted += chunk.length;
+                    // Blacklist
+                    const blData = { deletedAt: firebase.firestore.FieldValue.serverTimestamp(), docId: t.docId, bulk: true };
+                    if (t.erpId) await db.collection('deleted_erp_ids').doc(String(t.erpId)).set(blData);
+                    if (t.id && String(t.id) !== String(t.erpId)) await db.collection('deleted_erp_ids').doc(String(t.id)).set(blData);
+                    // Move to trash
+                    await moveTicketToTrash(t.docId, 'Eliminación masiva', 'bulk');
+                    deleted++;
                 } catch(err) {
-                    console.error('[BULK-DEL] Batch error:', err);
-                    errors += chunk.length;
+                    console.error('[BULK-DEL] Error:', err);
+                    errors++;
                 }
-                // Progress update
-                resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#FF3B30; font-size:1rem;">⏳ Eliminando... ${deleted}/${_bulkDeleteCandidates.length}</div>`;
+                if (deleted % 10 === 0) {
+                    resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#FF3B30; font-size:1rem;">⏳ Moviendo... ${deleted}/${_bulkDeleteCandidates.length}</div>`;
+                }
             }
 
             _bulkDeleteCandidates = [];
-            let msg = `✅ ${deleted} albaranes eliminados permanentemente.`;
-            if (errors > 0) msg += `\n⚠️ ${errors} errores durante la eliminación.`;
-            
+            let msg = `✅ ${deleted} albaranes movidos a la papelera.`;
+            if (errors > 0) msg += `\n⚠️ ${errors} errores.`;
+
             resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#4CAF50; font-size:1rem;">${msg}</div>`;
             alert(msg);
         }
@@ -7210,18 +7464,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('Selecciona al menos un albarán marcando sus casillas.');
                     return;
                 }
-                if (!confirm(`⚠️ ¿Estás seguro de que quieres ELIMINAR ${checked.length} albarán(es)?\n\nEsta acción es PERMANENTE y no se puede deshacer.`)) return;
-                if (!confirm(`🔴 CONFIRMACIÓN FINAL: Se van a eliminar ${checked.length} albaranes de forma permanente. ¿Continuar?`)) return;
+                if (!confirm(`⚠️ ¿Estás seguro de que quieres ELIMINAR ${checked.length} albarán(es)?\n\nSe moverán a la papelera.`)) return;
 
                 if (typeof showLoading === 'function') showLoading();
                 try {
-                    const batch = db.batch();
-                    checked.forEach(cb => {
-                        batch.delete(db.collection('tickets').doc(cb.value));
-                    });
-                    await batch.commit();
+                    let deleted = 0;
+                    for (const cb of checked) {
+                        await moveTicketToTrash(cb.value, 'Eliminado desde rutas', 'route_monitor');
+                        deleted++;
+                    }
                     document.getElementById('route-details-select-all').checked = false;
-                    alert(`✅ ${checked.length} albarán(es) eliminados correctamente.`);
+                    alert(`✅ ${deleted} albarán(es) movidos a la papelera.`);
                     setTimeout(loadRouteMonitor, 1000);
                 } catch (e) {
                     console.error('Error eliminando albaranes:', e);
@@ -11413,7 +11666,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
             window.handleTicketDeletionDecision = async (id, approve) => {
                 if (approve) {
-                    if (!confirm("¿Borrar definitivamente este albarán? Esta acción pulverizará el documento en Firebase y no se puede deshacer.")) return;
+                    if (!confirm("¿Eliminar este albarán? Se moverá a la papelera y podrás restaurarlo si es necesario.")) return;
                     showLoading();
                     try {
                         const docSnap = await db.collection('tickets').doc(id).get();
@@ -11425,17 +11678,15 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                                 sender: dData.sender || '',
                                 receiver: dData.receiver || ''
                             };
-                            // Blacklist por erpId
                             if (dData.erpId) {
                                 await db.collection('deleted_erp_ids').doc(String(dData.erpId)).set(blacklistData);
                             }
-                            // Blacklist también por id (business ID) si es diferente
                             if (dData.id && String(dData.id) !== String(dData.erpId)) {
                                 await db.collection('deleted_erp_ids').doc(String(dData.id)).set(blacklistData);
                             }
                         }
-                        await db.collection('tickets').doc(id).delete();
-                        alert("Albarán fulminado definitivamente.");
+                        await moveTicketToTrash(id, docSnap.exists ? (docSnap.data().deleteReason || 'Solicitud aprobada') : 'Solicitud aprobada', 'approval');
+                        alert("Albarán movido a la papelera.");
                         document.getElementById('scanned-result-area').classList.add('hidden');
                         if (typeof loadAdminTicketList === 'function') loadAdminTicketList('first');
                     } catch (e) { alert("Error: " + e.message); }
