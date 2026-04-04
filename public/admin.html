@@ -11750,7 +11750,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             function initDriverIncidentsListener() {
                 if (driverIncidentsUnsub) driverIncidentsUnsub();
                 driverIncidentsUnsub = db.collection('tickets')
-                    .where('status', 'in', ['pending_confirmation', 'Incidencia', 'Devuelto'])
+                    .where('status', 'in', ['Incidencia', 'Devuelto'])
                     .onSnapshot(snap => {
                         const count = snap.docs.length;
                         const btn = document.getElementById('toolbar-btn-driver-incidents');
@@ -11771,7 +11771,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                 try {
                     const snap = await db.collection('tickets')
-                        .where('status', 'in', ['pending_confirmation', 'Incidencia', 'Devuelto'])
+                        .where('status', 'in', ['Incidencia', 'Devuelto'])
                         .get();
 
                     if (snap.empty) {
@@ -12760,43 +12760,55 @@ window.openTicketEditModal = async (docId) => {
 };
 
 window.saveTicketEditWarning = async () => {
-    if(!confirm("⚠️ ¿Poner este albarán en Pendiente de Confirmación bloqueando el portal del cliente?")) return;
+    if(!confirm("¿Guardar las modificaciones de este albarán? El cliente recibirá una notificación informativa.")) return;
     const docId = document.getElementById('edit-doc-id').value;
-    
+
     const pkgsStr = parseInt(document.getElementById('edit-t-packages').value) || 1;
     const weightNum = parseFloat(document.getElementById('edit-t-weight').value) || 0;
     const codNum = parseFloat(document.getElementById('edit-t-cod').value) || 0;
     const incidentNotes = document.getElementById('edit-t-incident-notes').value.trim();
-    
+
     showLoading();
     try {
         const doc = await db.collection('tickets').doc(docId).get();
         const t = doc.data();
-        
-        // Build new packages list retaining previous sizes if possible, else condensing into ONE generic block with total peso
+
         const newPkgs = [{ qty: pkgsStr, weight: weightNum, size: 'Bulto Modificado' }];
-        
-        // Evaluate new price based on new parameters
-        // We reuse the central price calculation with mock object
+
         const mockTicket = { ...t, packagesList: newPkgs, packages: pkgsStr, weight: weightNum, cod: codNum };
         const newPrice = calculateTicketPrice(mockTicket, t.uid || adminTicketUID);
-        
+
+        // Apply changes directly — no pending_confirmation
         const updates = {
-            status: "pending_confirmation",
-            pendingChangesText: incidentNotes || "El albarán ha sido modificado por la central (Diferencia de peso o de reembolso descubierta).",
-            pendingChanges: {
-                packagesList: newPkgs,
-                packages: pkgsStr,
-                weight: weightNum,
-                cod: codNum,
-                price: newPrice
-            }
+            packagesList: newPkgs,
+            packages: pkgsStr,
+            weight: weightNum,
+            cod: codNum,
+            price: newPrice,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            lastModifiedBy: 'admin',
+            lastModifiedNote: incidentNotes || 'Modificado por la central'
         };
-        
+
         await db.collection('tickets').doc(docId).update(updates);
+
+        // Send read-only notification to client
+        if (t.uid) {
+            var notifText = incidentNotes || 'Diferencia de peso o de reembolso descubierta.';
+            await db.collection('user_notifications').add({
+                uid: t.uid,
+                type: 'ticket_modified',
+                title: 'Albarán #' + (t.id || docId) + ' modificado',
+                body: 'La central ha modificado su albarán: ' + notifText + ' (Bultos: ' + pkgsStr + ', Peso: ' + weightNum + 'kg, Reembolso: ' + codNum + '€)',
+                ticketId: t.id || docId,
+                read: false,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
         loadAdminTicketList('first');
         document.getElementById('modal-ticket-edit').style.display = 'none';
-        alert("Albarán paralizado y notificado al cliente exitosamente.");
+        alert("Albarán modificado y notificación enviada al cliente.");
     } catch (e) {
         alert("Error: " + e.message);
     } finally {

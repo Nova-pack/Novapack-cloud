@@ -703,9 +703,7 @@ function renderTicketItem(t, list) {
 
     let badgeClass = 'new';
     let badgeText = 'NUEVO';
-    const isPendingConfirmation = (t.status === 'pending_confirmation');
-    if (isPendingConfirmation) { badgeClass = 'billed'; badgeText = '⚠️ REQUIERE ACCION'; }
-    else if (isPendingDelete) { badgeClass = 'billed'; badgeText = '🚨 PEND. ANULAR'; }
+    if (isPendingDelete) { badgeClass = 'billed'; badgeText = '🚨 PEND. ANULAR'; }
     else if (isBilled) { badgeClass = 'billed'; badgeText = '🔒 FACTURADO'; }
     else if (isDelivered) { badgeClass = 'delivered'; badgeText = '✅ ENTREGADO'; }
     else if (t.printed) { badgeClass = 'printed'; badgeText = 'IMPRESO'; }
@@ -739,21 +737,24 @@ window.initUserNotifications = function(uid) {
     const badge = document.getElementById('notification-badge');
     const list = document.getElementById('notification-list');
     const markBtn = document.getElementById('btn-mark-all-read');
-    
+    const statsEl = document.getElementById('notifications-inbox-stats');
+
     if (!badge || !list) return;
 
     notificationsListener = db.collection('user_notifications')
         .where('uid', '==', uid)
-        .orderBy('timestamp', 'desc')
-        .limit(20)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
         .onSnapshot(snap => {
             let unreadCount = 0;
+            let totalCount = 0;
             list.innerHTML = '';
 
             if (snap.empty) {
-                list.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim); font-size:0.85rem;">No tienes notificaciones.</div>';
+                list.innerHTML = '<div style="text-align:center; padding:60px; color:var(--text-dim); font-size:0.9rem;"><div style="font-size:2.5rem; margin-bottom:10px; opacity:0.3;">🔔</div>No tienes notificaciones.</div>';
                 badge.classList.add('hidden');
                 if(markBtn) markBtn.classList.add('hidden');
+                if(statsEl) statsEl.innerHTML = '';
                 return;
             }
 
@@ -761,48 +762,70 @@ window.initUserNotifications = function(uid) {
 
             snap.forEach(doc => {
                 const data = doc.data();
+                totalCount++;
                 if (!data.read) unreadCount++;
 
-                const d = data.timestamp ? data.timestamp.toDate() : new Date();
+                const d = data.createdAt ? data.createdAt.toDate() : (data.timestamp ? data.timestamp.toDate() : new Date());
                 const timeStr = d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-                const dateStr = d.toLocaleDateString();
+                const dateStr = d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+
+                // Type icons
+                let typeIcon = '🔔';
+                let typeLabel = 'Notificación';
+                let accentColor = '#4CAF50';
+                if (data.type === 'ticket_modified') { typeIcon = '✏️'; typeLabel = 'Modificación'; accentColor = '#2196F3'; }
+                else if (data.type === 'delivery_confirmed') { typeIcon = '📦'; typeLabel = 'Entrega'; accentColor = '#4CAF50'; }
+                else if (data.type === 'POD_AVAILABLE') { typeIcon = '📋'; typeLabel = 'Justificante'; accentColor = '#FF9800'; }
+                else if (data.type === 'campaign') { typeIcon = '📢'; typeLabel = 'Comunicación'; accentColor = '#E91E63'; }
 
                 const item = document.createElement('div');
-                item.style = `padding:12px; border-radius:8px; border-left:4px solid ${data.read ? 'var(--border-glass)' : '#4CAF50'}; background:rgba(255,255,255,0.03); cursor:pointer; position:relative; overflow:hidden;`;
-                item.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
-                        <span style="font-weight:800; color:var(--text-main); font-size:0.8rem;">${data.title}</span>
-                        <span style="font-size:0.65rem; color:var(--text-dim);">${dateStr} ${timeStr}</span>
-                    </div>
-                    <div style="font-size:0.8rem; color:var(--text-dim); line-height:1.3;">${data.body}</div>
-                    ${data.type === 'POD_AVAILABLE' ? `<button class="btn btn-xs btn-outline" style="margin-top:8px; width:100%; border-color:#4CAF50; color:#4CAF50; font-weight:bold;">CONSULTAR JUSTIFICANTE</button>` : ''}
-                `;
+                item.style.cssText = 'padding:16px 20px; border-radius:10px; border-left:4px solid ' + (data.read ? 'var(--border-glass)' : accentColor) + '; background:rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + '); cursor:pointer; transition:background 0.2s;';
+                item.onmouseover = function() { this.style.background = 'rgba(255,255,255,0.07)'; };
+                item.onmouseout = function() { this.style.background = 'rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + ')'; };
 
-                // Marcar como leída al hacer click
+                item.innerHTML =
+                    '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">' +
+                        '<div style="display:flex; align-items:center; gap:8px;">' +
+                            '<span style="font-size:1.2rem;">' + typeIcon + '</span>' +
+                            '<span style="font-weight:800; color:var(--text-main); font-size:0.9rem;">' + (data.title || typeLabel) + '</span>' +
+                            (!data.read ? '<span style="background:' + accentColor + '; color:white; font-size:0.6rem; padding:1px 6px; border-radius:8px; font-weight:bold;">NUEVO</span>' : '') +
+                        '</div>' +
+                        '<span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">' + dateStr + ' ' + timeStr + '</span>' +
+                    '</div>' +
+                    '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + (data.body || data.message || '') + '</div>' +
+                    (data.ticketId ? '<div style="padding-left:28px; margin-top:6px;"><span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + data.ticketId + '</span></div>' : '');
+
+                // Mark as read on click (read-only — no editing, just mark read)
                 item.onclick = async () => {
-                    item.style.borderLeftColor = 'var(--border-glass)';
                     if (!data.read) {
+                        item.style.borderLeftColor = 'var(--border-glass)';
+                        item.querySelector('[style*="NUEVO"]') && item.querySelector('[style*="NUEVO"]').remove();
                         try { await db.collection('user_notifications').doc(doc.id).update({ read: true }); } catch(e){}
-                    }
-                    if (data.type === 'POD_AVAILABLE') {
-                        // Opcional: Filtrar directamente este envío en el buscador
-                        const searchBox = document.getElementById('ticket-search');
-                        if (searchBox) {
-                            searchBox.value = data.ticketId;
-                            searchBox.dispatchEvent(new Event('input'));
-                            document.getElementById('notification-dropdown').classList.add('hidden');
-                        }
                     }
                 };
 
                 list.appendChild(item);
             });
 
+            // Update badge
             if (unreadCount > 0) {
                 badge.textContent = unreadCount;
                 badge.classList.remove('hidden');
             } else {
                 badge.classList.add('hidden');
+            }
+
+            // Update stats
+            if (statsEl) {
+                statsEl.innerHTML =
+                    '<div style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); border-radius:8px; padding:8px 16px; text-align:center;">' +
+                        '<div style="font-size:1.4rem; font-weight:900; color:#4CAF50;">' + totalCount + '</div>' +
+                        '<div style="font-size:0.7rem; color:var(--text-dim);">Total</div>' +
+                    '</div>' +
+                    '<div style="background:rgba(255,152,0,0.1); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:8px 16px; text-align:center;">' +
+                        '<div style="font-size:1.4rem; font-weight:900; color:#FF9800;">' + unreadCount + '</div>' +
+                        '<div style="font-size:0.7rem; color:var(--text-dim);">Sin leer</div>' +
+                    '</div>';
             }
         });
 };
@@ -817,22 +840,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Dropdown toggle
-    const btnNotif = document.getElementById('btn-notifications');
-    const dropdown = document.getElementById('notification-dropdown');
-    
-    if (btnNotif && dropdown) {
-        btnNotif.onclick = (e) => {
-            e.stopPropagation();
-            dropdown.classList.toggle('hidden');
-        };
-        // Cerrar al click fuera
-        document.addEventListener('click', (e) => {
-            if (!dropdown.contains(e.target) && !btnNotif.contains(e.target)) {
-                dropdown.classList.add('hidden');
-            }
-        });
-    }
+    // Notification badge click → open inbox view
+    const navNotifDom = document.getElementById('nav-notifications');
+    // (navigation handler is set up separately after showView definition)
 
     // Marcar todo como leído
     const markAllBtn = document.getElementById('btn-mark-all-read');
@@ -871,7 +881,6 @@ async function loadEditor(t) {
     // Bloqueado si está facturado o si el cliente pidió borrarlo
     const isBilled = !!(t.invoiceId || t.invoiceNum);
     const isPendingDelete = !!t.deleteRequested;
-    const isPendingConfirmation = (t.status === 'pending_confirmation');
     const isLocked = isBilled || isPendingDelete;
 
     // Base UI State
@@ -914,15 +923,9 @@ async function loadEditor(t) {
         await addPackageRow();
     }
 
-    // Actions — block printing if pending confirmation
-    document.getElementById('action-print').onclick = () => {
-        if (isPendingConfirmation) { alert("No se puede imprimir un albarán pendiente de revisión. Acepta o modifica los cambios primero."); return; }
-        printTicket(t);
-    };
-    document.getElementById('action-label').onclick = () => {
-        if (isPendingConfirmation) { alert("No se puede imprimir etiquetas de un albarán pendiente de revisión. Acepta o modifica los cambios primero."); return; }
-        printLabel(t);
-    };
+    // Actions
+    document.getElementById('action-print').onclick = () => printTicket(t);
+    document.getElementById('action-label').onclick = () => printLabel(t);
     document.getElementById('action-delete').onclick = () => {
         if (isLocked) {
             alert("Este albarán está bloqueado y no puede eliminarse ni volver a solicitar su eliminación.");
@@ -933,25 +936,14 @@ async function loadEditor(t) {
     
     
 
-    // Show Pending Confirmation Alert if active
+    // Hide legacy pending-confirmation alert if present
     const alertBox = document.getElementById('pending-confirmation-alert');
-    if (alertBox) {
-        if (isPendingConfirmation) {
-            alertBox.classList.remove('hidden');
-            const alertText = document.getElementById('pending-changes-text');
-            if (alertText) alertText.innerHTML = t.pendingChangesText || "El albarán ha sido modificado por la central. Revisa y acepta los cambios.";
-        } else {
-            alertBox.classList.add('hidden');
-        }
-    }
+    if (alertBox) alertBox.classList.add('hidden');
 
-    // Pending confirmation: form editable but with warning header
-    if (isPendingConfirmation && !isLocked) {
-        document.getElementById('editor-title').innerHTML = `<span style="color:#FFA500; font-weight:900;">⚠️ ALBARÁN MODIFICADO (REQUIERE ACCIÓN)</span>`;
-        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FFA500; color:black; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">PENDIENTE CONFIRMACIÓN</span>`;
-        form.style.pointerEvents = 'auto';
-        form.style.opacity = '1';
-        form.style.filter = 'none';
+    // Show modification notice (read-only info) if admin modified this ticket
+    if (t.lastModifiedBy === 'admin' && t.lastModifiedNote) {
+        document.getElementById('editor-title').innerHTML = `<span style="color:#2196F3; font-weight:900;">ℹ️ ALBARÁN MODIFICADO POR CENTRAL</span>`;
+        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#2196F3; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">MODIFICADO</span>`;
     }
 
     // Final lock state if billed or pending delete
@@ -1761,13 +1753,6 @@ async function handleFormSubmit(e) {
                 alert("Albarán bloqueado por facturación.");
                 hideLoading();
                 return;
-            }
-            // If pending_confirmation, clear the pending state on save
-            if (currentDoc.exists && currentDoc.data().status === 'pending_confirmation') {
-                data.status = 'Aceptado';
-                data.pendingChanges = firebase.firestore.FieldValue.delete();
-                data.pendingChangesText = firebase.firestore.FieldValue.delete();
-                data.notes = (currentDoc.data().notes || '') + ` | [MODIFICADO Y ACEPTADO POR CLIENTE - ${new Date().toLocaleString()}]`;
             }
             Object.assign(data, getOperatorStamp());
             await db.collection('tickets').doc(editingId).update(data);
@@ -4108,7 +4093,7 @@ async function setClientContext(idNum) {
 
 // --- NAVIGATION & UI GLUE ---
 function showView(viewId) {
-    const views = ['dashboard-view', 'clients-view', 'reports-view', 'scanner-view'];
+    const views = ['dashboard-view', 'clients-view', 'reports-view', 'scanner-view', 'notifications-view'];
     views.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.toggle('hidden', id !== viewId);
@@ -4175,6 +4160,16 @@ if (btnCloseClients) btnCloseClients.onclick = () => showView('dashboard-view');
 
 const btnCloseReports = document.getElementById('btn-close-reports');
 if (btnCloseReports) btnCloseReports.onclick = () => showView('dashboard-view');
+
+// Navigation: Notifications Inbox
+const navNotifBtn = document.getElementById('nav-notifications');
+if (navNotifBtn) {
+    navNotifBtn.onclick = () => {
+        showView('notifications-view');
+    };
+}
+const btnCloseNotifications = document.getElementById('btn-close-notifications');
+if (btnCloseNotifications) btnCloseNotifications.onclick = () => showView('dashboard-view');
 
 
 // Logout is handled by inline onclick in app.html for reliability
@@ -4921,39 +4916,7 @@ setInterval(() => {
     }
 }, 180000); // 3 minutes heartbeat
 
-window.acceptTicketModification = async () => {
-    if (!editingId) return;
-    if (!confirm("¿Aceptar y consolidar las modificaciones propuestas por la central?")) return;
-    
-    showLoading();
-    try {
-        const doc = await db.collection('tickets').doc(editingId).get();
-        if (!doc.exists) throw new Error("El ticket no existe.");
-        const t = doc.data();
-        if (t.status !== 'pending_confirmation') throw new Error("Este ticket no requiere confirmación actualmente.");
-
-        const updates = { ...t.pendingChanges }; // Apply all changes
-        updates.status = 'Aceptado';
-        updates.pendingChanges = firebase.firestore.FieldValue.delete();
-        updates.pendingChangesText = firebase.firestore.FieldValue.delete();
-        
-        // Push acceptance audit onto notes
-        const auditText = `[MODIFICACIÓN ACEPTADA POR CLIENTE - ${new Date().toLocaleString()}]`;
-        updates.notes = t.notes ? t.notes + " | " + auditText : auditText;
-        
-        await db.collection('tickets').doc(editingId).update(updates);
-        alert("Modificaciones aceptadas y consolidadas correctamente.");
-        
-        // Hide modal and refresh
-        const alertBox = document.getElementById('pending-confirmation-alert');
-        if(alertBox) alertBox.classList.add('hidden');
-        resetEditor(); // Resets and unlocks form
-    } catch(e) {
-        alert("Error al confirmar modificaciones: " + e.message);
-    } finally {
-        hideLoading();
-    }
-};
+// acceptTicketModification removed — admin changes now apply directly, client only receives notification
 
 // --- PICKUP REQUEST ---
 window.openPickupModal = function() {

@@ -107,6 +107,7 @@
                 <div style="display: flex; gap: 10px; align-items: center;">
                     <span id="user-display-name"
                         style="color:var(--text-dim); font-size:0.8rem; margin-right:10px;"></span>
+                    <button id="nav-notifications" class="btn btn-sm btn-secondary" style="position:relative;">🔔 BUZÓN <span id="notification-badge" class="hidden" style="position:absolute; top:-4px; right:-4px; background:#FF3B30; color:white; border-radius:50%; width:18px; height:18px; font-size:0.65rem; display:flex; align-items:center; justify-content:center; font-weight:900;">0</span></button>
                     <button id="nav-clients" class="btn btn-sm btn-secondary">👥 CLIENTES</button>
                     <button id="nav-reports" class="btn btn-sm btn-secondary">📊 INFORMES</button>
                     <button id="btn-open-scanner" class="btn btn-sm btn-secondary">📷 ESCÁNER</button>
@@ -218,12 +219,8 @@
                     </div>
 
                     
-                    <!-- ALERT BOX FOR PENDING MODIFICATIONS -->
-                    <div id="pending-confirmation-alert" class="hidden" style="margin-bottom: 20px; padding: 20px; background: rgba(255, 165, 0, 0.15); border: 2px solid #FFA500; border-radius: 8px; text-align: center;">
-                        <h3 style="color: #FFA500; margin-top:0;">⚠️ ATENCIÓN: ALBARÁN MODIFICADO POR LA COMPAÑÍA</h3>
-                        <p id="pending-changes-text" style="color: white; font-size: 0.9rem; margin-bottom: 15px;">Se han detectado cambios en el peso o bultos de este albarán. Por favor, revisa los datos y acepta la modificación para continuar.</p>
-                        <button type="button" class="btn" style="background: #FFA500; color: black; font-weight: 900; padding: 10px 20px; pointer-events: auto !important; position: relative; z-index: 9999;" onclick="acceptTicketModification()">✅ ACEPTAR MODIFICACIÓN</button>
-                    </div>
+                    <!-- Legacy pending-confirmation-alert kept as hidden placeholder for JS compatibility -->
+                    <div id="pending-confirmation-alert" class="hidden"></div>
 
 <div id="create-ticket-form"
                         style="display: grid; grid-template-columns: 1fr 320px; gap: 20px; height: auto;">
@@ -673,6 +670,27 @@
 
                 <button id="btn-mark-app-scanned" class="btn btn-primary"
                     style="width:100%; padding:15px; font-weight:900;">✅ REGISTRAR ENTREGA</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifications Inbox View (Read-Only) -->
+    <div id="notifications-view" class="view-section hidden">
+        <header class="toolbar">
+            <div style="width:100%; padding:0 1.5rem; display:flex; justify-content:space-between; align-items:center;">
+                <h2 class="logo">NOVAPACK<span class="logo-arrow">➤</span> <span
+                        style="font-family:var(--font-heading); font-size:1.2rem; color:white; margin-left:10px;">BUZÓN DE NOTIFICACIONES</span>
+                </h2>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button id="btn-mark-all-read" class="btn btn-sm btn-secondary" style="font-size:0.75rem;">✓ Marcar todo leído</button>
+                    <button id="btn-close-notifications" class="btn btn-sm btn-outline">CERRAR</button>
+                </div>
+            </div>
+        </header>
+        <div style="padding:20px; max-width:800px; margin:0 auto;">
+            <div id="notifications-inbox-stats" style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;"></div>
+            <div id="notification-list" style="display:flex; flex-direction:column; gap:10px;">
+                <div style="text-align:center; padding:40px; color:var(--text-dim);">Cargando notificaciones...</div>
             </div>
         </div>
     </div>
