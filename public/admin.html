@@ -2830,10 +2830,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 
                 <!-- Sugerentes Rápidas -->
-                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;" id="ai-suggestions-box">
-                    <button class="btn btn-outline btn-sm" style="font-size:0.75rem; color:var(--brand-primary); border-color:var(--brand-primary);" onclick="sendAIPrompt('¿Cómo hago una factura Pro?')">Cómo hacer una factura Pro</button>
-                    <button class="btn btn-outline btn-sm" style="font-size:0.75rem; color:var(--brand-primary); border-color:var(--brand-primary);" onclick="sendAIPrompt('¿Cómo funciona la App de Repartidor?')">App de Repartidor</button>
-                    <button class="btn btn-outline btn-sm" style="font-size:0.75rem; color:var(--brand-primary); border-color:var(--brand-primary);" onclick="sendAIPrompt('¿Dónde veo los Portes Debidos?')">Portes Debidos</button>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:5px;" id="ai-suggestions-box">
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Cómo hago una factura Pro?')">Facturación Pro</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Cómo funciona la App de Repartidor?')">App Repartidor</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Cómo funcionan las tarifas de peso?')">Tarifas Peso</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Cómo envío comunicaciones masivas?')">Comunicaciones</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Dónde veo los justificantes de entrega?')">POD / Entregas</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:0.72rem; color:var(--brand-primary); border-color:var(--brand-primary); padding:4px 10px;" onclick="sendAIPrompt('¿Qué puedes hacer?')">Ver capacidades</button>
                 </div>
             </div>
             
@@ -2845,72 +2848,354 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
 
         <script>
-            function sendAIPrompt(textStr) {
-                const input = document.getElementById('ai-chat-input');
-                const text = textStr || input.value.trim();
-                if(!text) return;
-                
-                input.value = '';
-                const body = document.getElementById('ai-chat-body');
-                
-                // Hide suggestions
-                const sugg = document.getElementById('ai-suggestions-box');
-                if(sugg) sugg.style.display = 'none';
+            // ======================================
+            // NOVA-IA v2.0 — Enhanced Assistant Engine
+            // ======================================
+            (function() {
+                'use strict';
 
-                // User Msg
-                const userDiv = document.createElement('div');
-                userDiv.style.cssText = 'align-self:flex-end; background:var(--brand-primary); color:white; padding:10px 14px; border-radius:12px 12px 0 12px; font-size:0.9rem; max-width:85%;';
-                userDiv.textContent = text;
-                body.appendChild(userDiv);
-                
-                // Simulated thinking
-                setTimeout(() => {
-                    const botDiv = document.createElement('div');
-                    botDiv.style.cssText = 'align-self:flex-start; background:#252526; border:1px solid #3c3c3c; padding:10px 14px; border-radius:12px 12px 12px 0; color:#d4d4d4; font-size:0.9rem; max-width:85%;';
-                    
-                    // Enhanced FAQ Engine Logic
-                    let reply = "Entiendo tu consulta. Actualmente funciono como asistente de preguntas frecuentes con base de conocimiento interna. Puedo ayudarte con: <b>Facturación</b>, <b>Albaranes</b>, <b>Repartidores</b>, <b>Portes Debidos</b>, <b>Buzón</b>, <b>Exportaciones</b>, <b>Tarifas</b>, <b>Clientes</b> y <b>Configuración</b>.<br><br>Reformula tu pregunta incluyendo alguna de esas palabras clave.";
-                    
-                    const t = text.toLowerCase();
-                    if(t.includes("factura") || t.includes("pro") || t.includes("facturacion")) {
-                        reply = "<b>Para Facturación PRO:</b><br>1. Ve a Facturación PRO en el menú.<br>2. Selecciona un cliente del listado.<br>3. Abajo verás los albaranes pendientes.<br>4. Marca los que desees incluir.<br>5. Pulsa 'Generar Factura DEFINITIVA'.";
-                    } else if(t.includes("repartidor") || t.includes("chofer") || t.includes("conductor")) {
-                        reply = "<b>App de Repartidor:</b><br>Los chóferes deben acceder desde su móvil ingresando su nombre tal cual aparece en 'Rutas / Carpetas'. Allí verán los albaranes asignados a su ruta diaria, podrán escanear QR's de estado e introducir la firma del destinatario.";
-                    } else if(t.includes("debidos")) {
-                        reply = "<b>Portes Debidos:</b><br>Al escanear un ticket sin asignar o recibir un albarán desde web marcado como 'Portes Debidos', este caerá en 'Facturación PRO' -> Pestaña 'Portes Debidos'. Debes asignarle un Cliente para que pase al flujo normal de facturación.";
-                    } else if(t.includes("buzón") || t.includes("buzon") || t.includes("mail") || t.includes("correo") || t.includes("incidencia")) {
-                        reply = "<b>Buzón Inteligente (Mail Engine):</b><br>Es el motor que lee en tiempo real la cola de 'administracion@novapack.info'. Categoriza los mensajes de clientes (Abonos, Facturación, Fiscal) y los muestra en tu panel. También envía respuestas automáticamente.<br><br>Puedes acceder desde el botón naranja 'Buzón' en la barra superior.";
-                    } else if(t.includes("exportar") || t.includes("excel") || t.includes("csv") || t.includes("informe") || t.includes("listado")) {
-                        reply = "<b>Listados e Informes V4:</b><br>Desde este menú puedes aplicar múltiples filtros transversales. En la esquina del panel de resultados tendrás el menú flotante para 'Exportar' en CSV y Excel de inmediato.";
-                    } else if(t.includes("manual") || t.includes("albaran") || t.includes("albarán") || t.includes("nuevo albaran")) {
-                        reply = "<b>Albaranes Manuales:</b><br>1. Ve a Albaranes ▾ → Albaranes Manuales.<br>2. Selecciona un cliente en el desplegable izquierdo.<br>3. Pulsa el botón naranja 'Nuevo Albarán'.<br>4. El formulario precargará nombre, dirección y teléfono del cliente automáticamente.";
-                    } else if(t.includes("tarifa") || t.includes("precio") || t.includes("coste")) {
-                        reply = "<b>Gestión de Tarifas:</b><br>Accede desde el botón 'Tarifas' en la barra superior. Puedes crear tarifas globales (aplicables a todos) o tarifas específicas por cliente. Cada tarifa tiene sub-tramos por peso/zona. Los clientes con 'Tarifa Plana' facturan un fijo mensual.";
-                    } else if(t.includes("cliente") || t.includes("usuario") || t.includes("contacto")) {
-                        reply = "<b>Gestión de Clientes:</b><br>Desde Contactos ▾ → Ver Clientes. Allí puedes crear, editar y eliminar clientes. Cada cliente puede tener múltiples sedes (empresas) con direcciones independientes. Los listados se ordenan por número de cliente.";
-                    } else if(t.includes("imprimir") || t.includes("pdf") || t.includes("etiqueta")) {
-                        reply = "<b>Impresión PDF:</b><br>El sistema genera documentos PDF universales que se abren en una nueva pestaña. Esto garantiza que el formato sea idéntico independientemente de la configuración del navegador o impresora del cliente.";
-                    } else if(t.includes("identidad") || t.includes("quien soy") || t.includes("sesion") || t.includes("sesión")) {
-                        const iden = window.adminIdentity || "Administrador Anónimo";
-                        reply = "Actualmente estás operando el sistema bajo la identidad: <b>" + iden + "</b>.<br><br>Para cambiar de usuario, cierra sesión con el botón de la barra superior y selecciona otra identidad.";
-                    } else if(t.includes("hola") || t.includes("buenos") || t.includes("buenas")) {
-                        reply = "¡Hola! 👋 ¿En qué puedo ayudarte hoy? Pregúntame sobre facturación, albaranes, tarifas, clientes, o cualquier función del ERP.";
+                // --- Knowledge Base ---
+                // Each topic: keywords (weighted), response HTML, optional actions, optional live query
+                var _KB = [
+                    {
+                        id: 'facturacion',
+                        keywords: ['factura', 'facturación', 'facturacion', 'facturar', 'pro'],
+                        reply: "<b>Facturación PRO:</b><br>1. Abre la pestaña <b>Factura</b> en la barra superior.<br>2. Selecciona un cliente del listado.<br>3. Abajo verás los albaranes pendientes de facturar.<br>4. Marca los que desees incluir.<br>5. Pulsa <b>'Generar Factura DEFINITIVA'</b>.<br><br>También puedes acceder a <b>Centro de Facturación</b> para facturación mensual masiva.",
+                        actions: [{ label: 'Abrir Facturación', fn: "erpOpenTab('factura')" }, { label: 'Centro Facturación', fn: "erpOpenTab('facturas-central')" }]
+                    },
+                    {
+                        id: 'repartidor',
+                        keywords: ['repartidor', 'chofer', 'conductor', 'driver', 'reparto', 'ruta', 'escanear', 'escaneo'],
+                        reply: "<b>App de Repartidor:</b><br>Los chóferes acceden desde su móvil ingresando su nombre tal cual aparece en <b>Rutas/Carpetas</b>. Allí pueden:<br>- Ver albaranes de su ruta diaria<br>- Escanear QR de estado<br>- Capturar firma del destinatario<br>- Tomar foto de entrega<br><br>La <b>limpieza automática</b> elimina entregas completadas cada <b>8 horas</b>.",
+                        actions: [{ label: 'Control Rutas', fn: "erpOpenTab('rutas')" }]
+                    },
+                    {
+                        id: 'debidos',
+                        keywords: ['debidos', 'porte debido', 'portes debidos', 'sin asignar'],
+                        reply: "<b>Portes Debidos:</b><br>Al escanear un ticket sin cliente asignado o recibir un albarán marcado como 'Portes Debidos', este aparecerá en la pestaña <b>Portes Debidos</b>. Debes asignarle un cliente para que pase al flujo normal de facturación.",
+                        actions: [{ label: 'Abrir Debidos', fn: "erpOpenTab('debidos')" }]
+                    },
+                    {
+                        id: 'buzon',
+                        keywords: ['buzón', 'buzon', 'mail', 'correo electrónico', 'correo electronico', 'email entrante', 'inbox'],
+                        reply: "<b>Buzón Inteligente (Mail Engine):</b><br>Lee automáticamente los correos de <b>administracion@novapack.info</b> y los categoriza:<br>- POD / Justificantes de entrega<br>- Abonos y devoluciones<br>- Facturación<br>- Reclamaciones<br><br>Puedes autorizar envío de POD directamente desde el buzón.",
+                        actions: [{ label: 'Abrir Buzón', fn: "erpOpenTab('mailbox')" }]
+                    },
+                    {
+                        id: 'comunicaciones',
+                        keywords: ['comunicacion', 'comunicaciones', 'masivo', 'masiva', 'masivos', 'campaña', 'campaign', 'notificacion masiva', 'correo masivo', 'envío masivo', 'newsletter'],
+                        reply: "<b>Comunicaciones Masivas:</b><br>Sistema para enviar notificaciones y emails a todos los clientes activos.<br><br><b>Cómo funciona:</b><br>1. <b>Detectar clientes</b>: El sistema analiza albaranes del periodo y encuentra clientes activos.<br>2. <b>Redactar</b>: Escribe asunto y mensaje con variables (<code>{nombre}</code>, <code>{empresa}</code>, <code>{ncliente}</code>).<br>3. <b>Enviar</b>: Elige canal (Email SMTP, Notificación In-App, o ambos).<br><br>Ideal para avisos de subidas de tarifas, cambios de servicio, etc.",
+                        actions: [{ label: 'Abrir Comunicaciones', fn: "erpOpenTab('comunicaciones')" }]
+                    },
+                    {
+                        id: 'tarifas_peso',
+                        keywords: ['tarifa de peso', 'tarifa peso', 'tarifas peso', 'peso kg', 'tramos de peso', 'kilogramos', 'peso kilogramo', 'gls', 'mrw', 'seur', 'transportista'],
+                        reply: "<b>Tarifas por Peso (kg):</b><br>Sistema de tarificación por tramos de peso, estilo GLS/MRW/SEUR.<br><br><b>Configuración:</b><br>1. Abre <b>Tarifas</b> → selecciona una tarifa global.<br>2. Cambia el modo a <b>'Peso (kg)'</b> con el toggle superior.<br>3. Añade tramos (ej: hasta 1kg → 3.50€, hasta 5kg → 6.50€).<br>4. Configura <b>€/kg extra</b> y <b>cargo mínimo</b>.<br>5. Puedes cargar tramos estándar con un clic.<br><br>Al asignar la tarifa a un cliente, el precio se calcula automáticamente según el peso del albarán.",
+                        actions: [{ label: 'Abrir Tarifas', fn: "erpOpenTab('tariffs')" }]
+                    },
+                    {
+                        id: 'recargo_peso',
+                        keywords: ['recargo', 'surcharge', 'recargo peso', 'complemento peso', 'peso extra', 'sobrepeso'],
+                        reply: "<b>Recargo por Peso (Complemento):</b><br>Añade un recargo por peso <b>sobre</b> la tarifa de artículos existente.<br><br><b>Configuración:</b><br>1. En <b>Tarifas</b> (modo Artículos), activa el checkbox <b>'Recargo por Peso'</b>.<br>2. Define el umbral en kg (ej: a partir de 10 kg).<br>3. Define la tarifa por kg extra (ej: 0.30 €/kg).<br><br><b>Ejemplo:</b> Si el umbral es 10kg y la tarifa es 0.30€/kg, un envío de 25kg tendrá un recargo de (25-10) × 0.30 = 4.50€ adicionales al precio base.",
+                        actions: [{ label: 'Abrir Tarifas', fn: "erpOpenTab('tariffs')" }]
+                    },
+                    {
+                        id: 'tarifas_general',
+                        keywords: ['tarifa', 'precio', 'coste', 'tariff', 'tarificacion'],
+                        reply: "<b>Gestión de Tarifas:</b><br>El sistema soporta <b>dos modos</b> de tarificación:<br><br>1. <b>Artículos/Tamaño</b> — Precio por tipo de bulto (Sobre, Bulto, Palet). Es el modo clásico.<br>2. <b>Peso (kg)</b> — Tramos de peso estilo transportista (GLS, MRW, SEUR).<br><br>Además puedes activar un <b>Recargo por Peso</b> como complemento a las tarifas de artículos.<br><br>Crea tarifas globales y asígnalas a clientes. Los clientes con <b>Tarifa Plana</b> facturan un fijo mensual.",
+                        actions: [{ label: 'Abrir Tarifas', fn: "erpOpenTab('tariffs')" }]
+                    },
+                    {
+                        id: 'pod',
+                        keywords: ['pod', 'justificante', 'prueba de entrega', 'firma', 'entrega', 'entregado', 'proof of delivery', 'foto entrega'],
+                        reply: "<b>Justificantes de Entrega (POD):</b><br>Cuando un repartidor confirma una entrega, se captura:<br>- <b>Firma</b> del receptor<br>- <b>Foto</b> de la entrega<br>- <b>GPS</b> y hora exacta<br>- <b>Nombre</b> del receptor<br><br>Puedes consultar PODs desde <b>Albaranes Central</b> (pestaña POD) o buscar por número de albarán.<br><br>El <b>Buzón Inteligente</b> también gestiona solicitudes de POD por email automáticamente.",
+                        actions: [{ label: 'Albaranes Central', fn: "erpOpenTab('albaranes-central')" }, { label: 'Buzón', fn: "erpOpenTab('mailbox')" }]
+                    },
+                    {
+                        id: 'albaranes_central',
+                        keywords: ['albaranes central', 'central albaranes', 'todos los albaranes', 'listado albaranes', 'pendientes', 'facturados'],
+                        reply: "<b>Albaranes Central:</b><br>Vista centralizada de todos los albaranes con sub-pestañas:<br>- <b>Todos</b> — Todos los albaranes<br>- <b>Pendientes</b> — Sin facturar<br>- <b>Facturados</b> — Ya incluidos en factura<br>- <b>Debidos</b> — Portes debidos<br>- <b>POD</b> — Búsqueda de justificantes de entrega<br><br>Incluye paginación, filtros y exportación.",
+                        actions: [{ label: 'Abrir Albaranes Central', fn: "erpOpenTab('albaranes-central')" }]
+                    },
+                    {
+                        id: 'incidencias',
+                        keywords: ['incidencia', 'incidencias', 'devuelto', 'devolucion', 'devolución', 'problema entrega', 'alerta', 'resolver'],
+                        reply: "<b>Incidencias y Alertas:</b><br>Las incidencias se generan cuando un repartidor marca un albarán como <b>Devuelto</b> o <b>Incidencia</b>.<br><br>Puedes gestionarlas desde:<br>- <b>Incidencias Reparto</b> — Panel dedicado con todas las incidencias de conductores<br>- <b>Alertas Pickup</b> — Alertas de recogida pendientes<br>- <b>Control Rutas</b> → clic en ruta → botón <b>Resolver</b><br><br>El botón resolver funciona para estados: Incidencia, Devuelto y Pendiente confirmación.",
+                        actions: [{ label: 'Incidencias Reparto', fn: "erpOpenTab('driver-incidents')" }, { label: 'Alertas', fn: "erpOpenTab('phones')" }]
+                    },
+                    {
+                        id: 'exportar',
+                        keywords: ['exportar', 'excel', 'csv', 'informe', 'listado', 'reporte', 'report', 'descargar datos'],
+                        reply: "<b>Listados e Informes V4:</b><br>Desde la pestaña <b>Listados</b> puedes aplicar filtros transversales (fecha, cliente, ruta, estado). En la esquina del panel de resultados encontrarás el botón para <b>Exportar</b> en CSV y Excel.<br><br>La exportación también está disponible en <b>Portes Debidos</b> y otras vistas con el icono de descarga.",
+                        actions: [{ label: 'Abrir Listados', fn: "erpOpenTab('reports')" }]
+                    },
+                    {
+                        id: 'albaranes_manuales',
+                        keywords: ['manual', 'albaran manual', 'albarán manual', 'nuevo albaran', 'nuevo albarán', 'crear albaran', 'crear albarán'],
+                        reply: "<b>Albaranes Manuales:</b><br>1. Abre <b>Albaranes Man.</b> desde la barra.<br>2. Selecciona un cliente en el desplegable.<br>3. Pulsa <b>'Nuevo Albarán'</b>.<br>4. El formulario precargará nombre, dirección y teléfono automáticamente.<br>5. Añade bultos, peso y detalles de envío.",
+                        actions: [{ label: 'Albaranes Manuales', fn: "erpOpenTab('manual-tickets')" }]
+                    },
+                    {
+                        id: 'clientes',
+                        keywords: ['cliente', 'usuario', 'contacto', 'ficha', 'ficha cliente', 'sede', 'filial'],
+                        reply: "<b>Gestión de Clientes:</b><br>Desde la pestaña <b>Clientes</b> puedes:<br>- Crear, editar y eliminar clientes<br>- Asignar tarifas y configurar facturación<br>- Gestionar sedes (empresas/filiales)<br>- Ver la <b>Ficha de Cliente</b> con todo su historial<br>- Configurar IBAN, SEPA, email de administración<br><br>Los clientes pueden tener un <b>cliente padre</b> (filiales) y <b>tarifa plana</b> mensual.",
+                        actions: [{ label: 'Ver Clientes', fn: "erpOpenTab('clients')" }]
+                    },
+                    {
+                        id: 'pdf',
+                        keywords: ['imprimir', 'pdf', 'etiqueta', 'print', 'impresion', 'impresión'],
+                        reply: "<b>Impresión y PDF:</b><br>El sistema genera documentos PDF universales que se abren en una nueva pestaña. Esto garantiza formato idéntico en cualquier navegador o impresora.<br><br>Disponible en: facturas, albaranes, etiquetas, listados y justificantes de entrega.",
+                    },
+                    {
+                        id: 'contabilidad',
+                        keywords: ['contabilidad', 'conta', 'sepa', 'remesa', 'iban', 'banco', 'cobro'],
+                        reply: "<b>Contabilidad:</b><br>Desde la pestaña <b>Contabilidad</b> puedes:<br>- Generar remesas SEPA (cobros bancarios)<br>- Consultar estado de pagos<br>- Gestionar IBANs de clientes<br>- Exportar datos contables",
+                        actions: [{ label: 'Abrir Contabilidad', fn: "erpOpenTab('contabilidad')" }]
+                    },
+                    {
+                        id: 'identidad',
+                        keywords: ['identidad', 'quien soy', 'sesion', 'sesión', 'login', 'mi cuenta'],
+                        reply: function() {
+                            var iden = window.adminIdentity || "Administrador Anónimo";
+                            return "Estás operando como: <b>" + iden + "</b>.<br><br>Para cambiar de usuario, cierra sesión con el botón de la barra superior.";
+                        }
+                    },
+                    {
+                        id: 'buscar_albaran',
+                        keywords: ['buscar albaran', 'buscar albarán', 'buscar ticket', 'encontrar albaran', 'donde esta mi albaran', 'tracking', 'seguimiento'],
+                        reply: "<b>Búsqueda de Albaranes:</b><br>Usa la pestaña <b>Buscar Albaranes</b> para localizar cualquier albarán por número, destinatario o referencia.<br><br>También puedes buscar desde <b>Albaranes Central</b> con filtros avanzados.",
+                        actions: [{ label: 'Buscar Albaranes', fn: "erpOpenTab('ticket-search')" }, { label: 'Albaranes Central', fn: "erpOpenTab('albaranes-central')" }]
+                    },
+                    {
+                        id: 'capacidades',
+                        keywords: ['que puedes hacer', 'ayuda', 'help', 'capacidades', 'funciones', 'que sabes', 'menu'],
+                        reply: "<b>NOVA-IA v2.0 — Capacidades:</b><br><br>" +
+                            "Puedo ayudarte con:<br>" +
+                            "- <b>Facturación</b> — Factura Pro, Centro Facturación<br>" +
+                            "- <b>Tarifas</b> — Artículos, Peso (kg), Recargo peso<br>" +
+                            "- <b>Albaranes</b> — Manuales, Central, Búsqueda<br>" +
+                            "- <b>Comunicaciones</b> — Emails/notificaciones masivas<br>" +
+                            "- <b>Entregas (POD)</b> — Firmas, fotos, justificantes<br>" +
+                            "- <b>Incidencias</b> — Devoluciones, alertas, resolver<br>" +
+                            "- <b>Reparto</b> — App conductor, rutas, escáner<br>" +
+                            "- <b>Clientes</b> — Gestión, fichas, filiales<br>" +
+                            "- <b>Buzón</b> — Correo inteligente<br>" +
+                            "- <b>Contabilidad</b> — SEPA, remesas<br>" +
+                            "- <b>Exportaciones</b> — Excel, CSV, informes<br>" +
+                            "- <b>PDF</b> — Impresión universal<br><br>" +
+                            "Además puedo <b>abrir pestañas</b> directamente. Prueba: <i>'abrir tarifas'</i> o <i>'ir a clientes'</i>."
+                    },
+                    {
+                        id: 'saludo',
+                        keywords: ['hola', 'buenos dias', 'buenas tardes', 'buenas noches', 'hey', 'saludos'],
+                        reply: function() {
+                            var h = new Date().getHours();
+                            var saludo = h < 12 ? 'Buenos días' : h < 20 ? 'Buenas tardes' : 'Buenas noches';
+                            var iden = window.adminIdentity || '';
+                            return saludo + (iden ? ', <b>' + iden + '</b>' : '') + ". ¿En qué puedo ayudarte? Pregunta sobre cualquier función del ERP o dime <i>'qué puedes hacer'</i> para ver todo lo disponible.";
+                        }
+                    },
+                    {
+                        id: 'gracias',
+                        keywords: ['gracias', 'thanks', 'genial', 'perfecto', 'vale', 'ok'],
+                        reply: "De nada. Si necesitas algo más, aquí estoy."
+                    }
+                ];
+
+                // --- Navigation shortcuts ---
+                var _NAV_SHORTCUTS = {
+                    'facturacion': 'factura', 'factura': 'factura', 'facturar': 'factura',
+                    'tarifas': 'tariffs', 'tarifa': 'tariffs',
+                    'clientes': 'clients', 'cliente': 'clients',
+                    'rutas': 'rutas', 'ruta': 'rutas',
+                    'buzon': 'mailbox', 'buzón': 'mailbox', 'correo': 'mailbox',
+                    'comunicaciones': 'comunicaciones',
+                    'debidos': 'debidos',
+                    'albaranes': 'albaranes-central', 'albaranes central': 'albaranes-central',
+                    'incidencias': 'driver-incidents',
+                    'alertas': 'phones',
+                    'contabilidad': 'contabilidad',
+                    'listados': 'reports', 'informes': 'reports',
+                    'pod': 'albaranes-central',
+                    'proveedores': 'providers',
+                    'escaner': 'scanner', 'qr': 'scanner'
+                };
+
+                // --- Core: find best match ---
+                function _findMatch(text) {
+                    var t = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    var bestScore = 0;
+                    var bestTopic = null;
+
+                    for (var i = 0; i < _KB.length; i++) {
+                        var topic = _KB[i];
+                        var score = 0;
+                        for (var k = 0; k < topic.keywords.length; k++) {
+                            var kw = topic.keywords[k].normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                            if (t.includes(kw)) {
+                                score += kw.length; // Longer keyword = better match
+                            }
+                        }
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestTopic = topic;
+                        }
                     }
 
-                    botDiv.innerHTML = reply;
-                    body.appendChild(botDiv);
-                    body.scrollTop = body.scrollHeight;
-                }, 800);
-                
-                body.scrollTop = body.scrollHeight;
-            }
-            
-            // Re-update dynamic-identity-name when chat modal is opened if identity was chosen
-            document.getElementById('ai-assistant-fab').addEventListener('click', () => {
-                if(window.adminIdentity) {
-                    document.querySelectorAll('.dynamic-identity-name').forEach(el => el.textContent = window.adminIdentity);
+                    return bestScore >= 3 ? bestTopic : null;
                 }
-            });
+
+                // --- Check for navigation intent ---
+                function _checkNavIntent(text) {
+                    var t = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    var navPatterns = ['abrir', 'abre', 'ir a', 've a', 'llévame', 'llevame', 'mostrar', 'muestra', 'open', 'go to'];
+                    var isNav = navPatterns.some(function(p) { return t.includes(p); });
+                    if (!isNav) return null;
+
+                    var keys = Object.keys(_NAV_SHORTCUTS);
+                    for (var i = 0; i < keys.length; i++) {
+                        var normalized = keys[i].normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                        if (t.includes(normalized)) {
+                            return _NAV_SHORTCUTS[keys[i]];
+                        }
+                    }
+                    return null;
+                }
+
+                // --- Render a bot message ---
+                function _addBotMsg(body, html, actions) {
+                    var wrapper = document.createElement('div');
+                    wrapper.style.cssText = 'align-self:flex-start; max-width:90%;';
+
+                    var botDiv = document.createElement('div');
+                    botDiv.style.cssText = 'background:#252526; border:1px solid #3c3c3c; padding:10px 14px; border-radius:12px 12px 12px 0; color:#d4d4d4; font-size:0.85rem; line-height:1.5;';
+                    botDiv.innerHTML = html;
+                    wrapper.appendChild(botDiv);
+
+                    // Action buttons
+                    if (actions && actions.length > 0) {
+                        var actBar = document.createElement('div');
+                        actBar.style.cssText = 'display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;';
+                        actions.forEach(function(a) {
+                            var btn = document.createElement('button');
+                            btn.textContent = a.label;
+                            btn.style.cssText = 'background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.4); color:#FF9800; padding:4px 10px; border-radius:14px; font-size:0.72rem; cursor:pointer; font-weight:bold;';
+                            btn.onmouseover = function() { this.style.background = 'rgba(255,152,0,0.3)'; };
+                            btn.onmouseout = function() { this.style.background = 'rgba(255,152,0,0.15)'; };
+                            btn.onclick = function() {
+                                try { eval(a.fn); } catch(e) { console.warn('[NOVA-IA] Action error:', e); }
+                            };
+                            actBar.appendChild(btn);
+                        });
+                        wrapper.appendChild(actBar);
+                    }
+
+                    body.appendChild(wrapper);
+                    body.scrollTop = body.scrollHeight;
+                }
+
+                // --- Live Queries ---
+                async function _liveTicketLookup(text, body) {
+                    // Check if user is asking about a specific ticket number
+                    var match = text.match(/(?:albaran|albarán|ticket|nº|numero|#)\s*(\d{5,})/i) || text.match(/\b(\d{9,12})\b/);
+                    if (!match) return false;
+
+                    var ticketId = match[1];
+                    _addBotMsg(body, "Buscando albarán <b>#" + ticketId + "</b>...", null);
+
+                    try {
+                        var snap = await db.collection('tickets').where('id', '==', ticketId).get();
+                        if (snap.empty) {
+                            var doc = await db.collection('tickets').doc(ticketId).get();
+                            if (!doc.exists) {
+                                _addBotMsg(body, "No se encontró el albarán <b>#" + ticketId + "</b>. Verifica el número e intenta de nuevo.", null);
+                                return true;
+                            }
+                            var d = doc.data();
+                            _renderTicketResult(body, ticketId, d);
+                        } else {
+                            snap.forEach(function(doc) {
+                                _renderTicketResult(body, ticketId, doc.data());
+                            });
+                        }
+                    } catch(err) {
+                        _addBotMsg(body, "Error al buscar: " + err.message, null);
+                    }
+                    return true;
+                }
+
+                function _renderTicketResult(body, id, d) {
+                    var status = d.status || 'desconocido';
+                    var statusColor = status === 'Entregado' ? '#4CAF50' : status === 'En reparto' ? '#2196F3' : status === 'Incidencia' ? '#FF5252' : '#FF9800';
+                    var html = "<b>Albarán #" + id + "</b><br>" +
+                        "<span style='color:" + statusColor + "; font-weight:bold;'>" + status.toUpperCase() + "</span><br>" +
+                        (d.receiver ? "<b>Destinatario:</b> " + d.receiver + "<br>" : '') +
+                        (d.receiverAddress ? "<b>Dirección:</b> " + d.receiverAddress + "<br>" : '') +
+                        (d.city ? "<b>Ciudad:</b> " + d.city + "<br>" : '') +
+                        (d.packages ? "<b>Bultos:</b> " + d.packages : '') +
+                        (d.weight ? " | <b>Peso:</b> " + d.weight + "kg" : '') +
+                        (d.deliveredAt ? "<br><b>Entregado:</b> " + (typeof d.deliveredAt.toDate === 'function' ? d.deliveredAt.toDate().toLocaleString('es-ES') : d.deliveredAt) : '');
+                    _addBotMsg(body, html, [{ label: 'Buscar en Central', fn: "erpOpenTab('albaranes-central')" }]);
+                }
+
+                // --- Main Send ---
+                window.sendAIPrompt = function(textStr) {
+                    var input = document.getElementById('ai-chat-input');
+                    var text = textStr || input.value.trim();
+                    if (!text) return;
+
+                    input.value = '';
+                    var body = document.getElementById('ai-chat-body');
+
+                    // Hide suggestions
+                    var sugg = document.getElementById('ai-suggestions-box');
+                    if (sugg) sugg.style.display = 'none';
+
+                    // User message
+                    var userDiv = document.createElement('div');
+                    userDiv.style.cssText = 'align-self:flex-end; background:var(--brand-primary); color:white; padding:10px 14px; border-radius:12px 12px 0 12px; font-size:0.85rem; max-width:85%;';
+                    userDiv.textContent = text;
+                    body.appendChild(userDiv);
+                    body.scrollTop = body.scrollHeight;
+
+                    // Process with delay
+                    setTimeout(async function() {
+                        // 1. Check for navigation intent
+                        var navTarget = _checkNavIntent(text);
+                        if (navTarget) {
+                            try { erpOpenTab(navTarget); } catch(e) {}
+                            _addBotMsg(body, "Abriendo <b>" + navTarget + "</b>...", null);
+                            return;
+                        }
+
+                        // 2. Check for live ticket lookup
+                        var wasLive = await _liveTicketLookup(text, body);
+                        if (wasLive) return;
+
+                        // 3. Knowledge base match
+                        var topic = _findMatch(text);
+                        if (topic) {
+                            var reply = typeof topic.reply === 'function' ? topic.reply() : topic.reply;
+                            _addBotMsg(body, reply, topic.actions || null);
+                        } else {
+                            // Default fallback
+                            _addBotMsg(body,
+                                "No he encontrado información exacta sobre eso. Puedo ayudarte con:<br><br>" +
+                                "<b>Facturación</b> · <b>Tarifas</b> (artículos y peso) · <b>Albaranes</b> · <b>Comunicaciones masivas</b> · <b>POD</b> · <b>Incidencias</b> · <b>Clientes</b> · <b>Buzón</b> · <b>Contabilidad</b> · <b>Exportaciones</b><br><br>" +
+                                "También puedo <b>abrir secciones</b> (ej: <i>'abrir tarifas'</i>) o <b>buscar albaranes</b> por número (ej: <i>'albarán 150200209'</i>).",
+                                [{ label: 'Ver capacidades', fn: "sendAIPrompt('¿Qué puedes hacer?')" }]
+                            );
+                        }
+                    }, 600);
+                };
+
+                // Re-update dynamic-identity-name when chat modal is opened
+                document.getElementById('ai-assistant-fab').addEventListener('click', function() {
+                    if (window.adminIdentity) {
+                        document.querySelectorAll('.dynamic-identity-name').forEach(function(el) { el.textContent = window.adminIdentity; });
+                    }
+                });
+            })();
         </script>
 
         <!-- Usuarios View -->
