@@ -1349,6 +1349,7 @@ window.importGlobalToClient = async () => {
         const globalItems = globalData.items || {};
         const tariffMode = globalData.tariffMode || 'size';
         const weightTariff = globalData.weightTariff || null;
+        const weightSurcharge = globalData.weightSurcharge || null;
 
         // Validation depending on mode
         if (tariffMode === 'weight') {
@@ -1369,6 +1370,7 @@ window.importGlobalToClient = async () => {
             assignedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
         if (weightTariff) clientTariffData.weightTariff = weightTariff;
+        if (weightSurcharge) clientTariffData.weightSurcharge = weightSurcharge;
 
         await db.collection('tariffs').doc(clientUid).set(clientTariffData, { merge: true });
 

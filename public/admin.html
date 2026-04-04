@@ -2482,6 +2482,29 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </thead>
                                     <tbody id="tariff-items-body"></tbody>
                                 </table>
+                                <!-- WEIGHT SURCHARGE PANEL -->
+                                <div id="weight-surcharge-panel" style="margin-top:12px; background:#1a2a1a; border:1px solid #2e5e2e; border-radius:6px; padding:12px;">
+                                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                                        <input type="checkbox" id="ws-enabled" onchange="toggleWeightSurcharge()" style="scale:1.2; cursor:pointer;">
+                                        <label for="ws-enabled" style="font-size:0.85rem; font-weight:bold; color:#4CAF50; cursor:pointer;">
+                                            <span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">scale</span> Recargo por Peso
+                                        </label>
+                                    </div>
+                                    <div id="ws-fields" style="display:none; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                                        <div style="flex:1; min-width:140px;">
+                                            <label style="font-size:0.7rem; color:#888; display:block; margin-bottom:3px;">A partir de (kg)</label>
+                                            <input type="number" step="0.1" min="0" id="ws-threshold" placeholder="10" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2e5e2e; color:white; border-radius:4px; font-size:0.85rem; box-sizing:border-box;">
+                                        </div>
+                                        <div style="flex:1; min-width:140px;">
+                                            <label style="font-size:0.7rem; color:#888; display:block; margin-bottom:3px;">€ por kg extra</label>
+                                            <input type="number" step="0.01" min="0" id="ws-rate" placeholder="0.30" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2e5e2e; color:white; border-radius:4px; font-size:0.85rem; box-sizing:border-box;">
+                                        </div>
+                                        <button onclick="saveWeightSurcharge()" style="background:#4CAF50; border:none; color:white; padding:6px 16px; border-radius:4px; cursor:pointer; font-size:0.8rem; font-weight:bold; white-space:nowrap;">
+                                            <span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">save</span> Guardar
+                                        </button>
+                                    </div>
+                                    <div id="ws-summary" style="display:none; margin-top:8px; font-size:0.78rem; color:#81C784;"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -7132,6 +7155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     } else {
                         renderTariffLevel();
                         if (uid.startsWith("GLOBAL_")) renderSubTariffTabs();
+                        renderWeightSurchargePanel();
                     }
                 } catch (e) { console.error(e); }
             }
@@ -7442,6 +7466,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
                     renderWeightBrackets();
+                } catch(e) { alert('Error: ' + e.message); }
+            };
+
+            // ============================================================
+            //  WEIGHT SURCHARGE — Recargo por peso (complemento)
+            // ============================================================
+            function renderWeightSurchargePanel() {
+                var ws = (currentTariffDocData && currentTariffDocData.weightSurcharge) || {};
+                var enabled = ws.enabled === true;
+                var checkbox = document.getElementById('ws-enabled');
+                var fields = document.getElementById('ws-fields');
+                var summary = document.getElementById('ws-summary');
+                if (checkbox) checkbox.checked = enabled;
+                if (fields) fields.style.display = enabled ? 'flex' : 'none';
+                if (enabled) {
+                    var thEl = document.getElementById('ws-threshold');
+                    var rtEl = document.getElementById('ws-rate');
+                    if (thEl) thEl.value = ws.thresholdKg || '';
+                    if (rtEl) rtEl.value = ws.ratePerKg || '';
+                    if (summary && ws.thresholdKg && ws.ratePerKg) {
+                        summary.style.display = 'block';
+                        summary.textContent = 'Activo: a partir de ' + ws.thresholdKg + ' kg → +' + ws.ratePerKg + '€/kg extra';
+                    } else if (summary) {
+                        summary.style.display = 'none';
+                    }
+                } else if (summary) {
+                    summary.style.display = 'none';
+                }
+            }
+
+            window.toggleWeightSurcharge = async function() {
+                var enabled = document.getElementById('ws-enabled').checked;
+                if (!currentTariffDocData) return;
+                if (!currentTariffDocData.weightSurcharge) currentTariffDocData.weightSurcharge = {};
+                currentTariffDocData.weightSurcharge.enabled = enabled;
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                } catch(e) { console.error(e); }
+                renderWeightSurchargePanel();
+            };
+
+            window.saveWeightSurcharge = async function() {
+                var threshold = parseFloat(document.getElementById('ws-threshold').value);
+                var rate = parseFloat(document.getElementById('ws-rate').value);
+                if (isNaN(threshold) || threshold < 0) { alert('Introduce un umbral válido.'); return; }
+                if (isNaN(rate) || rate < 0) { alert('Introduce una tarifa por kg válida.'); return; }
+                if (!currentTariffDocData.weightSurcharge) currentTariffDocData.weightSurcharge = { enabled: true };
+                currentTariffDocData.weightSurcharge.thresholdKg = threshold;
+                currentTariffDocData.weightSurcharge.ratePerKg = rate;
+                currentTariffDocData.weightSurcharge.enabled = true;
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                    alert('Recargo por peso guardado.');
+                    renderWeightSurchargePanel();
                 } catch(e) { alert('Error: ' + e.message); }
             };
 
@@ -9836,6 +9914,18 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     const sizeKey = (t.size || 'Bulto').toLowerCase();
                     price = (parseInt(t.packages) || 1) * (activeTariff[sizeKey] || 0);
                 }
+                // Weight surcharge
+                if (baseT.weightSurcharge && baseT.weightSurcharge.enabled) {
+                    const ws = baseT.weightSurcharge;
+                    const threshold = parseFloat(ws.thresholdKg) || 0;
+                    const rateKg = parseFloat(ws.ratePerKg) || 0;
+                    if (rateKg > 0) {
+                        let tw = 0;
+                        if (t.packagesList) { t.packagesList.forEach(p => { tw += (parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1); }); }
+                        else { tw = parseFloat(t.weight) || parseFloat(t.kilos) || 0; }
+                        if (tw > threshold) price += (tw - threshold) * rateKg;
+                    }
+                }
                 return price;
             }
 
@@ -9950,6 +10040,26 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     const sizeKey = (t.size || 'Bulto').toLowerCase();
                     const rate = parseFloat(activeTariff[sizeKey]) || 0;
                     price = (parseInt(t.packages) || 1) * rate;
+                }
+
+                // 7. Weight Surcharge (recargo por peso — complemento a tarifa de artículos)
+                if (baseT.weightSurcharge && baseT.weightSurcharge.enabled) {
+                    const ws = baseT.weightSurcharge;
+                    const threshold = parseFloat(ws.thresholdKg) || 0;
+                    const rateKg = parseFloat(ws.ratePerKg) || 0;
+                    if (rateKg > 0) {
+                        let totalWeight = 0;
+                        if (t.packagesList && t.packagesList.length > 0) {
+                            t.packagesList.forEach(p => {
+                                totalWeight += (parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1);
+                            });
+                        } else {
+                            totalWeight = parseFloat(t.weight) || parseFloat(t.kilos) || 0;
+                        }
+                        if (totalWeight > threshold) {
+                            price += (totalWeight - threshold) * rateKg;
+                        }
+                    }
                 }
 
                 if (price === 0) {
