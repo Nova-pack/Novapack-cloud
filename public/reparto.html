@@ -72,6 +72,19 @@
     </script>
 
 
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js').then(function(reg) {
+                    console.log('[SW] Registered, scope:', reg.scope);
+                }).catch(function(err) {
+                    console.warn('[SW] Registration failed:', err);
+                });
+            });
+        }
+    </script>
+
     <!-- App Logic -->
     <script src="reparto.js" defer></script>
 </head>
@@ -114,7 +127,7 @@
         border-radius:2px; animation: rptBarFill 1.8s ease 0.8s forwards;
     }
     .intro-status-rpt {
-        font-family:'Inter',sans-serif; font-size:0.6rem; color:#333; letter-spacing:4px;
+        font-family:'Inter',sans-serif; font-size:0.7rem; color:#333; letter-spacing:4px;
         margin-top:10px; text-transform:uppercase;
         opacity:0; animation: rptFadeUp 0.4s ease 0.9s forwards;
     }
@@ -254,6 +267,7 @@
             <div class="logo">NOVAPACK<span>➤</span></div>
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
+            <span id="connection-dot" class="conn-dot online" title="Conectado"></span>
             <span id="driver-name" class="driver-badge">REPARTIDOR</span>
             <button class="header-btn" id="btn-clean-route" title="Limpiar entregas completadas">🧹</button>
             <button class="header-btn" id="btn-sort-route" title="Ordenar ruta por GPS">🧭</button>
@@ -331,7 +345,7 @@
                             <label class="form-label" style="margin:0;">✍️ Firma del receptor</label>
                             <button class="btn btn-sm btn-outline" id="btn-clear-sig" style="padding:2px 10px; font-size:0.65rem; color:var(--danger);">Borrar</button>
                         </div>
-                        <canvas id="sig-canvas" width="460" height="140"></canvas>
+                        <canvas id="sig-canvas"></canvas>
                     </div>
                     <div class="form-group">
                         <label class="form-label">📸 Foto <span style="color:var(--text-dim); text-transform:none;">(opcional)</span></label>

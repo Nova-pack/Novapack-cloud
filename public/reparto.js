@@ -224,6 +224,23 @@ document.addEventListener('DOMContentLoaded', function() {
 function initApp() {
     var storage = firebase.storage();
 
+    // --- CONNECTION STATUS MONITOR ---
+    function updateConnectionDot(online) {
+        var dot = document.getElementById('connection-dot');
+        if (!dot) return;
+        dot.className = 'conn-dot ' + (online ? 'online' : 'offline');
+        dot.title = online ? 'Conectado' : 'Sin conexión';
+    }
+    updateConnectionDot(navigator.onLine);
+    window.addEventListener('online', function() {
+        updateConnectionDot(true);
+        showToast('Conexión restablecida.', 'success');
+    });
+    window.addEventListener('offline', function() {
+        updateConnectionDot(false);
+        showToast('Sin conexión a Internet.', 'warning', 5000);
+    });
+
     // --- AUTH: PHONE SMS ---
     document.getElementById('btn-send-sms').addEventListener('click', async function() {
         var phoneRaw = document.getElementById('phone-input').value.trim();
@@ -489,6 +506,7 @@ function initApp() {
             stopScanner();
             // Unsubscribe from Firestore listeners
             if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+            if (pickupUnsubscribe) { pickupUnsubscribe(); pickupUnsubscribe = null; }
             // Reset all session state
             currentDriverPhone = '';
             currentDriverName = '';
@@ -496,11 +514,15 @@ function initApp() {
             deliveries = [];
             manualOrder = null;
             currentScanDoc = null;
+            currentFilter = 'pending';
             knownDeliveryIds = new Set();
+            knownPickupIds = new Set();
+            isFirstPickupSnapshot = true;
             scannedPackages = {};
             isFirstSnapshot = true;
             _adminRoutes = [];
             _isMasterPinSession = false;
+            confirmInProgress = false;
             // Hide all views, show login
             document.getElementById('main-app').style.display = 'none';
             document.getElementById('driver-selector-view').style.display = 'none';
@@ -1427,23 +1449,16 @@ function initApp() {
                 deliveryData.billingTarget = 'remitente';
                 deliveryData.billingName = currentScanDoc.sender || currentScanDoc.clientName || '';
             }
-            deliveryData.billingReady = true;
-
-            // Upload signature (with timeout, non-blocking on failure)
-            try {
-                var sigData = getSignatureDataURL();
-                if (sigData) {
-                    var sigBlob = await (await fetch(sigData)).blob();
-                    var sigRef = storage.ref('deliveries/' + docId + '/signature.png');
-                    await withTimeout(sigRef.put(sigBlob, { contentType: 'image/png' }), 15000, 'Firma');
-                    deliveryData.signatureURL = await withTimeout(sigRef.getDownloadURL(), 5000, 'Firma URL');
-                }
-            } catch (sigErr) {
-                console.warn('Signature upload failed (will save delivery anyway):', sigErr);
-                showToast('⚠️ Firma no guardada, pero la entrega se registrará.', 'warning');
+            // Upload signature (MANDATORY — abort delivery if fails)
+            var sigData = getSignatureDataURL();
+            if (sigData) {
+                var sigBlob = await (await fetch(sigData)).blob();
+                var sigRef = storage.ref('deliveries/' + docId + '/signature.png');
+                await withTimeout(sigRef.put(sigBlob, { contentType: 'image/png' }), 15000, 'Firma');
+                deliveryData.signatureURL = await withTimeout(sigRef.getDownloadURL(), 5000, 'Firma URL');
             }
 
-            // Upload photo (with timeout, non-blocking on failure)
+            // Upload photo (optional, non-blocking on failure)
             try {
                 var photoFile = document.getElementById('confirm-photo').files[0];
                 if (photoFile) {
@@ -1455,6 +1470,9 @@ function initApp() {
             } catch (photoErr) {
                 console.warn('Photo upload failed (will save delivery anyway):', photoErr);
             }
+
+            // billingReady only if signature was uploaded
+            deliveryData.billingReady = !!deliveryData.signatureURL;
 
             // Save delivery status (this is the critical operation)
             await withTimeout(docRef.update(deliveryData), 10000, 'Firestore');
@@ -1513,12 +1531,24 @@ function initApp() {
         }
     });
 
-    // --- SIGNATURE CANVAS ---
+    // --- SIGNATURE CANVAS (responsive) ---
     (function() {
         var canvas = document.getElementById('sig-canvas');
         if (!canvas) return;
         var ctx = canvas.getContext('2d');
         var drawing = false, lx = 0, ly = 0;
+
+        function resizeCanvas() {
+            var wrap = canvas.parentElement;
+            var w = wrap ? wrap.clientWidth : 300;
+            var h = Math.round(w * 0.35); // ~35% aspect ratio
+            if (canvas.width !== w || canvas.height !== h) {
+                canvas.width = w;
+                canvas.height = h;
+            }
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
 
         function pos(e) {
             var r = canvas.getBoundingClientRect();

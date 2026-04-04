@@ -1,9 +1,12 @@
-const CACHE_NAME = 'novapack-repartidor-v5';
+const CACHE_NAME = 'novapack-repartidor-v6';
 const urlsToCache = [
-    '/repartidor.html',
+    '/reparto.html',
+    '/reparto.css',
+    '/reparto.js',
     '/manifest-repartidor.json',
     '/firebase-config.js',
-    '/libs/html5-qrcode.min.js'
+    '/libs/html5-qrcode.min.js',
+    '/icon_new.png'
 ];
 
 self.addEventListener('install', event => {

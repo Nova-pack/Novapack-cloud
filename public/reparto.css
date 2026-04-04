@@ -37,14 +37,23 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:'
 .app-header .logo { font-size:0.9rem; font-weight:300; letter-spacing:2px; color:white; font-family:'Xenotron', sans-serif; text-shadow:0 0 10px rgba(255,77,0,0.3); white-space:nowrap; }
 .app-header .logo span { color:var(--brand); font-family:sans-serif; font-weight:900; font-size:0.8em; filter:drop-shadow(0 0 5px rgba(255,59,48,0.5)); }
 .driver-badge {
-    background:var(--brand); color:white; font-size:0.65rem; font-weight:800;
-    padding:3px 10px; border-radius:20px; letter-spacing:1px;
+    background:var(--brand); color:white; font-size:0.7rem; font-weight:800;
+    padding:4px 12px; border-radius:20px; letter-spacing:1px;
 }
+
+/* CONNECTION STATUS DOT */
+.conn-dot {
+    width:8px; height:8px; border-radius:50%; flex-shrink:0;
+    transition:background 0.3s;
+}
+.conn-dot.online { background:var(--success); box-shadow:0 0 6px rgba(76,175,80,0.6); }
+.conn-dot.offline { background:var(--danger); box-shadow:0 0 6px rgba(255,59,48,0.6); animation:blink 1.5s infinite; }
+@keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 
 /* HEADER BUTTONS */
 .header-btn {
     background:rgba(255,255,255,0.06); border:1px solid var(--border); color:var(--text);
-    width:36px; height:36px; border-radius:10px; font-size:1.1rem;
+    width:44px; height:44px; border-radius:10px; font-size:1.1rem;
     display:flex; align-items:center; justify-content:center;
     cursor:pointer; transition:all 0.15s;
 }
@@ -82,8 +91,8 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:'
 .nav-btn {
     background:none; border:none; color:var(--text-dim); cursor:pointer;
     display:flex; flex-direction:column; align-items:center; gap:2px;
-    font-size:0.6rem; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;
-    padding:4px 12px; transition:all 0.2s;
+    font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;
+    padding:6px 16px; min-height:44px; transition:all 0.2s;
 }
 .nav-btn .icon { font-size:1.4rem; }
 .nav-btn.active { color:var(--brand); }
@@ -109,7 +118,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:'
     text-shadow:0 0 15px rgba(255,77,0,0.3);
 }
 .login-logo span { color:var(--brand); font-family:sans-serif; font-weight:900; font-size:0.8em; filter:drop-shadow(0 0 5px rgba(255,59,48,0.5)); }
-.login-sub { text-align:center; font-size:0.6rem; color:var(--text-dim); letter-spacing:5px; margin-bottom:8px; }
+.login-sub { text-align:center; font-size:0.7rem; color:var(--text-dim); letter-spacing:5px; margin-bottom:8px; }
 .login-mode {
     text-align:center; margin-bottom:25px;
 }
@@ -168,7 +177,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:'
     border-radius:var(--radius-sm); padding:10px 12px; text-align:center;
 }
 .stat-box .num { font-size:1.5rem; font-weight:900; color:var(--brand); }
-.stat-box .lbl { font-size:0.6rem; color:var(--text-dim); text-transform:uppercase; font-weight:700; letter-spacing:0.5px; }
+.stat-box .lbl { font-size:0.7rem; color:var(--text-dim); text-transform:uppercase; font-weight:700; letter-spacing:0.5px; }
 
 .delivery-list { padding:0 12px; }
 .delivery-card {
@@ -182,7 +191,7 @@ html, body { height:100%; background:var(--bg); color:var(--text); font-family:'
 
 .dc-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
 .dc-id { font-size:0.7rem; color:var(--brand); font-weight:800; letter-spacing:1px; }
-.dc-status { font-size:0.65rem; font-weight:700; padding:2px 8px; border-radius:10px; }
+.dc-status { font-size:0.7rem; font-weight:700; padding:3px 10px; border-radius:10px; }
 .dc-status.pending { background:rgba(255,165,0,0.15); color:var(--warning); }
 .dc-status.delivered { background:rgba(76,175,80,0.15); color:var(--success); }
 
