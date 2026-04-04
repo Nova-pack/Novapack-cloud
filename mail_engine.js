@@ -144,21 +144,25 @@ function extractTicketRef(text) {
     match = clean.match(/(?:pod|comprobante|justificante|prueba\s+de\s+entrega|acuse)\s+(?:del?|para|de\s+el)?\s*[#nº]*\s*(\d{5,12})/i);
     if (match) return match[1];
 
-    // Format 3: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
+    // Format 3a: New year-based format: PREFIX-YY-SEQ (e.g. 5402-26-0, 5402-26-12)
+    match = clean.match(/\b(\d{3,5})-(\d{2})-(\d{1,5})\b/);
+    if (match) return match[1] + '-' + match[2] + '-' + match[3];
+
+    // Format 3b: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
     // Requires 2+ alpha chars as prefix to avoid capturing trailing letter from words like "albarán"
     match = clean.match(/\b([A-Z]{2,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
     if (match) return (match[1] + match[2]).toUpperCase();
 
-    // Format 4: Standalone long number (6-12 digits) likely to be an albarán
-    // Only match if no other significant numbers present to avoid false positives
-    match = clean.match(/\b(\d{6,12})\b/);
+    // Format 4: Standalone long number — ONLY 9+ digits to match real albarán IDs
+    // (e.g. 150200209). Shorter numbers are too ambiguous (invoices, quantities, CPs, etc.)
+    match = clean.match(/\b(\d{9,12})\b/);
     if (match) {
-        // Validate it's not a phone number (9 digits starting with 6/7/9 in Spain)
         const num = match[1];
+        // Exclude Spanish phone numbers (9 digits starting with 6/7/9)
         const isPhone = (num.length === 9 && /^[679]/.test(num));
-        const isDate = /^\d{2}[\/\-]\d{2}[\/\-]\d{2,4}$/.test(num);
-        const isYear = (num.length === 4 && parseInt(num) >= 1990 && parseInt(num) <= 2030);
-        if (!isPhone && !isDate && !isYear) {
+        // Exclude IBANs and bank account fragments
+        const isBankLike = num.length >= 10 && num.length <= 12;
+        if (!isPhone && !isBankLike) {
             return num;
         }
     }
@@ -323,12 +327,15 @@ async function run() {
                                 const date = parsed.date || new Date();
                                 const messageId = parsed.messageId || `imap_${seqno}_${Date.now()}`;
 
-                                // Body: prefer text, fallback to HTML→text
+                                // Body: store both plain text and HTML
                                 let body = '';
+                                let htmlBody = '';
                                 if (parsed.text) {
                                     body = parsed.text.substring(0, MAX_BODY_LENGTH);
-                                } else if (parsed.html) {
-                                    body = htmlToText(parsed.html).substring(0, MAX_BODY_LENGTH);
+                                }
+                                if (parsed.html) {
+                                    htmlBody = parsed.html.substring(0, MAX_BODY_LENGTH * 3); // HTML is verbose
+                                    if (!body) body = htmlToText(parsed.html).substring(0, MAX_BODY_LENGTH);
                                 }
 
                                 // Spam/publicity filter
@@ -338,8 +345,16 @@ async function run() {
                                     return;
                                 }
 
-                                // Attachment metadata (not content)
+                                // Attachment metadata + content for small files
                                 const attachments = extractAttachmentInfo(parsed.attachments);
+                                // Store small attachments as base64 data URLs (< 200KB each)
+                                if (parsed.attachments && parsed.attachments.length > 0) {
+                                    parsed.attachments.forEach((att, idx) => {
+                                        if (att.content && att.size && att.size < 200000 && idx < 5) {
+                                            attachments[idx].dataUrl = `data:${att.contentType || 'application/octet-stream'};base64,${att.content.toString('base64')}`;
+                                        }
+                                    });
+                                }
 
                                 const category = categorizeEmail(subject, body);
                                 const ticketRef = extractTicketRef(subject + ' ' + body);
@@ -349,6 +364,7 @@ async function run() {
                                     from,
                                     subject,
                                     body,
+                                    htmlBody: htmlBody || '',
                                     date,
                                     category,
                                     ticketRef,

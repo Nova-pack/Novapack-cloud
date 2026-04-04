@@ -274,9 +274,34 @@ window.openMailboxModal = function(id) {
     const dateEl = document.getElementById('mailbox-modal-date');
     if (dateEl) dateEl.innerText = dateStr;
 
-    // Body Text
+    // Body: prefer HTML, fallback to plain text
     const bodyEl = document.getElementById('mailbox-modal-body');
-    if (bodyEl) bodyEl.innerText = item.body || '(Sin cuerpo de mensaje visible. Revisa el correo original.)';
+    if (bodyEl) {
+        if (item.htmlBody) {
+            // Render HTML email in a sandboxed iframe
+            bodyEl.innerHTML = '';
+            const iframe = document.createElement('iframe');
+            iframe.style.cssText = 'width:100%; border:none; background:#fff; border-radius:6px; min-height:200px;';
+            iframe.sandbox = 'allow-same-origin';
+            bodyEl.appendChild(iframe);
+            iframe.addEventListener('load', function() {
+                try {
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    doc.open();
+                    doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#222;padding:10px;margin:0;word-break:break-word;}img{max-width:100%;height:auto;}</style></head><body>' + item.htmlBody + '</body></html>');
+                    doc.close();
+                    // Auto-resize iframe to content height
+                    setTimeout(function() {
+                        try { iframe.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
+                    }, 200);
+                } catch(e) { iframe.srcdoc = item.htmlBody; }
+            });
+            // Trigger load for srcdoc-capable browsers
+            iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#222;padding:10px;margin:0;word-break:break-word;}img{max-width:100%;height:auto;}</style></head><body>' + item.htmlBody + '</body></html>';
+        } else {
+            bodyEl.innerText = item.body || '(Sin cuerpo de mensaje visible. Revisa el correo original.)';
+        }
+    }
 
     // Category dropdown
     const catSelect = document.getElementById('mailbox-modal-category-select');
@@ -381,14 +406,30 @@ window.openMailboxModal = function(id) {
     const attachPanel = document.getElementById('mailbox-modal-attachments');
     if (attachPanel) {
         if (item.attachments && item.attachments.length > 0) {
-            let attHtml = '<div style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">Adjuntos:</div>';
+            let attHtml = '<div style="font-size:0.75rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">📎 Adjuntos (' + item.attachments.length + '):</div>';
             item.attachments.forEach(att => {
                 const sizeKB = att.size ? (att.size / 1024).toFixed(1) + ' KB' : '';
-                attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:0.8rem; color:#ccc;">
-                    <span class="material-symbols-outlined" style="font-size:1rem; color:#FF9800;">attach_file</span>
-                    <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${att.filename}</span>
-                    <span style="color:#666; font-size:0.7rem;">${sizeKB}</span>
-                </div>`;
+                const isImage = (att.contentType || '').startsWith('image/');
+                if (att.dataUrl) {
+                    // Downloadable attachment
+                    attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:5px 0; font-size:0.8rem; color:#ccc; border-bottom:1px solid #222;">
+                        <span class="material-symbols-outlined" style="font-size:1rem; color:#4CAF50;">attach_file</span>
+                        <a href="${att.dataUrl}" download="${att.filename}" style="flex:1; color:#4FC3F7; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Descargar">${att.filename}</a>
+                        <span style="color:#666; font-size:0.7rem;">${sizeKB}</span>
+                        <a href="${att.dataUrl}" download="${att.filename}" style="color:#4CAF50; font-size:0.7rem; text-decoration:none; font-weight:bold; padding:2px 8px; border:1px solid #4CAF50; border-radius:4px;">⬇ Descargar</a>
+                    </div>`;
+                    // Preview for images
+                    if (isImage) {
+                        attHtml += `<div style="padding:4px 0 8px;"><img src="${att.dataUrl}" style="max-width:100%; max-height:200px; border-radius:6px; border:1px solid #333;"></div>`;
+                    }
+                } else {
+                    // Metadata only (file too large or not stored)
+                    attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:5px 0; font-size:0.8rem; color:#ccc; border-bottom:1px solid #222;">
+                        <span class="material-symbols-outlined" style="font-size:1rem; color:#FF9800;">attach_file</span>
+                        <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${att.filename}</span>
+                        <span style="color:#666; font-size:0.7rem;">${sizeKB}</span>
+                    </div>`;
+                }
             });
             attachPanel.innerHTML = attHtml;
             attachPanel.style.display = 'block';

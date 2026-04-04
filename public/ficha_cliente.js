@@ -60,41 +60,39 @@
         container.innerHTML = `
         <div style="display:flex; flex-direction:column; height:100%; background:#1e1e1e; color:#d4d4d4; font-family:'Segoe UI',sans-serif;">
             <!-- HEADER BAR -->
-            <div style="background:linear-gradient(135deg, #1a237e, #283593); padding:16px 24px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+            <div style="background:linear-gradient(135deg, #1a237e, #283593); padding:10px 16px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
                 <div>
-                    <div style="font-size:1.3rem; font-weight:bold; color:#fff; display:flex; align-items:center; gap:10px;">
-                        <span class="material-symbols-outlined" style="font-size:1.5rem;">business</span>
+                    <div style="font-size:1rem; font-weight:bold; color:#fff; display:flex; align-items:center; gap:8px;">
+                        <span class="material-symbols-outlined" style="font-size:1.1rem;">business</span>
                         ${d.name || 'Sin Nombre'}
                     </div>
-                    <div style="font-size:0.8rem; color:#9fa8da; margin-top:4px;">
-                        ID: #${d.idNum || 'N/A'} · NIF: ${d.nif || 'N/A'} · ${d.email || ''} · Forma Pago: <strong style="color:#FFD700;">${paymentLabels[d.paymentTerms] || 'Contado'}</strong>
+                    <div style="font-size:0.72rem; color:#9fa8da; margin-top:2px;">
+                        #${d.idNum || 'N/A'} · ${d.nif || 'N/A'} · ${d.email || ''} · <strong style="color:#FFD700;">${paymentLabels[d.paymentTerms] || 'Contado'}</strong>
                     </div>
                 </div>
-                <div style="display:flex; gap:8px;">
-                    <button onclick="window._fichaSaveAll()" style="background:#4CAF50; border:none; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:0.85rem; display:flex; align-items:center; gap:5px;">
-                        <span class="material-symbols-outlined" style="font-size:1rem;">save</span> Guardar Cambios
-                    </button>
-                </div>
+                <button onclick="window._fichaSaveAll()" style="background:#4CAF50; border:none; color:#fff; padding:6px 14px; border-radius:5px; cursor:pointer; font-weight:bold; font-size:0.78rem; display:flex; align-items:center; gap:4px;">
+                    <span class="material-symbols-outlined" style="font-size:0.95rem;">save</span> Guardar
+                </button>
             </div>
 
             <!-- SUB-TAB BAR -->
             <div id="ficha-subtab-bar" style="display:flex; background:#252526; border-bottom:2px solid #007acc; flex-shrink:0;">
-                <div class="ficha-subtab ${_fichaActiveSubTab === 'principal' ? 'active' : ''}" onclick="window._fichaSetSubTab('principal')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'principal' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'principal' ? '3px solid #007acc' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'principal' ? 'active' : ''}" onclick="window._fichaSetSubTab('principal')" style="padding:7px 14px; cursor:pointer; font-size:0.78rem; font-weight:600; color:${_fichaActiveSubTab === 'principal' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'principal' ? '3px solid #007acc' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
                     <span class="material-symbols-outlined" style="font-size:1rem;">person</span> PRINCIPAL
                 </div>
-                <div class="ficha-subtab ${_fichaActiveSubTab === 'economico' ? 'active' : ''}" onclick="window._fichaSetSubTab('economico')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'economico' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'economico' ? '3px solid #FF9800' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'economico' ? 'active' : ''}" onclick="window._fichaSetSubTab('economico')" style="padding:7px 14px; cursor:pointer; font-size:0.78rem; font-weight:600; color:${_fichaActiveSubTab === 'economico' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'economico' ? '3px solid #FF9800' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
                     <span class="material-symbols-outlined" style="font-size:1rem;">account_balance</span> DATOS ECONÓMICOS
                 </div>
-                <div class="ficha-subtab ${_fichaActiveSubTab === 'albaranes' ? 'active' : ''}" onclick="window._fichaSetSubTab('albaranes')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'albaranes' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'albaranes' ? '3px solid #2196F3' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'albaranes' ? 'active' : ''}" onclick="window._fichaSetSubTab('albaranes')" style="padding:7px 14px; cursor:pointer; font-size:0.78rem; font-weight:600; color:${_fichaActiveSubTab === 'albaranes' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'albaranes' ? '3px solid #2196F3' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
                     <span class="material-symbols-outlined" style="font-size:1rem;">inventory_2</span> ALBARANES
                 </div>
-                <div class="ficha-subtab ${_fichaActiveSubTab === 'facturacion' ? 'active' : ''}" onclick="window._fichaSetSubTab('facturacion')" style="padding:10px 20px; cursor:pointer; font-size:0.85rem; font-weight:600; color:${_fichaActiveSubTab === 'facturacion' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'facturacion' ? '3px solid #4CAF50' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
+                <div class="ficha-subtab ${_fichaActiveSubTab === 'facturacion' ? 'active' : ''}" onclick="window._fichaSetSubTab('facturacion')" style="padding:7px 14px; cursor:pointer; font-size:0.78rem; font-weight:600; color:${_fichaActiveSubTab === 'facturacion' ? '#fff' : '#888'}; border-bottom:${_fichaActiveSubTab === 'facturacion' ? '3px solid #4CAF50' : '3px solid transparent'}; display:flex; align-items:center; gap:5px; transition:all 0.2s;">
                     <span class="material-symbols-outlined" style="font-size:1rem;">receipt</span> FACTURACIÓN
                 </div>
             </div>
 
             <!-- SUB-TAB CONTENT -->
-            <div id="ficha-subtab-content" style="flex:1; overflow-y:auto; padding:20px 24px;">
+            <div id="ficha-subtab-content" style="flex:1; overflow-y:auto; padding:12px 16px;">
             </div>
         </div>`;
 
@@ -166,22 +164,22 @@
         const placeholder = opts.placeholder || '';
         if (type === 'select' && opts.options) {
             let optsHtml = opts.options.map(o => `<option value="${o.value}" ${o.value === value ? 'selected' : ''}>${o.label}</option>`).join('');
-            return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '150px'};">
-                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${label}</label>
-                <select id="${id}" style="width:${width}; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">${optsHtml}</select>
+            return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '120px'};">
+                <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">${label}</label>
+                <select id="${id}" style="width:${width}; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem;">${optsHtml}</select>
             </div>`;
         }
-        return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '150px'};">
-            <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">${label}</label>
+        return `<div style="flex:${opts.flex || 1}; min-width:${opts.minWidth || '120px'};">
+            <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">${label}</label>
             <input type="${type}" id="${id}" value="${(value || '').toString().replace(/"/g, '&quot;')}" placeholder="${placeholder}" ${readonly}
-                style="width:${width}; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+                style="width:${width}; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem; box-sizing:border-box;">
         </div>`;
     }
 
     function _sectionTitle(icon, text, color) {
-        return `<div style="display:flex; align-items:center; gap:8px; margin:20px 0 12px; padding-bottom:8px; border-bottom:1px solid #3c3c3c;">
-            <span class="material-symbols-outlined" style="color:${color}; font-size:1.1rem;">${icon}</span>
-            <span style="color:${color}; font-size:0.9rem; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${text}</span>
+        return `<div style="display:flex; align-items:center; gap:6px; margin:14px 0 6px; padding-bottom:5px; border-bottom:1px solid #3c3c3c;">
+            <span class="material-symbols-outlined" style="color:${color}; font-size:0.95rem;">${icon}</span>
+            <span style="color:${color}; font-size:0.8rem; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">${text}</span>
         </div>`;
     }
 
@@ -195,32 +193,32 @@
 
         c.innerHTML = `
         ${_sectionTitle('badge', 'Identificación', '#007acc')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Nº Cliente (ID)', 'fc-idnum', d.idNum, { flex: '0 0 100px', minWidth: '80px' })}
             ${_field('Razón Social / Empresa', 'fc-name', d.name, { flex: 3 })}
             ${_field('CIF / NIF', 'fc-nif', d.nif, { flex: 1 })}
         </div>
 
         ${_sectionTitle('mail', 'Contacto', '#4CAF50')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Email (Login)', 'fc-email', d.email, { type: 'email', readonly: true })}
             ${_field('Email Administración (Facturas)', 'fc-admin-email', d.adminEmail, { type: 'email', placeholder: 'administracion@empresa.com' })}
             ${_field('Teléfono', 'fc-phone', d.senderPhone || d.phone)}
         </div>
 
         ${_sectionTitle('location_on', 'Dirección Principal', '#FF9800')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Calle / Vía', 'fc-street', d.street, { flex: 3 })}
             ${_field('Número', 'fc-number', d.number, { flex: '0 0 80px', minWidth: '60px' })}
             ${_field('C. Postal', 'fc-cp', d.cp, { flex: '0 0 90px', minWidth: '70px' })}
         </div>
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Localidad', 'fc-city', d.localidad)}
             ${_field('Provincia', 'fc-province', d.province)}
         </div>
 
         ${_sectionTitle('account_tree', 'Relaciones', '#2196F3')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Filial Facturadora', 'fc-billing-company', d.billingCompanyId, {
                 type: 'select',
                 options: [{ value: '', label: '-- Central (por defecto) --' }].concat(
@@ -248,7 +246,7 @@
 
         c.innerHTML = `
         ${_sectionTitle('payments', 'Condiciones de Pago', '#FF9800')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Forma de Pago', 'fc-payment-terms', d.paymentTerms || 'contado', {
                 type: 'select',
                 options: [
@@ -265,13 +263,13 @@
         </div>
 
         ${_sectionTitle('description', 'Mandato SEPA', '#E040FB')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Referencia SEPA', 'fc-sepa-ref', d.sepaRef)}
             ${_field('Fecha Mandato SEPA', 'fc-sepa-date', d.sepaDate, { type: 'date' })}
         </div>
 
         ${_sectionTitle('sell', 'Tarifas y Cuota Plana', '#FFD700')}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             <div style="flex:1; min-width:150px;">
                 <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tarifa Global Asignada</label>
                 <select id="fc-tariff-eco" style="width:100%; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">
