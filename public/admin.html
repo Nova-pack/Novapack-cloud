@@ -1309,6 +1309,11 @@
                         <span class="material-symbols-outlined" style="font-size:16px;">move_to_inbox</span> Buzón
                     </button>
                     <!-- Fin Botón Buzón -->
+                    <!-- Botón Comunicaciones Masivas -->
+                    <button onclick="if(typeof erpOpenTab === 'function') erpOpenTab('comunicaciones');" style="background:linear-gradient(135deg, #E91E63, #AD1457); border:1px solid #880E4F; color:white; padding:4px 12px; font-size:0.8rem; cursor:pointer; border-radius:18px; display:flex; align-items:center; gap:5px; font-weight:bold; box-shadow:0 0 8px rgba(233,30,99,0.4);" onmouseover="this.style.boxShadow='0 0 12px rgba(233,30,99,0.8)'" onmouseout="this.style.boxShadow='0 0 8px rgba(233,30,99,0.4)'" title="Comunicaciones Masivas">
+                        <span class="material-symbols-outlined" style="font-size:16px;">campaign</span> Comunicaciones
+                    </button>
+                    <!-- Fin Botón Comunicaciones -->
                     <span id="erp-toolbar-identity" style="color:#aaa; font-size:0.78rem; font-weight:400;"></span>
                     <div style="width:1px; height:16px; background:#555;"></div>
                     <button onclick="logout()" title="Cerrar sesión" style="background:transparent; border:1px solid #555; color:#FF5252; padding:3px 10px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:4px;">
@@ -1789,6 +1794,111 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- Tab wrapper: Centro de Facturación -->
 <div id="erp-tab-facturas-central" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;"></div>
+
+<!-- Tab wrapper: Comunicaciones Masivas -->
+<div id="erp-tab-comunicaciones" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
+    <div class="erp-workspace-content" style="max-width:1100px; margin:0 auto; width:100%;">
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; flex-wrap:wrap; gap:15px;">
+            <div>
+                <h1 style="color:var(--brand-primary); margin:0; display:flex; align-items:center; gap:10px;">
+                    <span class="material-symbols-outlined" style="font-size:2rem;">campaign</span> Comunicaciones Masivas
+                </h1>
+                <p style="color:var(--text-dim); margin-top:5px; margin-bottom:0; font-size:0.9rem;">Enviar notificaciones y correos a clientes activos</p>
+            </div>
+            <div id="com-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>
+        </div>
+
+        <!-- Step 1: Detect Active Clients -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px; margin-bottom:20px;">
+            <h3 style="margin:0 0 15px; color:#FF9800; font-size:1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">group</span> 1. Destinatarios
+            </h3>
+            <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:15px;">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase;">Periodo</label>
+                    <select id="com-period" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.85rem;">
+                        <option value="year">Este Año</option>
+                        <option value="6m">Últimos 6 Meses</option>
+                        <option value="3m">Últimos 3 Meses</option>
+                        <option value="1m">Último Mes</option>
+                    </select>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase;">Min. Albaranes</label>
+                    <input type="number" id="com-min-tickets" value="1" min="1" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.85rem; width:80px;">
+                </div>
+                <button onclick="comDetectActiveClients()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px; align-self:flex-end;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">search</span> Detectar Clientes Activos
+                </button>
+                <button onclick="comSelectAll()" style="background:transparent; border:1px solid #555; color:#aaa; padding:10px 14px; border-radius:8px; font-size:0.85rem; cursor:pointer; align-self:flex-end;" title="Seleccionar/Deseleccionar todos">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">select_all</span>
+                </button>
+            </div>
+            <div id="com-client-summary" style="display:none; background:rgba(255,152,0,0.08); border:1px solid rgba(255,152,0,0.3); border-radius:8px; padding:12px 16px; margin-bottom:15px; font-size:0.85rem; color:#FF9800;"></div>
+            <div id="com-client-list" style="max-height:300px; overflow-y:auto; border:1px solid #333; border-radius:8px; background:#111;"></div>
+        </div>
+
+        <!-- Step 2: Compose Message -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px; margin-bottom:20px;">
+            <h3 style="margin:0 0 15px; color:#2196F3; font-size:1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">edit_note</span> 2. Redactar Mensaje
+            </h3>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                    <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase; display:block; margin-bottom:4px;">Asunto</label>
+                    <input type="text" id="com-subject" placeholder="Ej: Actualización de Tarifas 2026" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px 14px; border-radius:6px; font-size:0.9rem; box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase; display:block; margin-bottom:4px;">Mensaje <span style="color:#666; font-weight:normal;">(Variables: {nombre}, {empresa}, {ncliente})</span></label>
+                    <textarea id="com-body" rows="8" placeholder="Estimado/a {nombre},&#10;&#10;Le informamos que a partir del próximo mes se aplicarán las nuevas tarifas...&#10;&#10;Atentamente,&#10;NOVAPACK" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:12px 14px; border-radius:6px; font-size:0.9rem; font-family:inherit; resize:vertical; box-sizing:border-box; line-height:1.5;"></textarea>
+                </div>
+                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+                    <label style="font-size:0.75rem; color:#aaa; text-transform:uppercase;">Canales:</label>
+                    <label style="display:flex; align-items:center; gap:5px; font-size:0.85rem; cursor:pointer;">
+                        <input type="checkbox" id="com-ch-email" checked style="accent-color:#FF9800; width:16px; height:16px;"> Email (SMTP)
+                    </label>
+                    <label style="display:flex; align-items:center; gap:5px; font-size:0.85rem; cursor:pointer;">
+                        <input type="checkbox" id="com-ch-notify" checked style="accent-color:#FF9800; width:16px; height:16px;"> Notificación In-App
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Preview & Send -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px; margin-bottom:20px;">
+            <h3 style="margin:0 0 15px; color:#E91E63; font-size:1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">send</span> 3. Enviar
+            </h3>
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom:15px;">
+                <button onclick="comPreview()" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">preview</span> Vista Previa
+                </button>
+                <button onclick="comSend()" id="com-send-btn" style="background:linear-gradient(135deg,#E91E63,#AD1457); border:none; color:#fff; padding:10px 24px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                    <span class="material-symbols-outlined" style="font-size:1rem;">send</span> Enviar Comunicación
+                </button>
+            </div>
+            <div id="com-preview-box" style="display:none; background:#1a1a2e; border:1px solid #333; border-radius:8px; padding:16px; margin-bottom:15px;"></div>
+            <div id="com-progress" style="display:none;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                    <span id="com-progress-text" style="font-size:0.85rem; color:#aaa;">Enviando...</span>
+                    <span id="com-progress-count" style="font-size:0.85rem; color:#FF9800; font-weight:bold;"></span>
+                </div>
+                <div style="background:#222; border-radius:6px; height:8px; overflow:hidden;">
+                    <div id="com-progress-bar" style="height:100%; background:linear-gradient(90deg,#FF9800,#FF5722); width:0%; transition:width 0.3s;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaign History -->
+        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px;">
+            <h3 style="margin:0 0 15px; color:#aaa; font-size:1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">history</span> Historial de Campañas
+            </h3>
+            <div id="com-history" style="color:#888; font-size:0.85rem;">Cargando historial...</div>
+        </div>
+    </div>
+</div>
 
 <!-- Tab wrapper: Ticket Search -->
 <div id="erp-tab-ticket-search" style="display:none; flex:1; overflow:hidden; background:#0a0a0a; color:#d4d4d4;">
@@ -14676,7 +14786,8 @@ window.importTarifas50 = async () => {
 <script src="albaranes_central.js?v=20260402"></script>
 <script src="facturas_central.js?v=20260404"></script>
 <script src="monthly_billing_flow.js?v=20260404"></script>
-<script src="erp_tabs.js?v=20260402"></script>
+<script src="comunicaciones.js?v=20260404"></script>
+<script src="erp_tabs.js?v=20260404"></script>
 
 </body>
 </html>
