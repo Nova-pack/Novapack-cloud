@@ -427,6 +427,46 @@
         </div>
     </div>
 
+    <!-- ===== INCIDENT PHOTO MODAL ===== -->
+    <div class="modal-overlay" id="incident-modal">
+        <div class="modal-sheet" style="max-width:420px;">
+            <div class="modal-handle"></div>
+            <h3 style="color:#FF3B30; font-size:1rem; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
+                <span style="font-size:1.3rem;">⚠️</span> REPORTAR INCIDENCIA
+            </h3>
+            <p id="incident-modal-ticket" style="color:var(--text-dim); font-size:0.8rem; margin:0 0 16px;"></p>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="font-size:0.85rem;">📝 Motivo de la incidencia</label>
+                    <select id="incident-reason-select" class="form-control" style="font-size:0.9rem;">
+                        <option value="">Seleccionar motivo...</option>
+                        <option value="Direccion incorrecta">Direccion incorrecta</option>
+                        <option value="Ausente">Ausente</option>
+                        <option value="Rechazado">Rechazado</option>
+                        <option value="Rotura/Dano">Rotura / Dano en mercancia</option>
+                        <option value="Falta bultos">Faltan bultos</option>
+                        <option value="No localizable">No localizable</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="font-size:0.85rem;">💬 Detalle <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <input type="text" id="incident-detail" class="form-control" placeholder="Ej: paquete abierto, cristal roto..." maxlength="300" style="font-size:0.9rem;">
+                </div>
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="font-size:0.85rem;">📸 Foto evidencia <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <input type="file" id="incident-photo-input" accept="image/*" capture="environment" style="display:none;">
+                    <button class="btn btn-sm btn-outline" id="btn-incident-camera" style="width:100%; padding:10px;">📷 Tomar Foto</button>
+                    <img id="incident-photo-preview" style="display:none; width:100%; border-radius:8px; border:2px solid var(--border); max-height:200px; object-fit:contain; margin-top:8px;">
+                </div>
+                <button class="btn" id="btn-incident-send" style="background:#FF3B30; color:white; border:none; font-size:1rem; padding:14px;">
+                    ⚠️ ENVIAR INCIDENCIA
+                </button>
+                <button class="btn btn-outline" id="btn-incident-cancel" style="color:var(--text-dim);">CANCELAR</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ===== COOPER PHOTO MODAL ===== -->
     <div class="modal-overlay" id="cooper-modal">
         <div class="modal-sheet" style="max-width:420px;">
@@ -440,6 +480,10 @@
                 </button>
                 <img id="cooper-photo-preview" style="display:none; width:100%; border-radius:8px; border:2px solid var(--border); max-height:300px; object-fit:contain;">
                 <span id="cooper-photo-status" style="font-size:0.8rem; color:var(--text-dim); text-align:center;">Sin foto</span>
+                <div class="form-group" style="margin:0;">
+                    <label class="form-label" style="font-size:0.8rem;">📝 Nota <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <input type="text" id="cooper-note" class="form-control" placeholder="Ej: 2 bultos, P-4521..." maxlength="200" style="font-size:0.9rem;">
+                </div>
                 <button class="btn btn-success" id="btn-cooper-send" style="display:none; font-size:1rem; padding:14px;">
                     📤 ENVIAR FOTO
                 </button>

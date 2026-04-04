@@ -1052,28 +1052,89 @@ function initApp() {
     }
     window.closeModal = closeModal;
 
-    // --- REPORT INCIDENT ---
-    async function reportIncident(d) {
-        var reason = prompt('⚠️ REPORTAR INCIDENCIA\n\nIndica el motivo de la incidencia para el albarán ' + (d.id || d._id) + ':\n\nEjemplos: Dirección incorrecta, Ausente, Rechazado, Daño en mercancía, etc.');
-        if (!reason || !reason.trim()) return;
-        
-        showLoading();
+    // --- REPORT INCIDENT (with optional photo) ---
+    var _incidentDelivery = null;
+
+    function reportIncident(d) {
+        _incidentDelivery = d;
+        var modal = document.getElementById('incident-modal');
+        if (!modal) return;
+        document.getElementById('incident-modal-ticket').textContent = 'Albaran: ' + (d.id || d._id);
+        document.getElementById('incident-reason-select').value = '';
+        document.getElementById('incident-detail').value = '';
+        document.getElementById('incident-photo-input').value = '';
+        document.getElementById('incident-photo-preview').style.display = 'none';
+        document.getElementById('incident-photo-preview').src = '';
+        closeModal(); // close detail modal first
+        modal.classList.add('active');
+    }
+
+    // Incident camera
+    document.getElementById('btn-incident-camera').addEventListener('click', function() {
+        document.getElementById('incident-photo-input').click();
+    });
+    document.getElementById('incident-photo-input').addEventListener('change', function(e) {
+        var f = e.target.files[0];
+        if (f) {
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                document.getElementById('incident-photo-preview').src = ev.target.result;
+                document.getElementById('incident-photo-preview').style.display = 'block';
+            };
+            reader.readAsDataURL(f);
+        }
+    });
+
+    // Incident cancel
+    document.getElementById('btn-incident-cancel').addEventListener('click', function() {
+        document.getElementById('incident-modal').classList.remove('active');
+        _incidentDelivery = null;
+    });
+
+    // Incident send
+    document.getElementById('btn-incident-send').addEventListener('click', async function() {
+        var d = _incidentDelivery;
+        if (!d) return;
+        var reason = document.getElementById('incident-reason-select').value;
+        if (!reason) { showToast('Selecciona un motivo', 'error'); return; }
+        var detail = (document.getElementById('incident-detail').value || '').trim();
+        var fullReason = reason + (detail ? ' - ' + detail : '');
+
+        var sendBtn = document.getElementById('btn-incident-send');
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Enviando...';
+
         try {
-            var docRef = d._ref || db.collection('tickets').doc(d._id);
-            await docRef.update({
+            var updateData = {
                 status: 'Incidencia',
-                incidentReason: reason.trim(),
+                incidentReason: fullReason,
                 incidentReportedBy: currentDriverName,
                 incidentReportedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            closeModal();
-            showToast('⚠️ Incidencia reportada: ' + (d.id || d._id), 'warning');
+            };
+
+            // Upload photo if present
+            var photoFile = document.getElementById('incident-photo-input').files[0];
+            if (photoFile) {
+                var ext = photoFile.name.split('.').pop() || 'jpg';
+                var docId = d._id || d.docId;
+                var photoRef = storage.ref('incidents/' + docId + '/photo.' + ext);
+                await photoRef.put(photoFile, { contentType: photoFile.type });
+                updateData.incidentPhotoURL = await photoRef.getDownloadURL();
+            }
+
+            var docRef = d._ref || db.collection('tickets').doc(d._id);
+            await docRef.update(updateData);
+
+            document.getElementById('incident-modal').classList.remove('active');
+            _incidentDelivery = null;
+            showToast('Incidencia reportada: ' + (d.id || d._id), 'warning');
         } catch (e) {
-            showToast('Error reportando incidencia: ' + e.message, 'error');
+            showToast('Error: ' + e.message, 'error');
         } finally {
-            hideLoading();
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'ENVIAR INCIDENCIA';
         }
-    }
+    });
 
     document.getElementById('detail-modal').addEventListener('click', function(e) {
         if (e.target === e.currentTarget) closeModal();
@@ -1852,6 +1913,8 @@ function initApp() {
         document.getElementById('cooper-photo-input').value = '';
         document.getElementById('cooper-photo-status').textContent = 'Sin foto';
         document.getElementById('btn-cooper-send').style.display = 'none';
+        var noteEl = document.getElementById('cooper-note');
+        if (noteEl) noteEl.value = '';
         modal.classList.add('active');
     };
 
@@ -1899,10 +1962,12 @@ function initApp() {
             var photoURL = await photoRef.getDownloadURL();
 
             // Save record to Firestore
+            var noteVal = (document.getElementById('cooper-note') ? document.getElementById('cooper-note').value : '').trim();
             await db.collection('cooper_photos').add({
                 type: _cooperType,
                 photoURL: photoURL,
                 storagePath: storagePath,
+                note: noteVal,
                 driverName: currentDriverName || 'Desconocido',
                 driverPhone: currentDriverPhone || '',
                 createdAt: firebase.firestore.FieldValue.serverTimestamp(),

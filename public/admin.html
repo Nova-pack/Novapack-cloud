@@ -2471,10 +2471,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
             _renderCooperStats();
             _renderCooperGrid();
+
+            // Auto-cleanup: delete photos older than 3 months (runs once per session)
+            if (!window._cooperCleanupDone) {
+                window._cooperCleanupDone = true;
+                _cooperAutoCleanup();
+            }
         } catch(err) {
             if (grid) grid.innerHTML = '<div style="grid-column:1/-1; padding:30px; text-align:center; color:#FF5252;">Error: ' + err.message + '</div>';
         }
     };
+
+    async function _cooperAutoCleanup() {
+        try {
+            var threeMonthsAgo = new Date();
+            threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+            var oldSnap = await db.collection('cooper_photos')
+                .where('createdAt', '<', threeMonthsAgo)
+                .limit(100)
+                .get();
+            if (oldSnap.empty) return;
+            var count = 0;
+            for (var i = 0; i < oldSnap.docs.length; i++) {
+                var doc = oldSnap.docs[i];
+                var data = doc.data();
+                if (data.storagePath) {
+                    try { await firebase.storage().ref(data.storagePath).delete(); } catch(e) {}
+                }
+                await db.collection('cooper_photos').doc(doc.id).delete();
+                count++;
+            }
+            if (count > 0) console.log('[Cooper] Auto-limpieza: ' + count + ' fotos eliminadas (>3 meses).');
+        } catch(e) {
+            console.warn('[Cooper] Error en auto-limpieza:', e.message);
+        }
+    }
 
     function _renderCooperStats() {
         var el = document.getElementById('cooper-stats');
@@ -2529,6 +2560,11 @@ document.addEventListener('DOMContentLoaded', () => {
             html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
             html += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
             html += '</div>';
+            if (item.note) {
+                html += '<div style="margin-top:6px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa;">';
+                html += '<span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:3px;">note</span>' + item.note;
+                html += '</div>';
+            }
             html += '</div></div>';
         });
 
