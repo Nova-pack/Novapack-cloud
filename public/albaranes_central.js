@@ -362,6 +362,8 @@
                 <td style="padding:6px; text-align:center;">${statusHtml}</td>
                 <td style="padding:6px; text-align:center; white-space:nowrap;">
                     <button type="button" onclick="window._albViewTicket('${t.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Ver detalle">👁️</button>
+                    <button type="button" onclick="window._albEditTicket('${t.docId}', '${clientId}')" style="background:#333; border:1px solid #FF9800; color:#FF9800; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Editar">✏️</button>
+                    <button type="button" onclick="if(typeof printTicketFromAdmin==='function') printTicketFromAdmin('${clientId}','${t.compId || 'comp_main'}','${t.docId}')" style="background:#333; border:1px solid #4CAF50; color:#4CAF50; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Imprimir albarán">🖨️</button>
                 </td>
             </tr>`;
         });
@@ -429,6 +431,17 @@
             window.openTicketEditModal(docId);
         } else {
             alert('Función de detalle no disponible.');
+        }
+    };
+
+    // ============================================================
+    //  EDIT TICKET
+    // ============================================================
+    window._albEditTicket = function(docId, clientId) {
+        if (typeof window.openTicketEditModal === 'function') {
+            window.openTicketEditModal(docId);
+        } else {
+            alert('Función de edición no disponible.');
         }
     };
 
