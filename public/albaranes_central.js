@@ -372,7 +372,9 @@
                 <td style="padding:6px; text-align:center; white-space:nowrap;">
                     <button type="button" onclick="window._albViewTicket('${t.docId}')" style="background:#333; border:1px solid #555; color:#ccc; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Ver detalle">👁️</button>
                     <button type="button" onclick="window._albEditTicket('${t.docId}', '${clientId}')" style="background:#333; border:1px solid #FF9800; color:#FF9800; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Editar">✏️</button>
-                    <button type="button" onclick="if(typeof printTicketFromAdmin==='function') printTicketFromAdmin('${clientId}','${t.compId || 'comp_main'}','${t.docId}')" style="background:#333; border:1px solid #4CAF50; color:#4CAF50; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Imprimir albarán">🖨️</button>
+                    <button type="button" onclick="if(typeof printTicketFromAdmin==='function') printTicketFromAdmin('${clientId}','${t.compId || 'comp_main'}','${t.docId}')" style="background:#333; border:1px solid #4CAF50; color:#4CAF50; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Imprimir albaran">🖨️</button>
+                    <button type="button" onclick="window._albReassignTicket('${t.docId}')" style="background:#333; border:1px solid #2196F3; color:#2196F3; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Reasignar cliente">🔄</button>
+                    ${!billed ? `<button type="button" onclick="window._albDeleteTicket('${t.docId}','${(t.id || t.docId || '').replace(/'/g, '')}')" style="background:#333; border:1px solid #FF3B30; color:#FF3B30; padding:2px 6px; font-size:0.7rem; cursor:pointer; border-radius:3px; margin:1px;" title="Eliminar albaran">🗑️</button>` : ''}
                 </td>
             </tr>`;
         });
@@ -783,6 +785,162 @@
         body += 'Generado por NOVAPACK CLOUD — ' + new Date().toLocaleString() + '\n';
 
         window.open('mailto:' + encodeURIComponent(email.trim()) + '?subject=' + subject + '&body=' + encodeURIComponent(body));
+    };
+
+    // ============================================================
+    //  DELETE TICKET (move to trash)
+    // ============================================================
+    window._albDeleteTicket = async function(docId, ticketId) {
+        if (!confirm('Eliminar albaran ' + (ticketId || docId) + '?\n\nSe movera a la papelera y podra restaurarse.')) return;
+        try {
+            if (typeof window.moveTicketToTrash === 'function') {
+                await window.moveTicketToTrash(docId, 'Eliminado desde albaranes centralizados', 'albaranes_central');
+            } else {
+                await db.collection('tickets').doc(docId).delete();
+            }
+            // Remove from local arrays and re-render
+            _albCache = _albCache.filter(t => t.docId !== docId);
+            _albApplyFiltersInternal();
+            alert('Albaran eliminado correctamente.');
+        } catch(err) {
+            alert('Error al eliminar: ' + err.message);
+        }
+    };
+
+    // ============================================================
+    //  REASSIGN TICKET (change billing client)
+    // ============================================================
+    window._albReassignTicket = async function(docId) {
+        // Load ticket data
+        var ticketSnap;
+        try {
+            ticketSnap = await db.collection('tickets').doc(docId).get();
+        } catch(err) {
+            alert('Error cargando albaran: ' + err.message);
+            return;
+        }
+        if (!ticketSnap.exists) { alert('Albaran no encontrado.'); return; }
+        var ticketData = ticketSnap.data();
+
+        // Check if billed
+        if (ticketData.invoiceId) {
+            alert('Este albaran ya esta facturado. No se puede reasignar.');
+            return;
+        }
+
+        // Build client list from userMap
+        var umap = window.userMap || {};
+        var clients = [];
+        Object.keys(umap).forEach(function(uid) {
+            var u = umap[uid];
+            if (u && u.role === 'client') {
+                clients.push({ uid: uid, name: u.name || u.company || u.email || uid, idNum: u.idNum || '' });
+            }
+        });
+        clients.sort(function(a, b) { return a.name.localeCompare(b.name); });
+
+        if (clients.length === 0) {
+            alert('No se encontraron clientes en el sistema.');
+            return;
+        }
+
+        // Show reassign modal
+        var existing = document.getElementById('alb-reassign-modal');
+        if (existing) existing.remove();
+
+        var modal = document.createElement('div');
+        modal.id = 'alb-reassign-modal';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99998; display:flex; align-items:center; justify-content:center;';
+
+        var currentClient = ticketData.senderName || ticketData.sender || 'Desconocido';
+        var ticketLabel = ticketData.id || docId;
+
+        var optionsHtml = '<option value="">-- Seleccionar cliente --</option>';
+        clients.forEach(function(c) {
+            optionsHtml += '<option value="' + c.uid + '">[' + (c.idNum || '?') + '] ' + c.name.substring(0, 50) + '</option>';
+        });
+
+        modal.innerHTML = `
+        <div style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:12px; padding:30px; max-width:500px; width:90%; box-shadow:0 15px 50px rgba(0,0,0,0.8);">
+            <h3 style="color:#2196F3; margin:0 0 6px; font-size:1.1rem; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined">swap_horiz</span> Reasignar Albaran
+            </h3>
+            <p style="color:#888; margin:0 0 20px; font-size:0.82rem;">Albaran <strong style="color:#FFD700;">${ticketLabel}</strong></p>
+            <div style="margin-bottom:16px;">
+                <label style="color:#aaa; font-size:0.78rem; display:block; margin-bottom:4px;">Cliente actual:</label>
+                <div style="background:#2a2a2d; border:1px solid #444; border-radius:6px; padding:8px 12px; color:#FF9800; font-weight:bold; font-size:0.85rem;">${currentClient}</div>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="color:#aaa; font-size:0.78rem; display:block; margin-bottom:4px;">Nuevo cliente:</label>
+                <input type="text" id="alb-reassign-search" placeholder="Buscar cliente..." style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.85rem; margin-bottom:6px; box-sizing:border-box;">
+                <select id="alb-reassign-select" size="6" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:4px; border-radius:6px; font-size:0.82rem; box-sizing:border-box;">
+                    ${optionsHtml}
+                </select>
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button id="alb-reassign-cancel" style="background:transparent; border:1px solid #555; color:#888; padding:8px 20px; font-size:0.82rem; cursor:pointer; border-radius:6px;">Cancelar</button>
+                <button id="alb-reassign-confirm" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:white; padding:8px 20px; font-size:0.82rem; cursor:pointer; border-radius:6px; font-weight:bold;">Reasignar</button>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+
+        // Search filter
+        var searchInput = document.getElementById('alb-reassign-search');
+        var selectEl = document.getElementById('alb-reassign-select');
+        searchInput.addEventListener('input', function() {
+            var q = this.value.trim().toLowerCase();
+            var opts = selectEl.options;
+            for (var i = 0; i < opts.length; i++) {
+                if (i === 0) continue; // skip placeholder
+                opts[i].style.display = opts[i].textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+            }
+        });
+        searchInput.focus();
+
+        // Cancel
+        document.getElementById('alb-reassign-cancel').addEventListener('click', function() {
+            modal.remove();
+        });
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) modal.remove();
+        });
+
+        // Confirm
+        document.getElementById('alb-reassign-confirm').addEventListener('click', async function() {
+            var newUid = selectEl.value;
+            if (!newUid) { alert('Selecciona un cliente.'); return; }
+
+            var newClient = clients.find(function(c) { return c.uid === newUid; });
+            if (!newClient) { alert('Cliente no encontrado.'); return; }
+
+            if (!confirm('Reasignar albaran ' + ticketLabel + ' de "' + currentClient + '" a "' + newClient.name + '"?')) return;
+
+            try {
+                await db.collection('tickets').doc(docId).update({
+                    uid: newUid,
+                    sender: newClient.name,
+                    senderName: newClient.name,
+                    clientIdNum: newClient.idNum || '',
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Update local data
+                var local = _albCache.find(function(t) { return t.docId === docId; });
+                if (local) {
+                    local.uid = newUid;
+                    local.sender = newClient.name;
+                    local.senderName = newClient.name;
+                    local.clientIdNum = newClient.idNum || '';
+                }
+
+                modal.remove();
+                _albApplyFiltersInternal();
+                alert('Albaran reasignado a ' + newClient.name + '.');
+            } catch(err) {
+                alert('Error al reasignar: ' + err.message);
+            }
+        });
     };
 
 })();
