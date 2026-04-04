@@ -43,6 +43,23 @@
                 '<div id="nif-stats" style="display:flex; gap:12px; flex-wrap:wrap;"></div>' +
             '</div>' +
 
+            // Global user selector + Auto-match
+            '<div id="nif-global-user-container" style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:14px 20px; margin-bottom:20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">' +
+                '<label style="font-size:0.8rem; color:#FF9800; font-weight:bold; white-space:nowrap;">Usuario Global:</label>' +
+                '<span style="color:#666; font-size:0.8rem;">Detectando...</span>' +
+            '</div>' +
+
+            // Auto-match bar
+            '<div style="background:rgba(76,175,80,0.1); border:1px solid rgba(76,175,80,0.3); border-radius:12px; padding:14px 20px; margin-bottom:20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">' +
+                '<span class="material-symbols-outlined" style="color:#4CAF50;">auto_fix_high</span>' +
+                '<span style="color:#4CAF50; font-weight:bold; font-size:0.85rem;">Auto-rellenar NIF:</span>' +
+                '<span style="color:#aaa; font-size:0.8rem;">Cruza los nombres con la base Gesco (1142 clientes con NIF)</span>' +
+                '<button onclick="nifAutoMatch()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:10px 20px; border-radius:8px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px; margin-left:auto;">' +
+                    '<span class="material-symbols-outlined" style="font-size:1rem;">auto_fix_high</span> Auto-Match Gesco' +
+                '</button>' +
+                '<div id="nif-automatch-status" style="width:100%; font-size:0.8rem; color:#aaa; display:none;"></div>' +
+            '</div>' +
+
             // Tab selector: Global vs Local
             '<div style="display:flex; gap:0; margin-bottom:20px; border-radius:10px; overflow:hidden; border:1px solid #333;">' +
                 '<button id="nif-tab-global" onclick="nifSwitchTab(\'global\')" style="flex:1; padding:14px 20px; border:none; font-size:0.9rem; cursor:pointer; font-weight:bold; display:flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg,#FF9800,#E65100); color:white;">' +
@@ -115,53 +132,80 @@
             '</div>';
     }
 
-    // --- FIND GLOBAL (COOPER) USER ---
+    // --- FIND GLOBAL USER + LOAD ---
     async function _findGlobalUserAndLoad() {
         _loading = true;
-        _showLoading('Buscando directorio global...');
+        _showLoading('Cargando usuarios...');
 
         try {
-            // Try to find Cooper user in userMap first
-            if (typeof userMap !== 'undefined') {
-                var entries = Object.entries(userMap);
-                for (var i = 0; i < entries.length; i++) {
-                    var u = entries[i][1];
-                    if (u.email && u.email.toLowerCase().indexOf('cooper') !== -1) {
-                        _globalUserUid = entries[i][0];
-                        break;
-                    }
+            // 1. Ensure userMap is loaded
+            if (typeof userMap === 'undefined' || Object.keys(userMap).length < 2) {
+                var allSnap = await db.collection('users').get();
+                if (typeof userMap === 'undefined') window.userMap = {};
+                allSnap.forEach(function(doc) {
+                    var d = doc.data();
+                    d.id = doc.id;
+                    userMap[doc.id] = d;
+                });
+            }
+
+            // 2. Build user selector for global directory
+            _buildUserSelector();
+
+            // 3. Auto-detect: find user with destinations by checking common patterns
+            var candidates = [];
+            var keywords = ['cooper', 'global', 'directorio', 'base', 'nube'];
+            Object.entries(userMap).forEach(function(entry) {
+                var uid = entry[0];
+                var u = entry[1];
+                var name = (u.name || '').toLowerCase();
+                var email = (u.email || '').toLowerCase();
+                var score = 0;
+                keywords.forEach(function(kw) {
+                    if (name.indexOf(kw) !== -1) score += 2;
+                    if (email.indexOf(kw) !== -1) score += 2;
+                });
+                if (score > 0) candidates.push({ uid: uid, score: score, name: u.name, email: u.email });
+            });
+            candidates.sort(function(a, b) { return b.score - a.score; });
+
+            // Try top candidate
+            if (candidates.length > 0) {
+                _globalUserUid = candidates[0].uid;
+                console.log('[NIF] Auto-detected global user: ' + candidates[0].name + ' (' + _globalUserUid + ')');
+            }
+
+            // 4. If auto-detect found something, try loading its destinations
+            if (_globalUserUid) {
+                await _loadGlobalDestinations();
+            }
+
+            // 5. If no destinations found, scan ALL users for one with destinations
+            if (_globalClients.length === 0) {
+                _showLoading('Escaneando usuarios con destinos...');
+                var allUsers = Object.keys(userMap);
+                for (var i = 0; i < allUsers.length; i++) {
+                    var uid = allUsers[i];
+                    if (uid === _globalUserUid) continue; // already tried
+                    try {
+                        var testSnap = await db.collection('users').doc(uid)
+                            .collection('destinations').limit(5).get();
+                        if (testSnap.size >= 5) {
+                            _globalUserUid = uid;
+                            console.log('[NIF] Found user with destinations: ' + (userMap[uid].name || uid) + ' (' + uid + ')');
+                            await _loadGlobalDestinations();
+                            break;
+                        }
+                    } catch(e) { /* skip */ }
                 }
             }
 
-            // If not found in userMap, query Firestore
-            if (!_globalUserUid) {
-                var snap = await db.collection('users')
-                    .where('email', '>=', 'cooper')
-                    .where('email', '<=', 'cooper\uf8ff')
-                    .limit(1)
-                    .get();
-                if (!snap.empty) {
-                    _globalUserUid = snap.docs[0].id;
-                }
-            }
+            // Update selector to show current selection
+            var sel = document.getElementById('nif-global-user-select');
+            if (sel && _globalUserUid) sel.value = _globalUserUid;
 
-            if (!_globalUserUid) {
-                // Fallback: search by name pattern
-                var snap2 = await db.collection('users')
-                    .where('name', '>=', 'COOPER')
-                    .where('name', '<=', 'COOPER\uf8ff')
-                    .limit(1)
-                    .get();
-                if (!snap2.empty) {
-                    _globalUserUid = snap2.docs[0].id;
-                }
-            }
-
-            // Load both in parallel
-            await Promise.all([
-                _loadGlobalDestinations(),
-                _loadLocalClients()
-            ]);
+            // Load local clients in parallel
+            await _loadLocalClients();
 
             _loading = false;
             _updateTabCounts();
@@ -170,8 +214,49 @@
         } catch(err) {
             _loading = false;
             _showError('Error: ' + err.message);
+            console.error('[NIF]', err);
         }
     }
+
+    // --- BUILD USER SELECTOR DROPDOWN ---
+    function _buildUserSelector() {
+        var container = document.getElementById('nif-global-user-container');
+        if (!container) return;
+
+        var users = [];
+        Object.entries(userMap).forEach(function(entry) {
+            users.push({ uid: entry[0], name: entry[1].name || '', email: entry[1].email || '', idNum: entry[1].idNum || '' });
+        });
+        // Deduplicate by uid
+        var seen = {};
+        users = users.filter(function(u) {
+            if (seen[u.uid]) return false;
+            seen[u.uid] = true;
+            return true;
+        });
+        users.sort(function(a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+        var html = '<select id="nif-global-user-select" onchange="nifSelectGlobalUser(this.value)" ' +
+            'style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:6px; font-size:0.82rem; max-width:350px;">';
+        html += '<option value="">-- Seleccionar usuario con destinos globales --</option>';
+        users.forEach(function(u) {
+            var label = (u.idNum ? '#' + u.idNum + ' ' : '') + u.name + (u.email ? ' (' + u.email + ')' : '');
+            html += '<option value="' + u.uid + '">' + _esc(label) + '</option>';
+        });
+        html += '</select>';
+        container.innerHTML = html;
+    }
+
+    // --- MANUAL USER SELECTION ---
+    window.nifSelectGlobalUser = async function(uid) {
+        if (!uid) return;
+        _globalUserUid = uid;
+        _globalClients = [];
+        _showLoading('Cargando destinos de ' + _esc((userMap[uid] || {}).name || uid) + '...');
+        await _loadGlobalDestinations();
+        _updateTabCounts();
+        _applyFilters();
+    };
 
     // --- LOAD GLOBAL DESTINATIONS ---
     async function _loadGlobalDestinations() {
@@ -489,22 +574,37 @@
         if (listEl) listEl.scrollTop = 0;
     };
 
-    // --- SEARCH ONLINE ---
+    // --- SEARCH ONLINE (cleaned name) ---
     window.nifSearchFor = async function(idx) {
         var client = _filtered[idx];
         if (!client || !client.name) { alert('Cliente sin nombre.'); return; }
 
+        // 1. First try local match with PhantomDirectory
+        if (window.PhantomDirectory && window.PhantomDirectory.length > 0) {
+            var normTarget = _normalizeName(client.name);
+            for (var g = 0; g < window.PhantomDirectory.length; g++) {
+                var gEntry = window.PhantomDirectory[g];
+                if (gEntry.nif && gEntry.nif.trim().length >= 8 && _normalizeName(gEntry.name) === normTarget) {
+                    var input = document.getElementById('nif-input-' + idx);
+                    if (input) input.value = gEntry.nif.trim().toUpperCase();
+                    alert('Encontrado en Gesco:\n' + gEntry.name + ' → ' + gEntry.nif);
+                    return;
+                }
+            }
+        }
+
+        // 2. Try API
         var source = document.getElementById('nif-source');
         var sourceVal = source ? source.value : 'apiempresas';
         var apiKey = (document.getElementById('nif-api-key') || {}).value || '';
         apiKey = apiKey.trim();
+        var cleanName = _cleanNameForSearch(client.name);
 
-        // Expand API panel
         var panel = document.getElementById('nif-api-panel');
         if (panel) panel.style.display = '';
 
         if (sourceVal === 'datoscif') {
-            window.open('https://www.datoscif.es/buscar/empresa/' + encodeURIComponent(client.name), '_blank');
+            window.open('https://www.google.com/search?q=' + encodeURIComponent(cleanName + ' NIF CIF España'), '_blank');
             return;
         }
 
@@ -512,7 +612,7 @@
         if (row) row.style.opacity = '0.5';
 
         try {
-            var url = 'https://apiempresas.es/autocompletado-cif-empresas/get?q=' + encodeURIComponent(client.name);
+            var url = 'https://apiempresas.es/autocompletado-cif-empresas/get?q=' + encodeURIComponent(cleanName);
             if (apiKey) url += '&apikey=' + encodeURIComponent(apiKey);
 
             var resp = await fetch(url);
@@ -522,18 +622,18 @@
             if (data && data.data && Array.isArray(data.data) && data.data.length > 0) {
                 _showSearchResults(idx, data.data);
             } else if (data && data.data && data.data.cif) {
-                var input = document.getElementById('nif-input-' + idx);
-                if (input) input.value = data.data.cif;
+                var inp = document.getElementById('nif-input-' + idx);
+                if (inp) inp.value = data.data.cif;
                 alert('Encontrado: ' + data.data.name + ' \u2192 ' + data.data.cif);
             } else {
-                alert('No se encontraron resultados para "' + client.name + '".\nPrueba con \ud83c\udf10 para buscar manualmente.');
+                // Fallback: open Google search
+                window.open('https://www.google.com/search?q=' + encodeURIComponent(cleanName + ' NIF CIF España'), '_blank');
             }
         } catch(err) {
             if (row) row.style.opacity = '1';
             console.warn('[NIF] API error:', err.message);
-            if (confirm('API no disponible (CORS). \u00bfAbrir b\u00fasqueda web?')) {
-                window.open('https://www.datoscif.es/buscar/empresa/' + encodeURIComponent(client.name), '_blank');
-            }
+            // Fallback: Google search
+            window.open('https://www.google.com/search?q=' + encodeURIComponent(cleanName + ' NIF CIF España'), '_blank');
         }
     };
 
@@ -571,15 +671,17 @@
         var sourceVal = source ? source.value : 'apiempresas';
         var apiKey = (document.getElementById('nif-api-key') || {}).value || '';
 
+        var cleanQuery = _cleanNameForSearch(query);
+
         if (sourceVal === 'datoscif') {
-            window.open('https://www.datoscif.es/buscar/empresa/' + encodeURIComponent(query), '_blank');
+            window.open('https://www.google.com/search?q=' + encodeURIComponent(cleanQuery + ' NIF CIF España'), '_blank');
             return;
         }
 
-        if (resultsEl) resultsEl.innerHTML = '<div style="color:#aaa; font-size:0.85rem;">Buscando "' + _esc(query) + '"...</div>';
+        if (resultsEl) resultsEl.innerHTML = '<div style="color:#aaa; font-size:0.85rem;">Buscando "' + _esc(cleanQuery) + '"...</div>';
 
         try {
-            var url = 'https://apiempresas.es/autocompletado-cif-empresas/get?q=' + encodeURIComponent(query);
+            var url = 'https://apiempresas.es/autocompletado-cif-empresas/get?q=' + encodeURIComponent(cleanQuery);
             if (apiKey.trim()) url += '&apikey=' + encodeURIComponent(apiKey.trim());
 
             var resp = await fetch(url);
@@ -607,7 +709,7 @@
             }
         } catch(err) {
             console.warn('[NIF] Manual search error:', err.message);
-            if (resultsEl) resultsEl.innerHTML = '<div style="color:#FF9800; font-size:0.85rem;">Error: ' + _esc(err.message) + '. <a href="https://www.datoscif.es/buscar/empresa/' + encodeURIComponent(query) + '" target="_blank" style="color:#2196F3;">Buscar en DatosCif</a></div>';
+            if (resultsEl) resultsEl.innerHTML = '<div style="color:#FF9800; font-size:0.85rem;">Error API: ' + _esc(err.message) + '. <a href="https://www.google.com/search?q=' + encodeURIComponent(cleanQuery + ' NIF CIF España') + '" target="_blank" style="color:#2196F3;">Buscar en Google</a></div>';
         }
     };
 
@@ -664,12 +766,133 @@
         }
     };
 
-    // --- OPEN WEB ---
+    // --- OPEN WEB (improved: clean name before searching) ---
     window.nifOpenWeb = function(idx) {
         var client = _filtered[idx];
         if (!client || !client.name) return;
-        window.open('https://www.datoscif.es/buscar/empresa/' + encodeURIComponent(client.name), '_blank');
+        var clean = _cleanNameForSearch(client.name);
+        // Use Google search as most reliable fallback
+        window.open('https://www.google.com/search?q=' + encodeURIComponent(clean + ' NIF CIF España'), '_blank');
     };
+
+    // ====================================================
+    // AUTO-MATCH: Cross-reference with Gesco (PhantomDirectory)
+    // ====================================================
+    window.nifAutoMatch = async function() {
+        if (!window.PhantomDirectory || window.PhantomDirectory.length === 0) {
+            alert('PhantomDirectory (gesco_clients.json) no está cargado. Espera unos segundos y reintenta.');
+            return;
+        }
+
+        var statusEl = document.getElementById('nif-automatch-status');
+        if (statusEl) { statusEl.style.display = 'block'; statusEl.innerHTML = 'Iniciando auto-match...'; }
+
+        // Build normalized lookup from Gesco
+        var gescoMap = {}; // normalized name → nif
+        window.PhantomDirectory.forEach(function(g) {
+            if (!g.nif || g.nif.trim().length < 8 || !g.name) return;
+            var key = _normalizeName(g.name);
+            if (key.length >= 3) gescoMap[key] = g.nif.trim().toUpperCase();
+        });
+
+        var source = _activeTab === 'global' ? _globalClients : _localClients;
+        var matched = 0;
+        var alreadyHad = 0;
+        var noMatch = 0;
+        var toSave = []; // [{client, nif}]
+
+        source.forEach(function(c) {
+            if (c.nif && c.nif.trim().length >= 8) { alreadyHad++; return; }
+            var key = _normalizeName(c.name);
+            if (gescoMap[key]) {
+                toSave.push({ client: c, nif: gescoMap[key] });
+                matched++;
+            } else {
+                noMatch++;
+            }
+        });
+
+        if (statusEl) statusEl.innerHTML = 'Coincidencias encontradas: <strong style="color:#4CAF50;">' + matched + '</strong> | Ya tenían NIF: ' + alreadyHad + ' | Sin coincidencia: ' + noMatch;
+
+        if (matched === 0) {
+            if (statusEl) statusEl.innerHTML += '<br><span style="color:#FF9800;">No se encontraron coincidencias directas. Los nombres pueden diferir entre bases de datos.</span>';
+            return;
+        }
+
+        // Confirm before saving
+        if (!confirm('Se encontraron ' + matched + ' coincidencias.\n¿Guardar los NIFs en Firestore?')) return;
+
+        if (statusEl) statusEl.innerHTML += '<br>Guardando en Firestore...';
+
+        var saved = 0;
+        var errors = 0;
+        for (var i = 0; i < toSave.length; i++) {
+            var item = toSave[i];
+            try {
+                if (_activeTab === 'global' && item.client.docId && _globalUserUid) {
+                    await db.collection('users').doc(_globalUserUid)
+                        .collection('destinations').doc(item.client.docId)
+                        .update({ nif: item.nif });
+                } else if (item.client.uid) {
+                    await db.collection('users').doc(item.client.uid).update({ nif: item.nif });
+                    if (typeof userMap !== 'undefined' && userMap[item.client.uid]) {
+                        userMap[item.client.uid].nif = item.nif;
+                    }
+                }
+                item.client.nif = item.nif;
+                saved++;
+
+                // Progress update every 20
+                if (saved % 20 === 0 && statusEl) {
+                    statusEl.innerHTML = 'Guardando... ' + saved + ' / ' + toSave.length;
+                }
+            } catch(e) {
+                errors++;
+                console.warn('[NIF AutoMatch] Error saving', item.client.name, e.message);
+            }
+        }
+
+        if (statusEl) {
+            statusEl.innerHTML = '<span style="color:#4CAF50; font-weight:bold;">Auto-Match completado: ' + saved + ' NIFs guardados.</span>' +
+                (errors > 0 ? ' <span style="color:#FF5252;">' + errors + ' errores.</span>' : '') +
+                ' | Ya tenían: ' + alreadyHad + ' | Sin coincidencia: ' + noMatch;
+        }
+
+        _updateStats();
+        _updateTabCounts();
+        _applyFilters();
+    };
+
+    // ====================================================
+    // NAME NORMALIZATION for matching
+    // ====================================================
+    function _normalizeName(name) {
+        if (!name) return '';
+        return name
+            .toUpperCase()
+            .replace(/[.,;:'"()]/g, '')           // punctuation
+            .replace(/\bS\.?L\.?U?\.?\b/g, '')    // S.L., S.L.U., SL
+            .replace(/\bS\.?A\.?U?\.?\b/g, '')    // S.A., S.A.U., SA
+            .replace(/\bS\.?C\.?P?\.?\b/g, '')    // S.C., S.C.P.
+            .replace(/\bC\.?B\.?\b/g, '')          // C.B.
+            .replace(/\bSOCIEDAD\s*(LIMITADA|ANONIMA|COOPERATIVA)\b/gi, '')
+            .replace(/^(X|NO-)\s*/i, '')           // prefixes from import
+            .replace(/\.{3,}.*$/, '')              // "AHORA 1534" style suffixes
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // ====================================================
+    // CLEAN NAME for web search
+    // ====================================================
+    function _cleanNameForSearch(name) {
+        if (!name) return '';
+        return name
+            .replace(/^(X|NO-)\s*/i, '')
+            .replace(/\.{3,}.*$/, '')
+            .replace(/\s*,\s*/g, ' ')
+            .trim();
+    }
 
     // --- HELPERS ---
     function _showLoading(msg) {
