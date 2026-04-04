@@ -2020,18 +2020,17 @@ function initApp() {
 
             var snap = await db.collection('cooper_photos')
                 .where('driverName', '==', currentDriverName || 'Desconocido')
-                .orderBy('createdAt', 'desc')
-                .limit(100)
                 .get();
 
-            // Filter last 7 days in JS to avoid composite index
+            // Filter last 7 days + sort in JS to avoid composite index
             var items = [];
             snap.forEach(function(doc) {
                 var item = doc.data();
                 item.docId = doc.id;
-                var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                var d = item.createdAt ? (typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt)) : new Date(item.timestamp || 0);
                 if (d >= weekAgo) items.push({ data: item, date: d });
             });
+            items.sort(function(a, b) { return b.date - a.date; });
 
             if (items.length === 0) {
                 panel.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:0.82rem;">No hay registros Cooper esta semana</div>';
