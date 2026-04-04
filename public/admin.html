@@ -2444,35 +2444,85 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button id="btn-delete-global-tariff" onclick="deleteCurrentGlobalTariff()" style="display:none; background:transparent; border:1px solid #FF3B30; color:#FF3B30; padding:5px 12px; font-size:0.85rem; cursor:pointer; border-radius:4px;"><span class="material-symbols-outlined">delete</span> Eliminar</button>
                 </div>
                 <div id="tariff-editor-area" style="display:none;">
-                    <div id="sub-tariff-tabs" style="display:none; margin-bottom:10px; border-bottom:1px solid #444; padding-bottom:10px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
-                        <span style="font-size:0.8rem; font-weight:bold; color:#FFD700; margin-right:10px;">SUB-TARIFAS:</span>
-                        <div id="sub-tariff-list" style="display:flex; gap:5px; flex-wrap:wrap;"></div>
-                        <button onclick="promptCreateSubTariff()" style="background:transparent; border:1px solid #666; color:#ccc; padding:3px 10px; cursor:pointer; border-radius:4px; font-size:0.8rem; margin-left:auto;">+ Nueva</button>
+                    <!-- TARIFF MODE TOGGLE -->
+                    <div style="margin-bottom:10px; display:flex; gap:8px; align-items:center; padding:6px 0;">
+                        <span style="font-size:0.8rem; font-weight:bold; color:#aaa;">MODO:</span>
+                        <button id="btn-mode-size" onclick="switchTariffMode('size')" style="background:#007acc; border:none; color:white; padding:4px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px; font-weight:bold;">Artículos / Tamaño</button>
+                        <button id="btn-mode-weight" onclick="switchTariffMode('weight')" style="background:transparent; border:1px solid #666; color:#ccc; padding:4px 14px; font-size:0.8rem; cursor:pointer; border-radius:4px;">Peso (kg)</button>
                     </div>
-                    <div style="display:flex; gap:10px; align-items:flex-start;">
-                        <div style="width:280px; background:#252526; border:1px solid #444; border-radius:4px; padding:10px;">
-                            <h3 id="tariff-editor-title" style="margin:0 0 8px 0; color:#FFD700; font-size:0.9rem;">Añadir Artículo</h3>
-                            <input type="text" id="new-tariff-item-name" placeholder="Nombre / Medida" list="tariff-items-suggested" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
-                            <input type="number" step="0.01" id="new-tariff-item-price" placeholder="Precio €" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
-                            <button class="btn btn-primary" id="btn-add-tariff-item" style="width:100%; padding:8px; font-size:0.85rem;"><span class="material-symbols-outlined">save</span> Añadir</button>
-                            <div id="sub-tariff-controls" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #555;">
-                                <button class="btn btn-danger btn-sm" onclick="deleteCurrentSubTariff()" style="width:100%; background:#FF3B30; border:none; color:white; padding:6px; cursor:pointer;"><span class="material-symbols-outlined">delete</span> Eliminar Sub-Tarifa</button>
-                            </div>
-                            <datalist id="tariff-items-suggested">
-                                <option value="Sobre"><option value="Pequeño"><option value="Mediano"><option value="Grande"><option value="Palet"><option value="Bulto"><option value="Caja">
-                            </datalist>
+
+                    <!-- SIZE-BASED EDITOR (existing) -->
+                    <div id="size-tariff-editor">
+                        <div id="sub-tariff-tabs" style="display:none; margin-bottom:10px; border-bottom:1px solid #444; padding-bottom:10px; display:flex; flex-wrap:wrap; gap:5px; align-items:center;">
+                            <span style="font-size:0.8rem; font-weight:bold; color:#FFD700; margin-right:10px;">SUB-TARIFAS:</span>
+                            <div id="sub-tariff-list" style="display:flex; gap:5px; flex-wrap:wrap;"></div>
+                            <button onclick="promptCreateSubTariff()" style="background:transparent; border:1px solid #666; color:#ccc; padding:3px 10px; cursor:pointer; border-radius:4px; font-size:0.8rem; margin-left:auto;">+ Nueva</button>
                         </div>
-                        <div style="flex:1; overflow-y:auto; overflow-x:auto; max-height:calc(100vh - 280px);">
-                            <table style="width:100%; border-collapse:collapse;">
-                                <thead style="background:#252526;">
-                                    <tr>
-                                        <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:left;">ARTÍCULO</th>
-                                        <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:right;">PRECIO</th>
-                                        <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:right;">ACCIONES</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tariff-items-body"></tbody>
-                            </table>
+                        <div style="display:flex; gap:10px; align-items:flex-start;">
+                            <div style="width:280px; background:#252526; border:1px solid #444; border-radius:4px; padding:10px;">
+                                <h3 id="tariff-editor-title" style="margin:0 0 8px 0; color:#FFD700; font-size:0.9rem;">Añadir Artículo</h3>
+                                <input type="text" id="new-tariff-item-name" placeholder="Nombre / Medida" list="tariff-items-suggested" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
+                                <input type="number" step="0.01" id="new-tariff-item-price" placeholder="Precio €" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
+                                <button class="btn btn-primary" id="btn-add-tariff-item" style="width:100%; padding:8px; font-size:0.85rem;"><span class="material-symbols-outlined">save</span> Añadir</button>
+                                <div id="sub-tariff-controls" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #555;">
+                                    <button class="btn btn-danger btn-sm" onclick="deleteCurrentSubTariff()" style="width:100%; background:#FF3B30; border:none; color:white; padding:6px; cursor:pointer;"><span class="material-symbols-outlined">delete</span> Eliminar Sub-Tarifa</button>
+                                </div>
+                                <datalist id="tariff-items-suggested">
+                                    <option value="Sobre"><option value="Pequeño"><option value="Mediano"><option value="Grande"><option value="Palet"><option value="Bulto"><option value="Caja">
+                                </datalist>
+                            </div>
+                            <div style="flex:1; overflow-y:auto; overflow-x:auto; max-height:calc(100vh - 280px);">
+                                <table style="width:100%; border-collapse:collapse;">
+                                    <thead style="background:#252526;">
+                                        <tr>
+                                            <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:left;">ARTÍCULO</th>
+                                            <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:right;">PRECIO</th>
+                                            <th style="padding:8px; color:#FFD700; font-size:0.8rem; text-align:right;">ACCIONES</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tariff-items-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- WEIGHT-BASED EDITOR (new) -->
+                    <div id="weight-tariff-editor" style="display:none;">
+                        <div style="display:flex; gap:10px; align-items:flex-start;">
+                            <!-- Left: Add bracket + settings -->
+                            <div style="width:280px; background:#252526; border:1px solid #444; border-radius:4px; padding:10px;">
+                                <h3 style="margin:0 0 8px 0; color:#4CAF50; font-size:0.9rem;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">scale</span> Añadir Tramo</h3>
+                                <input type="number" step="0.1" min="0.1" id="new-wt-maxkg" placeholder="Hasta Kg (ej: 5)" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
+                                <input type="number" step="0.01" min="0" id="new-wt-price" placeholder="Precio €" style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:6px; font-size:0.85rem;">
+                                <button onclick="addWeightBracket()" style="width:100%; padding:8px; font-size:0.85rem; background:#4CAF50; border:none; color:white; cursor:pointer; border-radius:4px; font-weight:bold;"><span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">add</span> Añadir Tramo</button>
+
+                                <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #555;">
+                                    <h3 style="margin:0 0 8px 0; color:#FF9800; font-size:0.85rem;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">tune</span> Configuración</h3>
+                                    <label style="font-size:0.7rem; color:#888; display:block; margin-bottom:3px;">€/kg extra (por encima del último tramo)</label>
+                                    <input type="number" step="0.01" min="0" id="wt-extra-kg-rate" placeholder="0.50" style="width:100%; padding:5px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:8px; font-size:0.85rem;">
+                                    <label style="font-size:0.7rem; color:#888; display:block; margin-bottom:3px;">Cargo mínimo por envío (€)</label>
+                                    <input type="number" step="0.01" min="0" id="wt-min-charge" placeholder="3.50" style="width:100%; padding:5px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; box-sizing:border-box; margin-bottom:8px; font-size:0.85rem;">
+                                    <button onclick="saveWeightTariffSettings()" style="width:100%; padding:7px; font-size:0.8rem; background:#FF9800; border:none; color:black; cursor:pointer; border-radius:4px; font-weight:bold;"><span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">save</span> Guardar Config</button>
+                                </div>
+
+                                <div style="margin-top:14px; padding-top:12px; border-top:1px dashed #555;">
+                                    <button onclick="loadDefaultWeightBrackets()" style="width:100%; padding:6px; font-size:0.75rem; background:transparent; border:1px solid #666; color:#aaa; cursor:pointer; border-radius:4px;">Cargar tramos estándar (GLS/MRW)</button>
+                                </div>
+                            </div>
+                            <!-- Right: Brackets table -->
+                            <div style="flex:1; overflow-y:auto; max-height:calc(100vh - 280px);">
+                                <table style="width:100%; border-collapse:collapse;">
+                                    <thead style="background:#252526;">
+                                        <tr>
+                                            <th style="padding:8px; color:#4CAF50; font-size:0.8rem; text-align:left;">HASTA KG</th>
+                                            <th style="padding:8px; color:#4CAF50; font-size:0.8rem; text-align:right;">PRECIO €</th>
+                                            <th style="padding:8px; color:#4CAF50; font-size:0.8rem; text-align:right;">ACCIONES</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="weight-brackets-body"></tbody>
+                                </table>
+                                <div id="wt-summary" style="margin-top:10px; padding:10px; background:#1a2a1a; border:1px solid #2e5e2e; border-radius:4px; font-size:0.8rem; color:#81C784; display:none;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -7066,15 +7116,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadTariffTable(currentTariffUID);
             };
 
+            let currentTariffMode = 'size';
+
             async function loadTariffTable(uid) {
                 const tbody = document.getElementById('tariff-items-body');
                 tbody.innerHTML = '<tr><td colspan="3">Cargando...</td></tr>';
                 try {
                     const doc = await db.collection('tariffs').doc(uid).get();
                     currentTariffDocData = doc.exists ? doc.data() : { items: {}, subTariff: {} };
-                    renderTariffLevel();
-                    if (uid.startsWith("GLOBAL_")) renderSubTariffTabs();
+                    // Detect and apply tariff mode
+                    currentTariffMode = currentTariffDocData.tariffMode || 'size';
+                    applyTariffModeUI(currentTariffMode);
+                    if (currentTariffMode === 'weight') {
+                        renderWeightBrackets();
+                    } else {
+                        renderTariffLevel();
+                        if (uid.startsWith("GLOBAL_")) renderSubTariffTabs();
+                    }
                 } catch (e) { console.error(e); }
+            }
+
+            function applyTariffModeUI(mode) {
+                var btnSize = document.getElementById('btn-mode-size');
+                var btnWeight = document.getElementById('btn-mode-weight');
+                var sizeEditor = document.getElementById('size-tariff-editor');
+                var weightEditor = document.getElementById('weight-tariff-editor');
+                if (mode === 'weight') {
+                    if (btnSize) { btnSize.style.background = 'transparent'; btnSize.style.border = '1px solid #666'; btnSize.style.color = '#ccc'; }
+                    if (btnWeight) { btnWeight.style.background = '#4CAF50'; btnWeight.style.border = 'none'; btnWeight.style.color = 'white'; }
+                    if (sizeEditor) sizeEditor.style.display = 'none';
+                    if (weightEditor) weightEditor.style.display = 'block';
+                } else {
+                    if (btnSize) { btnSize.style.background = '#007acc'; btnSize.style.border = 'none'; btnSize.style.color = 'white'; }
+                    if (btnWeight) { btnWeight.style.background = 'transparent'; btnWeight.style.border = '1px solid #666'; btnWeight.style.color = '#ccc'; }
+                    if (sizeEditor) sizeEditor.style.display = 'block';
+                    if (weightEditor) weightEditor.style.display = 'none';
+                }
             }
 
             function renderSubTariffTabs() {
@@ -7208,6 +7285,164 @@ document.addEventListener('DOMContentLoaded', () => {
                 await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData);
                 renderSubTariffTabs();
                 renderTariffLevel();
+            };
+
+            // ============================================================
+            //  WEIGHT TARIFF — Mode switch + CRUD
+            // ============================================================
+            window.switchTariffMode = async function(mode) {
+                if (!currentTariffUID) { alert('Carga una tarifa primero.'); return; }
+                currentTariffMode = mode;
+                if (!currentTariffDocData) currentTariffDocData = { items: {}, subTariff: {} };
+                currentTariffDocData.tariffMode = mode;
+                if (mode === 'weight' && !currentTariffDocData.weightTariff) {
+                    currentTariffDocData.weightTariff = { brackets: [], extraKgRate: 0, minimumCharge: 0 };
+                }
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                } catch(e) { console.error('Error saving tariff mode:', e); }
+                applyTariffModeUI(mode);
+                if (mode === 'weight') {
+                    renderWeightBrackets();
+                } else {
+                    renderTariffLevel();
+                }
+            };
+
+            function renderWeightBrackets() {
+                var tbody = document.getElementById('weight-brackets-body');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+                var wt = (currentTariffDocData && currentTariffDocData.weightTariff) || { brackets: [], extraKgRate: 0, minimumCharge: 0 };
+                var brackets = (wt.brackets || []).slice().sort(function(a, b) { return a.maxKg - b.maxKg; });
+
+                // Populate settings fields
+                var extraEl = document.getElementById('wt-extra-kg-rate');
+                var minEl = document.getElementById('wt-min-charge');
+                if (extraEl) extraEl.value = wt.extraKgRate || '';
+                if (minEl) minEl.value = wt.minimumCharge || '';
+
+                if (brackets.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888; padding:20px;">No hay tramos de peso. Añade uno o carga los estándar.</td></tr>';
+                    document.getElementById('wt-summary').style.display = 'none';
+                    return;
+                }
+
+                brackets.forEach(function(b, i) {
+                    var row = document.createElement('tr');
+                    row.style.borderBottom = '1px solid #2d2d30';
+                    row.innerHTML = '<td style="padding:8px; font-weight:700; color:#81C784;">Hasta ' + parseFloat(b.maxKg).toFixed(1) + ' kg</td>' +
+                        '<td style="padding:8px; text-align:right; color:#fff; font-weight:bold;">' + parseFloat(b.price).toFixed(2) + ' €</td>' +
+                        '<td style="padding:8px; text-align:right; white-space:nowrap;">' +
+                        '<button class="wt-edit-btn" style="background:#007acc; color:white; border:none; padding:2px 8px; cursor:pointer; border-radius:3px; margin-right:4px; font-size:0.8rem;">✏️</button>' +
+                        '<button class="wt-del-btn" style="background:#FF3B30; color:white; border:none; padding:2px 8px; cursor:pointer; border-radius:3px; font-size:0.8rem;">🗑️</button>' +
+                        '</td>';
+                    row.querySelector('.wt-edit-btn').addEventListener('click', function() { editWeightBracket(i); });
+                    row.querySelector('.wt-del-btn').addEventListener('click', function() { deleteWeightBracket(i); });
+                    tbody.appendChild(row);
+                });
+
+                // Summary
+                var summary = document.getElementById('wt-summary');
+                if (summary) {
+                    var last = brackets[brackets.length - 1];
+                    summary.style.display = 'block';
+                    summary.innerHTML = '<strong>' + brackets.length + ' tramos</strong> configurados · Máximo: ' + last.maxKg + ' kg = ' + parseFloat(last.price).toFixed(2) + '€' +
+                        (wt.extraKgRate ? ' · Extra: ' + wt.extraKgRate + '€/kg' : '') +
+                        (wt.minimumCharge ? ' · Mínimo: ' + wt.minimumCharge + '€' : '');
+                }
+            }
+
+            window.addWeightBracket = async function() {
+                var maxKg = parseFloat(document.getElementById('new-wt-maxkg').value);
+                var price = parseFloat(document.getElementById('new-wt-price').value);
+                if (isNaN(maxKg) || maxKg <= 0) { alert('Introduce un peso máximo válido.'); return; }
+                if (isNaN(price) || price < 0) { alert('Introduce un precio válido.'); return; }
+                if (!currentTariffDocData.weightTariff) currentTariffDocData.weightTariff = { brackets: [], extraKgRate: 0, minimumCharge: 0 };
+                // Check for duplicate bracket
+                var exists = currentTariffDocData.weightTariff.brackets.some(function(b) { return b.maxKg === maxKg; });
+                if (exists) { alert('Ya existe un tramo para ' + maxKg + ' kg. Edítalo en su lugar.'); return; }
+                currentTariffDocData.weightTariff.brackets.push({ maxKg: maxKg, price: price });
+                currentTariffDocData.weightTariff.brackets.sort(function(a, b) { return a.maxKg - b.maxKg; });
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                    document.getElementById('new-wt-maxkg').value = '';
+                    document.getElementById('new-wt-price').value = '';
+                    renderWeightBrackets();
+                } catch(e) { alert('Error al guardar: ' + e.message); }
+            };
+
+            function editWeightBracket(index) {
+                var tbody = document.getElementById('weight-brackets-body');
+                var rows = tbody.querySelectorAll('tr');
+                if (!rows[index]) return;
+                var brackets = currentTariffDocData.weightTariff.brackets.slice().sort(function(a, b) { return a.maxKg - b.maxKg; });
+                var b = brackets[index];
+                var cells = rows[index].querySelectorAll('td');
+                cells[0].innerHTML = '<input type="number" step="0.1" min="0.1" value="' + b.maxKg + '" id="edit-wt-kg" style="width:80px; padding:3px 6px; background:#1e1e1e; border:1px solid #4CAF50; color:white; border-radius:3px; font-size:0.85rem;"> kg';
+                cells[1].innerHTML = '<input type="number" step="0.01" min="0" value="' + b.price + '" id="edit-wt-price" style="width:80px; padding:3px 6px; background:#1e1e1e; border:1px solid #4CAF50; color:white; border-radius:3px; font-size:0.85rem;"> €';
+                cells[2].innerHTML = '<button id="btn-save-wt-edit" style="background:#4CAF50; color:white; border:none; padding:3px 10px; cursor:pointer; border-radius:3px; font-size:0.85rem;">💾</button>';
+                document.getElementById('edit-wt-kg').focus();
+                document.getElementById('btn-save-wt-edit').onclick = async function() {
+                    var newKg = parseFloat(document.getElementById('edit-wt-kg').value);
+                    var newPrice = parseFloat(document.getElementById('edit-wt-price').value);
+                    if (isNaN(newKg) || newKg <= 0 || isNaN(newPrice) || newPrice < 0) return;
+                    // Find original bracket by old maxKg and update
+                    var original = currentTariffDocData.weightTariff.brackets.find(function(x) { return x.maxKg === b.maxKg; });
+                    if (original) { original.maxKg = newKg; original.price = newPrice; }
+                    currentTariffDocData.weightTariff.brackets.sort(function(a, b) { return a.maxKg - b.maxKg; });
+                    try {
+                        await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                        renderWeightBrackets();
+                    } catch(e) { console.error('Error editing bracket:', e); }
+                };
+            }
+
+            async function deleteWeightBracket(index) {
+                var brackets = currentTariffDocData.weightTariff.brackets.slice().sort(function(a, b) { return a.maxKg - b.maxKg; });
+                var b = brackets[index];
+                if (!confirm('¿Eliminar tramo hasta ' + b.maxKg + ' kg?')) return;
+                currentTariffDocData.weightTariff.brackets = currentTariffDocData.weightTariff.brackets.filter(function(x) { return x.maxKg !== b.maxKg; });
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                    renderWeightBrackets();
+                } catch(e) { alert('Error: ' + e.message); }
+            }
+
+            window.saveWeightTariffSettings = async function() {
+                var extraRate = parseFloat(document.getElementById('wt-extra-kg-rate').value) || 0;
+                var minCharge = parseFloat(document.getElementById('wt-min-charge').value) || 0;
+                if (!currentTariffDocData.weightTariff) currentTariffDocData.weightTariff = { brackets: [] };
+                currentTariffDocData.weightTariff.extraKgRate = extraRate;
+                currentTariffDocData.weightTariff.minimumCharge = minCharge;
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                    alert('Configuración guardada.');
+                    renderWeightBrackets();
+                } catch(e) { alert('Error: ' + e.message); }
+            };
+
+            window.loadDefaultWeightBrackets = async function() {
+                if (!currentTariffUID) return;
+                if (!confirm('¿Cargar tramos estándar? Se reemplazarán los tramos actuales.')) return;
+                if (!currentTariffDocData.weightTariff) currentTariffDocData.weightTariff = {};
+                currentTariffDocData.weightTariff.brackets = [
+                    { maxKg: 1, price: 3.50 },
+                    { maxKg: 2, price: 4.20 },
+                    { maxKg: 3, price: 5.00 },
+                    { maxKg: 5, price: 6.50 },
+                    { maxKg: 10, price: 8.80 },
+                    { maxKg: 15, price: 11.50 },
+                    { maxKg: 20, price: 14.00 },
+                    { maxKg: 30, price: 18.50 },
+                    { maxKg: 40, price: 24.00 }
+                ];
+                currentTariffDocData.weightTariff.extraKgRate = 0.50;
+                currentTariffDocData.weightTariff.minimumCharge = 3.50;
+                try {
+                    await db.collection('tariffs').doc(currentTariffUID).set(currentTariffDocData, { merge: true });
+                    renderWeightBrackets();
+                } catch(e) { alert('Error: ' + e.message); }
             };
 
             // MODAL LOGIC MOVED AND CONSOLIDATED BELOW (Line 5081+)
@@ -9544,6 +9779,28 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             async function calculateTicketPriceAsync(t, uid, compId) {
                 const uData = userMap[uid] || {};
                 const baseT = (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]) ? tariffsCache["GLOBAL_" + uData.tariffId] : (tariffsCache[uid] || {});
+
+                // ── WEIGHT-BASED TARIFF EARLY RETURN ──
+                if (baseT.tariffMode === 'weight' && baseT.weightTariff) {
+                    const wt = baseT.weightTariff;
+                    const brackets = (wt.brackets || []).slice().sort((a, b) => a.maxKg - b.maxKg);
+                    const extraRate = parseFloat(wt.extraKgRate) || 0;
+                    const minCharge = parseFloat(wt.minimumCharge) || 0;
+                    let totalWeight = 0;
+                    if (t.packagesList && t.packagesList.length > 0) {
+                        t.packagesList.forEach(p => { totalWeight += (parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1); });
+                    } else {
+                        totalWeight = parseFloat(t.weight) || parseFloat(t.kilos) || 0;
+                    }
+                    let wtPrice = 0;
+                    if (brackets.length > 0) {
+                        const matched = brackets.find(b => totalWeight <= b.maxKg);
+                        if (matched) { wtPrice = parseFloat(matched.price) || 0; }
+                        else { const last = brackets[brackets.length - 1]; wtPrice = (parseFloat(last.price) || 0) + (Math.max(0, totalWeight - last.maxKg) * extraRate); }
+                    }
+                    return Math.max(wtPrice, minCharge);
+                }
+
                 let activeTariffRaw = baseT.items ? { ...baseT.items } : { ...baseT };
                 delete activeTariffRaw.subTariff;
                 delete activeTariffRaw.items;
@@ -9618,6 +9875,37 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         (uData.authUid && tariffsCache[uData.authUid]) ||
                         (uData.email && tariffsCache[uData.email]) ||
                         {};
+                }
+
+                // ── WEIGHT-BASED TARIFF EARLY RETURN ──
+                if (baseT.tariffMode === 'weight' && baseT.weightTariff) {
+                    const wt = baseT.weightTariff;
+                    const brackets = (wt.brackets || []).slice().sort((a, b) => a.maxKg - b.maxKg);
+                    const extraRate = parseFloat(wt.extraKgRate) || 0;
+                    const minCharge = parseFloat(wt.minimumCharge) || 0;
+
+                    let totalWeight = 0;
+                    if (t.packagesList && t.packagesList.length > 0) {
+                        t.packagesList.forEach(p => {
+                            totalWeight += (parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1);
+                        });
+                    } else {
+                        totalWeight = parseFloat(t.weight) || parseFloat(t.kilos) || 0;
+                    }
+
+                    let wtPrice = 0;
+                    if (brackets.length > 0) {
+                        const matched = brackets.find(b => totalWeight <= b.maxKg);
+                        if (matched) {
+                            wtPrice = parseFloat(matched.price) || 0;
+                        } else {
+                            const last = brackets[brackets.length - 1];
+                            const overKg = totalWeight - last.maxKg;
+                            wtPrice = (parseFloat(last.price) || 0) + (overKg > 0 ? overKg * extraRate : 0);
+                        }
+                    }
+                    wtPrice = Math.max(wtPrice, minCharge);
+                    return isNaN(wtPrice) ? 0 : wtPrice;
                 }
 
                 // 2. Extract Tariff Items (Handle modern .items vs legacy root)

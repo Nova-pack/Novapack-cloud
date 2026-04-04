@@ -1297,7 +1297,8 @@ async function loadImportGlobalSelect() {
                 window._globalTariffCache[doc.id] = data;
                 const opt = document.createElement('option');
                 opt.value = doc.id;
-                opt.textContent = 'Tarifa #' + id + ' (' + itemCount + ' artículos)';
+                const mode = data.tariffMode || 'size';
+                opt.textContent = 'Tarifa #' + id + (mode === 'weight' ? ' (PESO — ' + ((data.weightTariff && data.weightTariff.brackets) ? data.weightTariff.brackets.length : 0) + ' tramos)' : ' (' + itemCount + ' artículos)');
                 sel.appendChild(opt);
             }
         });
@@ -1306,9 +1307,18 @@ async function loadImportGlobalSelect() {
             const preview = document.getElementById('tariff-preview-count');
             if (!preview) return;
             const cached = window._globalTariffCache[sel.value];
-            if (cached && cached.items) {
-                preview.textContent = '→ ' + Object.keys(cached.items).length + ' artículos se copiarán';
-                preview.style.color = '#4CAF50';
+            if (cached) {
+                const mode = cached.tariffMode || 'size';
+                if (mode === 'weight' && cached.weightTariff) {
+                    const bc = cached.weightTariff.brackets ? cached.weightTariff.brackets.length : 0;
+                    preview.textContent = '→ PESO: ' + bc + ' tramos se copiarán';
+                    preview.style.color = '#4CAF50';
+                } else if (cached.items) {
+                    preview.textContent = '→ ' + Object.keys(cached.items).length + ' artículos se copiarán';
+                    preview.style.color = '#4CAF50';
+                } else {
+                    preview.textContent = '';
+                }
             } else {
                 preview.textContent = '';
             }
@@ -1327,27 +1337,45 @@ window.importGlobalToClient = async () => {
     
     try {
         // Get global tariff (from cache or fetch)
-        let globalItems;
+        let globalData;
         if (window._globalTariffCache[globalId]) {
-            globalItems = window._globalTariffCache[globalId].items || {};
+            globalData = window._globalTariffCache[globalId];
         } else {
             const globalDoc = await db.collection('tariffs').doc(globalId).get();
             if (!globalDoc.exists) { alert('Tarifa global no encontrada'); return; }
-            globalItems = globalDoc.data().items || {};
+            globalData = globalDoc.data();
         }
-        
-        const itemCount = Object.keys(globalItems).length;
-        if (itemCount === 0) { alert('⚠️ La tarifa ' + tariffName + ' no tiene artículos.'); return; }
-        
-        // Copy all global items to client tariff
-        await db.collection('tariffs').doc(clientUid).set({
+
+        const globalItems = globalData.items || {};
+        const tariffMode = globalData.tariffMode || 'size';
+        const weightTariff = globalData.weightTariff || null;
+
+        // Validation depending on mode
+        if (tariffMode === 'weight') {
+            if (!weightTariff || !weightTariff.brackets || weightTariff.brackets.length === 0) {
+                alert('⚠️ La tarifa ' + tariffName + ' no tiene tramos de peso configurados.'); return;
+            }
+        } else {
+            const itemCount = Object.keys(globalItems).length;
+            if (itemCount === 0) { alert('⚠️ La tarifa ' + tariffName + ' no tiene artículos.'); return; }
+        }
+
+        // Copy all global data to client tariff
+        const clientTariffData = {
             items: globalItems,
+            tariffMode: tariffMode,
             subTariff: {},
             basedOn: globalId,
             assignedAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        
-        // Show success in content area
+        };
+        if (weightTariff) clientTariffData.weightTariff = weightTariff;
+
+        await db.collection('tariffs').doc(clientUid).set(clientTariffData, { merge: true });
+
+        // Show success
+        const modeLabel = tariffMode === 'weight'
+            ? (weightTariff.brackets.length + ' tramos de peso copiados')
+            : (Object.keys(globalItems).length + ' artículos copiados correctamente');
         const content = document.getElementById('tariff-client-content');
         if (content) {
             content.innerHTML = `
@@ -1355,14 +1383,15 @@ window.importGlobalToClient = async () => {
                     <div style="font-size:1.5rem; margin-bottom:10px;">✅ Tarifa Adjudicada</div>
                     <div style="font-size:0.95rem; color:#d4d4d4; margin-bottom:5px;">
                         <b style="color:#FFD700;">${clientName}</b> → Tarifa <b style="color:#4CAF50;">${tariffName}</b>
+                        ${tariffMode === 'weight' ? '<span style="background:#4CAF50; color:white; padding:2px 8px; border-radius:10px; font-size:0.7rem; margin-left:8px;">PESO</span>' : ''}
                     </div>
-                    <div style="font-size:0.85rem; color:#aaa;">${itemCount} artículos copiados correctamente</div>
+                    <div style="font-size:0.85rem; color:#aaa;">${modeLabel}</div>
                     <button onclick="document.getElementById('btn-load-tariff').click()" style="background:#007acc; border:none; color:white; padding:8px 20px; margin-top:15px; cursor:pointer; border-radius:4px; font-size:0.85rem;">✏️ Ver/Editar Precios del Cliente</button>
                 </div>
             `;
         }
-        
-        console.log('✅ Tarifa', tariffName, 'adjudicada a', clientName, '—', itemCount, 'artículos');
+
+        console.log('✅ Tarifa', tariffName, '(' + tariffMode + ') adjudicada a', clientName);
     } catch(e) {
         alert('❌ Error: ' + e.message);
         console.error(e);
@@ -1375,7 +1404,7 @@ window.promptCreateGlobalTariff = async () => {
     if (!tid || !tid.trim()) return;
     const docId = 'GLOBAL_' + tid.trim();
     try {
-        await db.collection('tariffs').doc(docId).set({ items: {}, subTariff: {} }, { merge: true });
+        await db.collection('tariffs').doc(docId).set({ items: {}, subTariff: {}, tariffMode: 'size' }, { merge: true });
         document.getElementById('tariff-global-id').value = tid.trim();
         document.getElementById('btn-load-global-tariff').click();
         if (typeof populateGlobalTariffsDatalist === 'function') populateGlobalTariffsDatalist();
