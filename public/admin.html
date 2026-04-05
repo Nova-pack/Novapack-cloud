@@ -2377,10 +2377,13 @@ document.addEventListener('DOMContentLoaded', () => {
             <button id="cooper-subtab-entrega" onclick="cooperSwitchTab('entrega')" style="background:transparent; border:none; color:#888; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
                 <span class="material-symbols-outlined" style="font-size:1rem;">upload</span> Entregas <span id="cooper-count-entrega" style="background:#555; color:#ccc; border-radius:10px; padding:1px 7px; font-size:0.7rem; font-weight:900;">0</span>
             </button>
+            <button id="cooper-subtab-clientes" onclick="cooperSwitchTab('clientes')" style="background:transparent; border:none; color:#888; padding:10px 24px; font-size:0.9rem; font-weight:bold; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; display:flex; align-items:center; gap:6px;">
+                <span class="material-symbols-outlined" style="font-size:1rem;">contact_phone</span> Clientes Cooper
+            </button>
         </div>
 
         <!-- Filters -->
-        <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
+        <div id="cooper-filters-section" style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:16px 20px; margin-bottom:20px;">
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
                 <label style="color:#aaa; font-size:0.8rem;">Desde:</label>
                 <input type="date" id="cooper-date-from" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:8px 12px; border-radius:8px; font-size:0.85rem;">
@@ -2395,12 +2398,41 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         </div>
 
-        <!-- Route Filter -->
-        <div id="cooper-route-filter" style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;"></div>
+        <!-- Photo section (Recogidas/Entregas) -->
+        <div id="cooper-photos-section">
+            <!-- Route Filter -->
+            <div id="cooper-route-filter" style="display:flex; gap:8px; margin-bottom:20px; flex-wrap:wrap;"></div>
 
-        <!-- Photo Grid -->
-        <div id="cooper-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;">
-            <div style="grid-column:1/-1; padding:30px; text-align:center; color:#aaa;">Cargando...</div>
+            <!-- Photo Grid -->
+            <div id="cooper-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;">
+                <div style="grid-column:1/-1; padding:30px; text-align:center; color:#aaa;">Cargando...</div>
+            </div>
+        </div>
+
+        <!-- Clients section (Consultorio Cooper) -->
+        <div id="cooper-clients-section" style="display:none;">
+            <div style="background:var(--bg-dark); border:1px solid var(--border-glass); border-radius:12px; padding:20px; margin-bottom:20px;">
+                <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
+                    <div style="flex:1; min-width:200px; position:relative;">
+                        <span class="material-symbols-outlined" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#888; font-size:1.1rem;">search</span>
+                        <input type="text" id="cooper-client-search" placeholder="Buscar por codigo, nombre, direccion, poblacion o telefono..." oninput="cooperSearchClients()" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px 12px 10px 40px; border-radius:8px; font-size:0.9rem; box-sizing:border-box;">
+                    </div>
+                    <select id="cooper-client-prov" onchange="cooperSearchClients()" style="background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px 14px; border-radius:8px; font-size:0.85rem; cursor:pointer;">
+                        <option value="">Todas las provincias</option>
+                        <option value="Córdoba">Córdoba</option>
+                        <option value="Granada">Granada</option>
+                        <option value="Málaga">Málaga</option>
+                        <option value="Sevilla">Sevilla</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:16px; font-size:0.8rem; color:#888;">
+                    <span id="cooper-client-total">Total: -</span>
+                    <span id="cooper-client-results">Resultados: -</span>
+                </div>
+            </div>
+            <div id="cooper-client-list" style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden;">
+                <div style="padding:30px; text-align:center; color:#888;">Escribe para buscar clientes Cooper</div>
+            </div>
         </div>
     </div>
 </div>
@@ -2415,8 +2447,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.cooperSwitchTab = function(tab) {
         _cooperCurrentTab = tab;
-        var tabs = ['recogida', 'entrega'];
-        var colors = { recogida: '#FF9800', entrega: '#4CAF50' };
+        var tabs = ['recogida', 'entrega', 'clientes'];
+        var colors = { recogida: '#FF9800', entrega: '#4CAF50', clientes: '#2196F3' };
         tabs.forEach(function(t) {
             var btn = document.getElementById('cooper-subtab-' + t);
             var badge = document.getElementById('cooper-count-' + t);
@@ -2430,7 +2462,88 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (badge) { badge.style.background = '#555'; badge.style.color = '#ccc'; }
             }
         });
-        _renderCooperGrid();
+
+        // Toggle sections
+        var photosSection = document.getElementById('cooper-photos-section');
+        var filtersSection = document.getElementById('cooper-filters-section');
+        var clientsSection = document.getElementById('cooper-clients-section');
+        if (tab === 'clientes') {
+            if (photosSection) photosSection.style.display = 'none';
+            if (filtersSection) filtersSection.style.display = 'none';
+            if (clientsSection) { clientsSection.style.display = 'block'; cooperLoadClientData(); }
+        } else {
+            if (photosSection) photosSection.style.display = 'block';
+            if (filtersSection) filtersSection.style.display = 'block';
+            if (clientsSection) clientsSection.style.display = 'none';
+            _renderCooperGrid();
+        }
+    };
+
+    // --- COOPER CLIENT DIRECTORY ---
+    var _cooperClients = null;
+
+    window.cooperLoadClientData = async function() {
+        if (_cooperClients) return; // already loaded
+        try {
+            var resp = await fetch('cooper_clients.json');
+            _cooperClients = await resp.json();
+            document.getElementById('cooper-client-total').textContent = 'Total: ' + _cooperClients.length + ' clientes';
+            document.getElementById('cooper-client-results').textContent = 'Resultados: ' + _cooperClients.length;
+        } catch(e) {
+            document.getElementById('cooper-client-list').innerHTML = '<div style="padding:20px; text-align:center; color:#FF3B30;">Error cargando datos: ' + e.message + '</div>';
+        }
+    };
+
+    window.cooperSearchClients = function() {
+        if (!_cooperClients) return;
+        var query = (document.getElementById('cooper-client-search').value || '').toLowerCase().trim();
+        var prov = document.getElementById('cooper-client-prov').value;
+        var listEl = document.getElementById('cooper-client-list');
+
+        var filtered = _cooperClients;
+        if (prov) filtered = filtered.filter(function(r) { return r.pv === prov; });
+        if (query.length >= 2) {
+            filtered = filtered.filter(function(r) {
+                return (r.c && r.c.toLowerCase().indexOf(query) !== -1) ||
+                       (r.d && r.d.toLowerCase().indexOf(query) !== -1) ||
+                       (r.p && r.p.toLowerCase().indexOf(query) !== -1) ||
+                       (r.t && r.t.toLowerCase().indexOf(query) !== -1);
+            });
+        }
+
+        document.getElementById('cooper-client-results').textContent = 'Resultados: ' + filtered.length;
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = '<div style="padding:30px; text-align:center; color:#888;">Sin resultados</div>';
+            return;
+        }
+
+        var show = filtered.slice(0, 100);
+        var html = '<table style="width:100%; border-collapse:collapse; font-size:0.82rem;">';
+        html += '<thead><tr style="background:#16213e; position:sticky; top:0;">';
+        html += '<th style="padding:10px 12px; text-align:left; color:#FF9800; font-weight:700;">Cliente</th>';
+        html += '<th style="padding:10px 12px; text-align:left; color:#FF9800; font-weight:700;">Direccion</th>';
+        html += '<th style="padding:10px 12px; text-align:left; color:#FF9800; font-weight:700;">Poblacion</th>';
+        html += '<th style="padding:10px 12px; text-align:left; color:#FF9800; font-weight:700;">Provincia</th>';
+        html += '<th style="padding:10px 12px; text-align:left; color:#FF9800; font-weight:700;">Telefono</th>';
+        html += '</tr></thead><tbody>';
+        show.forEach(function(r, i) {
+            var bg = i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+            html += '<tr style="background:' + bg + '; border-bottom:1px solid #222;">';
+            html += '<td style="padding:8px 12px; color:#ddd;">' + (r.c || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#aaa;">' + (r.d || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#aaa;">' + (r.p || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#2196F3;">' + (r.pv || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#4CAF50; white-space:nowrap;">' + (r.t || '-') + '</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        if (filtered.length > 100) {
+            html += '<div style="padding:10px; text-align:center; color:#888; font-size:0.78rem;">Mostrando 100 de ' + filtered.length + ' resultados. Refina tu busqueda.</div>';
+        }
+        listEl.innerHTML = html;
+        listEl.style.maxHeight = '500px';
+        listEl.style.overflowY = 'auto';
     };
 
     window.loadCooperPanel = async function() {
