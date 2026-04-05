@@ -5999,10 +5999,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Teléfono del Repartidor (Ej: 600123456)</label>
                         <input type="text" id="new-phone-number" required style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
                     </div>
-                    <div class="form-group" style="margin-bottom:15px; background:rgba(206,147,216,0.08); border:1px solid #CE93D8; border-radius:8px; padding:12px;">
+                    <div class="form-group" style="margin-bottom:15px; background:rgba(206,147,216,0.08); border:1px solid #CE93D8; border-radius:8px; padding:12px; position:relative;">
                         <label style="display:block; color:#CE93D8; font-size:0.8rem; font-weight:700; margin-bottom:5px;">Zonas de cobertura <span style="color:#888; font-size:0.7rem; font-weight:400;">(CPs y/o localidades separados por comas)</span></label>
-                        <input type="text" id="new-phone-coverage-zones" placeholder="Ej: 29001, 29002, Torremolinos, Benalmádena" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:0.85rem;">
-                        <div style="color:#888; font-size:0.7rem; margin-top:4px;">Los albaranes con estos CPs/localidades se asignarán a esta ruta automáticamente</div>
+                        <input type="text" id="new-phone-coverage-zones" placeholder="Escribe provincia, localidad o CP..." autocomplete="off" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:0.85rem;">
+                        <div id="coverage-zones-suggestions" style="display:none; position:absolute; left:12px; right:12px; max-height:200px; overflow-y:auto; background:#1e1e2e; border:1px solid #CE93D8; border-top:none; border-radius:0 0 8px 8px; z-index:10; box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+                        <div style="color:#888; font-size:0.7rem; margin-top:4px;">Escribe una provincia para añadir sus CPs, o una localidad para buscar su CP</div>
                     </div>
                     <div class="form-group" style="margin-bottom:15px;">
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Nombre Chófer 1 (Ej: Paco / Mañana)</label>
@@ -7943,6 +7944,142 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             if(document.getElementById('btn-print-reports')) document.getElementById('btn-print-reports').onclick = () => window.print();
+
+            // --- COVERAGE ZONES AUTOCOMPLETE ---
+            (function() {
+                var czInput = document.getElementById('new-phone-coverage-zones');
+                var czSugg = document.getElementById('coverage-zones-suggestions');
+                if (!czInput || !czSugg) return;
+
+                var provMap = {'01':'ALAVA','02':'ALBACETE','03':'ALICANTE','04':'ALMERIA','05':'AVILA','06':'BADAJOZ','07':'BALEARES','08':'BARCELONA','09':'BURGOS','10':'CACERES','11':'CADIZ','12':'CASTELLON','13':'CIUDAD REAL','14':'CORDOBA','15':'A CORUÑA','16':'CUENCA','17':'GIRONA','18':'GRANADA','19':'GUADALAJARA','20':'GUIPUZKOA','21':'HUELVA','22':'HUESCA','23':'JAEN','24':'LEON','25':'LLEIDA','26':'LA RIOJA','27':'LUGO','28':'MADRID','29':'MALAGA','30':'MURCIA','31':'NAVARRA','32':'OURENSE','33':'ASTURIAS','34':'PALENCIA','35':'LAS PALMAS','36':'PONTEVEDRA','37':'SALAMANCA','38':'TENERIFE','39':'CANTABRIA','40':'SEGOVIA','41':'SEVILLA','42':'SORIA','43':'TARRAGONA','44':'TERUEL','45':'TOLEDO','46':'VALENCIA','47':'VALLADOLID','48':'VIZCAYA','49':'ZAMORA','50':'ZARAGOZA'};
+                // Reverse: province name → prefix
+                var nameToPrefix = {};
+                Object.keys(provMap).forEach(function(k) { nameToPrefix[provMap[k]] = k; });
+
+                var czTimer = null;
+                czInput.addEventListener('input', function() {
+                    clearTimeout(czTimer);
+                    czTimer = setTimeout(function() { _czSearch(); }, 250);
+                });
+                czInput.addEventListener('focus', function() { if (czInput.value.trim()) _czSearch(); });
+
+                function _czGetCurrentChunk() {
+                    var val = czInput.value;
+                    var lastComma = val.lastIndexOf(',');
+                    return (lastComma === -1 ? val : val.substring(lastComma + 1)).trim();
+                }
+
+                function _czAppendValue(text) {
+                    var val = czInput.value;
+                    var lastComma = val.lastIndexOf(',');
+                    var before = lastComma === -1 ? '' : val.substring(0, lastComma + 1) + ' ';
+                    czInput.value = before + text + ', ';
+                    czSugg.style.display = 'none';
+                    czInput.focus();
+                }
+
+                function _czSearch() {
+                    var chunk = _czGetCurrentChunk().toLowerCase();
+                    if (chunk.length < 2) { czSugg.style.display = 'none'; return; }
+
+                    var results = [];
+
+                    // 1. Match province names → offer to add all CPs for that province
+                    Object.keys(nameToPrefix).forEach(function(prov) {
+                        if (prov.toLowerCase().indexOf(chunk) !== -1) {
+                            var prefix = nameToPrefix[prov];
+                            results.push({ type: 'province', label: prov, prefix: prefix, desc: 'Añadir todos los CPs ' + prefix + 'xxx' });
+                        }
+                    });
+
+                    // 2. Match localities from PhantomDirectory → show their CPs
+                    if (window.isPhantomLoaded && window.PhantomDirectory && chunk.length >= 3) {
+                        var seen = {};
+                        window.PhantomDirectory.forEach(function(c) {
+                            if (!c.localidad || !c.cp) return;
+                            var loc = c.localidad.trim().toLowerCase();
+                            var key = c.cp + '_' + loc;
+                            if (seen[key]) return;
+                            if (loc.indexOf(chunk) !== -1 || c.cp.indexOf(chunk) !== -1) {
+                                seen[key] = true;
+                                var prefix = c.cp.substring(0, 2);
+                                results.push({ type: 'locality', label: c.localidad.trim(), cp: c.cp, desc: 'CP ' + c.cp + ' — ' + (provMap[prefix] || '') });
+                            }
+                        });
+                    }
+
+                    // 3. If chunk is a partial CP number, show matching localities
+                    if (/^\d{2,4}$/.test(chunk) && window.isPhantomLoaded && window.PhantomDirectory) {
+                        var seenCp = {};
+                        window.PhantomDirectory.forEach(function(c) {
+                            if (!c.cp) return;
+                            if (c.cp.startsWith(chunk) && !seenCp[c.cp]) {
+                                seenCp[c.cp] = true;
+                                results.push({ type: 'cp', label: c.cp, desc: (c.localidad || '') + ' — ' + (provMap[c.cp.substring(0, 2)] || '') });
+                            }
+                        });
+                    }
+
+                    // Deduplicate and limit
+                    var unique = [];
+                    var keys = {};
+                    results.forEach(function(r) {
+                        var k = r.type + '_' + (r.cp || r.prefix || r.label);
+                        if (!keys[k]) { keys[k] = true; unique.push(r); }
+                    });
+                    results = unique.slice(0, 15);
+
+                    if (results.length === 0) { czSugg.style.display = 'none'; return; }
+
+                    var html = '';
+                    results.forEach(function(r, i) {
+                        var bg = i % 2 === 0 ? '#1e1e2e' : '#232338';
+                        if (r.type === 'province') {
+                            html += '<div onclick="window._czSelectProvince(\'' + r.prefix + '\')" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
+                            html += '<div style="color:#CE93D8; font-size:0.82rem; font-weight:700;">📍 ' + r.label + '</div>';
+                            html += '<div style="color:#888; font-size:0.7rem;">' + r.desc + '</div>';
+                            html += '</div>';
+                        } else {
+                            var val = r.cp || r.label;
+                            html += '<div onclick="window._czSelectItem(\'' + val + '\')" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
+                            html += '<div style="color:#eee; font-size:0.82rem;">' + r.label + '</div>';
+                            html += '<div style="color:#888; font-size:0.7rem;">' + r.desc + '</div>';
+                            html += '</div>';
+                        }
+                    });
+                    czSugg.innerHTML = html;
+                    czSugg.style.display = 'block';
+                }
+
+                window._czSelectItem = function(val) { _czAppendValue(val); };
+
+                window._czSelectProvince = function(prefix) {
+                    // Gather all unique CPs for this province from PhantomDirectory
+                    var cps = {};
+                    if (window.isPhantomLoaded && window.PhantomDirectory) {
+                        window.PhantomDirectory.forEach(function(c) {
+                            if (c.cp && c.cp.substring(0, 2) === prefix) cps[c.cp] = true;
+                        });
+                    }
+                    var cpList = Object.keys(cps).sort();
+                    if (cpList.length === 0) {
+                        // Fallback: just add the prefix pattern
+                        _czAppendValue(prefix + '000');
+                        return;
+                    }
+                    // Append all CPs
+                    var val = czInput.value;
+                    var lastComma = val.lastIndexOf(',');
+                    var before = lastComma === -1 ? '' : val.substring(0, lastComma + 1) + ' ';
+                    czInput.value = before + cpList.join(', ') + ', ';
+                    czSugg.style.display = 'none';
+                    czInput.focus();
+                };
+
+                document.addEventListener('click', function(e) {
+                    if (!czSugg.contains(e.target) && e.target !== czInput) czSugg.style.display = 'none';
+                });
+            })();
 
             // Phone Management
             phoneTableBody = document.getElementById('phone-table-body');
