@@ -853,10 +853,14 @@ window.initUserNotifications = function(uid) {
                 // Build body
                 var bodyHtml = '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + escapeHtml(data.body || data.message || '') + '</div>';
 
-                // Photo thumbnail (clickable)
+                // Photo thumbnail (clickable) — or placeholder for async load from ticket
                 var photoHtml = '';
-                if (data.photoURL) {
-                    photoHtml = '<div style="padding-left:28px; margin-top:8px;"><img class="notif-photo" data-url="' + escapeHtml(data.photoURL) + '" src="' + escapeHtml(data.photoURL) + '" alt="Foto" style="max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;"></div>';
+                var photoUrl = data.photoURL || '';
+                if (photoUrl) {
+                    photoHtml = '<div style="padding-left:28px; margin-top:8px;"><img class="notif-photo" data-url="' + escapeHtml(photoUrl) + '" src="' + escapeHtml(photoUrl) + '" alt="Foto" style="max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;"></div>';
+                } else if (data.type === 'incident' && data.docId) {
+                    // Fallback: load photo from ticket for old notifications
+                    photoHtml = '<div class="notif-photo-placeholder" data-ticketdocid="' + escapeHtml(data.docId) + '" style="padding-left:28px; margin-top:8px;"></div>';
                 }
 
                 // Ticket reference + mark as read button
@@ -902,6 +906,30 @@ window.initUserNotifications = function(uid) {
                             db.collection('user_notifications').doc(this.dataset.docid).delete().catch(function(){});
                         }
                     });
+                }
+
+                // Async fallback: load incident photo from ticket if not in notification
+                var phPlaceholder = item.querySelector('.notif-photo-placeholder');
+                if (phPlaceholder) {
+                    (function(el) {
+                        var tid = el.dataset.ticketdocid;
+                        db.collection('tickets').doc(tid).get().then(function(tSnap) {
+                            if (tSnap.exists && tSnap.data().incidentPhotoURL) {
+                                var url = tSnap.data().incidentPhotoURL;
+                                var img = document.createElement('img');
+                                img.className = 'notif-photo';
+                                img.dataset.url = url;
+                                img.src = url;
+                                img.alt = 'Foto';
+                                img.style.cssText = 'max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;';
+                                img.addEventListener('click', function(e) {
+                                    e.stopPropagation();
+                                    window.open(this.dataset.url, '_blank');
+                                });
+                                el.appendChild(img);
+                            }
+                        }).catch(function(){});
+                    })(phPlaceholder);
                 }
 
                 list.appendChild(item);
@@ -1086,8 +1114,10 @@ async function loadEditor(t) {
     if (!incidentBanner) {
         incidentBanner = document.createElement('div');
         incidentBanner.id = 'incident-info-banner';
-        const editorTitle = document.getElementById('editor-title');
-        editorTitle.parentNode.insertBefore(incidentBanner, editorTitle.nextSibling);
+        // Insert before the pending-confirmation-alert (after the editor header flex row)
+        const anchor = document.getElementById('pending-confirmation-alert');
+        if (anchor) anchor.parentNode.insertBefore(incidentBanner, anchor);
+        else document.getElementById('editor-title').parentNode.parentNode.appendChild(incidentBanner);
     }
     if (t.incidentReason || t.status === 'Incidencia' || t.status === 'Devuelto') {
         const incColor = t.status === 'Devuelto' ? '#9C27B0' : '#F44336';
