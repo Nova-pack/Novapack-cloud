@@ -2356,6 +2356,7 @@ function initApp() {
         try {
             var snap = await db.collection('cooper_photos')
                 .where('driverName', '==', currentDriverName || 'Desconocido')
+                .limit(2000)
                 .get();
             var today = new Date().toLocaleDateString('es-ES');
             var recCount = 0, entCount = 0;

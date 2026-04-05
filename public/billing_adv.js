@@ -103,6 +103,7 @@ window.advLoadClientDetails = async (uid) => {
             .where('date', '>=', yearStart)
             .where('date', '<', yearEnd)
             .orderBy('date', 'desc')
+            .limit(10000)
             .get();
         let nextNum = 0;
         invSnap.forEach(doc => {
@@ -382,6 +383,7 @@ document.getElementById('btn-adv-save').onclick = async () => {
             .where('date', '>=', yrStart)
             .where('date', '<', yrEnd)
             .orderBy('date', 'desc')
+            .limit(10000)
             .get();
         let nextNum = 0;
         invSnap.forEach(doc => {

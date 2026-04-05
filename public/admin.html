@@ -1538,7 +1538,7 @@ window.loadBriefingDashboard = async function() {
         var tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
 
         var [ticketSnap, mailSnap] = await Promise.all([
-            db.collection('tickets').where('status', 'in', ['Incidencia', 'Devuelto', 'pending', 'pending_confirmation']).get(),
+            db.collection('tickets').where('status', 'in', ['Incidencia', 'Devuelto', 'pending', 'pending_confirmation']).limit(5000).get(),
             db.collection('mailbox').where('status', '==', 'nueva').get()
         ]);
 
@@ -5119,9 +5119,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 async function updateMaintenanceStats() {
                     try {
-                        const ticketsSnap = await db.collection('tickets').get();
-                        const invoicesSnap = await db.collection('invoices').get();
-                        const usersSnap = await db.collection('users').get();
+                        const ticketsSnap = await db.collection('tickets').limit(10000).get();
+                        const invoicesSnap = await db.collection('invoices').limit(10000).get();
+                        const usersSnap = await db.collection('users').limit(5000).get();
                         document.getElementById('stat-total-tickets').textContent = ticketsSnap.size;
                         document.getElementById('stat-total-invoices').textContent = invoicesSnap.size;
                         document.getElementById('stat-total-clients').textContent = usersSnap.size;
@@ -5151,7 +5151,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         };
 
-                        const usersSnap = await db.collection('users').get();
+                        const usersSnap = await db.collection('users').limit(5000).get();
                         for (const uDoc of usersSnap.docs) {
                             const uData = uDoc.data();
                             const compsSnap = await db.collection('users').doc(uDoc.id).collection('companies').get();
@@ -5159,10 +5159,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             data.collections.users[uDoc.id] = uData;
                         }
 
-                        const tSnap = await db.collection('tickets').get();
+                        const tSnap = await db.collection('tickets').limit(10000).get();
                         data.collections.tickets = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-                        const iSnap = await db.collection('invoices').get();
+                        const iSnap = await db.collection('invoices').limit(10000).get();
                         data.collections.invoices = iSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
                         const tarSnap = await db.collection('tariffs').get();
@@ -6571,7 +6571,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     // Using collectionGroup to find all abonos across all client-specific collections if they were nested, 
                     // but since I'm saving them in 'tickets' root for abonos:
-                    const snap = await db.collection('tickets').where('type', '==', 'abono').get();
+                    const snap = await db.collection('tickets').where('type', '==', 'abono').limit(5000).get();
                     tbody.innerHTML = '';
                     if (snap.empty) {
                         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#888;">No se han emitido facturas de abono todavía.</td></tr>';
@@ -6637,7 +6637,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("[Maintenance] Iniciando borrado masivo...");
 
                 // 1. Borrar todos los albaranes (Tickets) - Colección Global
-                const ticketsSnap = await db.collection('tickets').get();
+                const ticketsSnap = await db.collection('tickets').limit(10000).get();
                 console.log(`[Maintenance] Eliminando ${ticketsSnap.size} albaranes...`);
                 let batch = db.batch();
                 let count = 0;
@@ -6654,7 +6654,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await batch.commit();
 
                 // 2. Borrar todas las facturas
-                const invoicesSnap = await db.collection('invoices').get();
+                const invoicesSnap = await db.collection('invoices').limit(10000).get();
                 console.log(`[Maintenance] Eliminando ${invoicesSnap.size} facturas...`);
                 batch = db.batch();
                 count = 0;
@@ -6778,7 +6778,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 showLoading();
                 try {
-                    const usersSnap = await db.collection('users').get();
+                    const usersSnap = await db.collection('users').limit(5000).get();
                     const uMap = {};
                     usersSnap.forEach(uDoc => {
                         const u = uDoc.data();
@@ -6787,7 +6787,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (u.email) uMap[u.email.toLowerCase()] = u.idNum;
                     });
 
-                    const ticketsSnap = await db.collection('tickets').get();
+                    const ticketsSnap = await db.collection('tickets').limit(10000).get();
                     let totalUpdated = 0;
                     let batch = db.batch();
                     let count = 0;
@@ -6903,7 +6903,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     // 2. Fetch ALL users once and paginate in memory to safely filter out clones without breaking page limits
                     // Ensure local cache is populated
                     if (Object.keys(userMap).length < 2) {
-                        const allUsersSnap = await db.collection('users').get();
+                        const allUsersSnap = await db.collection('users').limit(5000).get();
                         allUsersSnap.forEach(doc => { 
                             const d = { ...doc.data(), id: doc.id }; // Enforce strict DB path ID
                             userMap[d.id] = d; 
@@ -7445,20 +7445,20 @@ document.addEventListener('DOMContentLoaded', () => {
                             const targetIdNum = String(uData.idNum);
 
                             // 1. Tíckets
-                            const qUID = await db.collection('tickets').where('uid', '==', uid).get();
+                            const qUID = await db.collection('tickets').where('uid', '==', uid).limit(5000).get();
                             for (const doc of qUID.docs) { batch.delete(doc.ref); operationsCount++; await commitBatchIfNeeded(); }
                             
                             if (targetIdNum && targetIdNum !== 'undefined') {
-                                const qClientNum = await db.collection('tickets').where('clientIdNum', '==', targetIdNum).get();
+                                const qClientNum = await db.collection('tickets').where('clientIdNum', '==', targetIdNum).limit(5000).get();
                                 for (const doc of qClientNum.docs) { batch.delete(doc.ref); operationsCount++; await commitBatchIfNeeded(); }
                             }
 
                             // 2. Facturas
-                            const invUID = await db.collection('invoices').where('uid', '==', uid).get();
+                            const invUID = await db.collection('invoices').where('uid', '==', uid).limit(5000).get();
                             for (const doc of invUID.docs) { batch.delete(doc.ref); operationsCount++; await commitBatchIfNeeded(); }
 
                             if (targetIdNum && targetIdNum !== 'undefined') {
-                                const invClientNum = await db.collection('invoices').where('clientIdNum', '==', targetIdNum).get();
+                                const invClientNum = await db.collection('invoices').where('clientIdNum', '==', targetIdNum).limit(5000).get();
                                 for (const doc of invClientNum.docs) { batch.delete(doc.ref); operationsCount++; await commitBatchIfNeeded(); }
                             }
 

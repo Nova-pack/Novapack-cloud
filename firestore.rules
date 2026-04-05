@@ -1,26 +1,152 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users full access (admin app needs broad access)
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+
+    // ─── HELPERS ───
+    function isAuth() {
+      return request.auth != null;
     }
-    // Mail engine: allow write to mailbox without auth (for IMAP sync script)
-    // Read restricted to authenticated users (covered by global rule above)
-    match /mailbox/{docId} {
-      allow create, update: if true;
-      allow read: if request.auth != null;
+    function isAdmin() {
+      return isAuth() &&
+             get(/databases/$(database)/documents/config/admin).data.uid == request.auth.uid;
     }
-    // Master PIN: allow read on config/phones for driver app PIN validation
+
+    // ─── CONFIG (admin-only write, auth read) ───
+    match /config/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    // Phones subcollection: public read (driver PIN validation), admin write
     match /config/phones {
       allow read: if true;
+      allow write: if isAdmin();
     }
-    match /config/phones/list/{docId} {
+    match /config/{parent}/list/{phoneId} {
       allow read: if true;
+      allow write: if isAdmin();
     }
-    // Deleted ticket blacklist: allow read for IMAP sync script
+
+    // ─── USERS ───
+    match /users/{userId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAdmin() || request.auth.uid == userId;
+      allow delete: if isAdmin();
+
+      match /companies/{compId} {
+        allow read: if isAuth();
+        allow write: if isAdmin() || request.auth.uid == userId;
+      }
+    }
+
+    // ─── TICKETS ───
+    match /tickets/{ticketId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─── INVOICES (admin-only write) ───
+    match /invoices/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── TARIFFS, ARTICLES, BILLING COMPANIES (admin-only write) ───
+    match /tariffs/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /articles/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /billing_companies/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── PAPELERA (admin-only) ───
+    match /deleted_tickets/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /deleted_invoices/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /deleted_abonos/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── BLACKLIST (public read for IMAP sync, admin write) ───
     match /deleted_erp_ids/{docId} {
       allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ─── MAILBOX (public create for IMAP sync, auth read, admin delete) ───
+    match /mailbox/{docId} {
+      allow create, update: if true;
+      allow read: if isAuth();
+      allow delete: if isAdmin();
+    }
+    match /mailIncidencias/{docId} {
+      allow create, update: if true;
+      allow read: if isAuth();
+      allow delete: if isAdmin();
+    }
+
+    // ─── DRIVER: alerts, pickups, cooper photos (auth read/write) ───
+    match /driver_alerts/{docId} {
+      allow read, write: if isAuth();
+    }
+    match /pickupRequests/{docId} {
+      allow read, write: if isAuth();
+    }
+    match /cooper_photos/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    // ─── USER: notifications, destinations (auth read/write) ───
+    match /user_notifications/{docId} {
+      allow read, write: if isAuth();
+    }
+    // Destinations: user's saved addresses subcollection
+    match /destinations/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    // ─── CONTABILIDAD: providers, expenses, journal (admin-only write) ───
+    match /providers/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /expenses/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /journal/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── FACTURACIÓN AVANZADA ───
+    match /adv_invoices/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+    match /credit_notes/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // ─── COMUNICACIONES ───
+    match /campaigns/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
     }
   }
 }

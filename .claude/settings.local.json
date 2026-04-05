@@ -51,7 +51,8 @@
       "Bash(node -e \"const d=require\\(''./cooper_clients.json''\\); console.log\\(''Cooper clients:'', d.length\\)\")",
       "Bash(du -h 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz\\\\public/{firebase-app.js,admin.html,app.html,reparto.html,cooper_clients.json,sw.js,firebase-config.js,manifest.json,manifest-repartidor.json}')",
       "Bash(grep -r \"NOVAPACK_SENTRY_DSN\\\\|sentry\" 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz\\\\public' --include=*.js --include=*.html)",
-      "Bash(find 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz' -type f \\\\\\(-name *.bak -o -name *.backup -o -name *~ \\\\\\))"
+      "Bash(find 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz' -type f \\\\\\(-name *.bak -o -name *.backup -o -name *~ \\\\\\))",
+      "Bash(grep -ohP \"db\\\\.collection\\\\\\(''''[^'''']+''''\\\\\\)\" public/*.js public/*.html)"
     ]
   }
 }

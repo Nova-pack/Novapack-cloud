@@ -655,6 +655,7 @@
                 .where('date', '>=', aboYrStart)
                 .where('date', '<', aboYrEnd)
                 .orderBy('date', 'desc')
+                .limit(10000)
                 .get();
             let nextNum = 0;
             invSnap.forEach(doc => {

@@ -1113,12 +1113,14 @@ async function getNextId() {
         // 2. Server read by uid (authoritative)
         const serverSnap1 = await db.collection('tickets')
             .where('uid', 'in', idVariants)
+            .limit(5000)
             .get();
         maxNum = extractMaxNum(serverSnap1, maxNum);
 
         // 3. CRITICAL FIX: Also search by clientIdNum to find tickets created from other terminals/UIDs
         const serverSnap2 = await db.collection('tickets')
             .where('clientIdNum', 'in', idVariants)
+            .limit(5000)
             .get();
         maxNum = extractMaxNum(serverSnap2, maxNum);
 
@@ -3124,6 +3126,7 @@ async function runReport() {
         // Fetch strictly by UID to bypass restrictive Firestore rules
         const snap = await getCollection('tickets')
             .where('uid', '==', currentUser.uid)
+            .limit(5000)
             .get();
             
         let tickets = [];
