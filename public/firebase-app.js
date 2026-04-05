@@ -2913,10 +2913,10 @@ if (clientPickerInput) {
             }];
 
             if ((c.name || '').toLowerCase().includes(q)) {
-                addrs.forEach(a => matches.push({ name: c.name, phone: c.phone, isGlobal: false, ...a }));
+                addrs.forEach(a => matches.push({ name: c.name, phone: c.phone, nif: c.nif || '', isGlobal: false, ...a }));
             } else {
                 addrs.forEach(a => {
-                    if ((a.address || '').toLowerCase().includes(q)) matches.push({ name: c.name, phone: c.phone, isGlobal: false, ...a });
+                    if ((a.address || '').toLowerCase().includes(q)) matches.push({ name: c.name, phone: c.phone, nif: c.nif || '', isGlobal: false, ...a });
                 });
             }
         });
@@ -2933,6 +2933,7 @@ if (clientPickerInput) {
                     matches.push({
                         name: pc.name || '',
                         phone: pc.senderPhone || '',
+                        nif: pc.nif || '',
                         address: pc.street || '',
                         street: pc.street || '',
                         number: '',
@@ -2964,6 +2965,8 @@ if (clientPickerInput) {
                     document.getElementById('ticket-cp').value = m.cp || '';
                     document.getElementById('ticket-phone').value = m.phone || '';
                     document.getElementById('ticket-province').value = m.province || '';
+                    var nifInput = document.getElementById('ticket-receiver-nif');
+                    if (nifInput && m.nif) { nifInput.value = m.nif; var nifBox = document.getElementById('box-receiver-nif'); if (nifBox) nifBox.style.display = 'block'; }
                     clientPickerInput.value = '';
                     clientPickerResults.classList.add('hidden');
                 };
