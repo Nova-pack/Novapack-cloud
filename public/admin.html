@@ -1415,13 +1415,72 @@
         </div>
     </div>
 
-    <!-- After identity selected: just the watermark, no greeting text -->
-    <div id="erp-inicio-welcome-msg" style="display:none; position:relative; z-index:1;">
-        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; padding:40px;">
-            <span id="erp-welcome-name" style="display:none;"></span>
-            <button onclick="sessionStorage.removeItem('adminActiveIdentity'); window.adminIdentity=null; location.reload();" style="position:absolute; bottom:40px; left:50%; transform:translateX(-50%); background:transparent; border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.3); padding:8px 20px; font-size:0.75rem; cursor:pointer; border-radius:4px; display:flex; align-items:center; gap:6px; transition: all 0.3s;" onmouseover="this.style.borderColor='rgba(255,77,0,0.4)'; this.style.color='rgba(255,77,0,0.7)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)'; this.style.color='rgba(255,255,255,0.3)'">
-                <span class="material-symbols-outlined" style="font-size:16px;">logout</span> Cambiar identidad
-            </button>
+    <!-- After identity selected: Briefing Dashboard -->
+    <div id="erp-inicio-welcome-msg" style="display:none; position:relative; z-index:1; padding:20px 24px;">
+        <span id="erp-welcome-name" style="display:none;"></span>
+
+        <!-- Header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:10px;">
+            <div>
+                <h1 style="margin:0; color:#FF4D00; font-size:1.3rem; display:flex; align-items:center; gap:8px;">
+                    <span class="material-symbols-outlined" style="font-size:1.5rem;">dashboard</span> Informe de Situacion
+                </h1>
+                <p id="briefing-subtitle" style="margin:4px 0 0; color:#888; font-size:0.8rem;"></p>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button onclick="loadBriefingDashboard()" style="background:#2a2a2d; border:1px solid #444; color:#aaa; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; gap:4px;">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem;">refresh</span> Actualizar
+                </button>
+                <button onclick="sessionStorage.removeItem('adminActiveIdentity'); window.adminIdentity=null; location.reload();" style="background:transparent; border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.3); padding:8px 14px; font-size:0.8rem; cursor:pointer; border-radius:8px; display:flex; align-items:center; gap:4px;" onmouseover="this.style.borderColor='rgba(255,77,0,0.4)'; this.style.color='rgba(255,77,0,0.7)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)'; this.style.color='rgba(255,255,255,0.3)'">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem;">logout</span> Cambiar identidad
+                </button>
+            </div>
+        </div>
+
+        <!-- Priority Cards Row -->
+        <div id="briefing-priorities" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:14px; margin-bottom:20px;"></div>
+
+        <!-- Two Column Layout -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <!-- Incidents List -->
+            <div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden;">
+                <div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; align-items:center; gap:8px;">
+                    <span class="material-symbols-outlined" style="color:#FF3B30;">warning</span>
+                    <span style="color:#FF3B30; font-weight:700; font-size:0.9rem;">Incidencias Activas</span>
+                    <span id="briefing-incident-count" style="background:#FF3B30; color:#fff; border-radius:10px; padding:1px 8px; font-size:0.7rem; font-weight:900; margin-left:auto;">0</span>
+                </div>
+                <div id="briefing-incidents" style="max-height:300px; overflow-y:auto; padding:8px;"></div>
+            </div>
+
+            <!-- Returns List -->
+            <div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden;">
+                <div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; align-items:center; gap:8px;">
+                    <span class="material-symbols-outlined" style="color:#FF9800;">undo</span>
+                    <span style="color:#FF9800; font-weight:700; font-size:0.9rem;">Devoluciones</span>
+                    <span id="briefing-return-count" style="background:#FF9800; color:#000; border-radius:10px; padding:1px 8px; font-size:0.7rem; font-weight:900; margin-left:auto;">0</span>
+                </div>
+                <div id="briefing-returns" style="max-height:300px; overflow-y:auto; padding:8px;"></div>
+            </div>
+        </div>
+
+        <!-- Mailbox Row -->
+        <div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden; margin-top:16px;">
+            <div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:#2196F3;">mail</span>
+                <span style="color:#2196F3; font-weight:700; font-size:0.9rem;">Buzon — Mensajes sin leer</span>
+                <span id="briefing-mail-count" style="background:#2196F3; color:#fff; border-radius:10px; padding:1px 8px; font-size:0.7rem; font-weight:900; margin-left:auto;">0</span>
+            </div>
+            <div id="briefing-mailbox" style="max-height:250px; overflow-y:auto; padding:8px;"></div>
+        </div>
+
+        <!-- Pending Confirmations -->
+        <div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden; margin-top:16px;">
+            <div style="padding:12px 16px; border-bottom:1px solid #333; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:#4CAF50;">pending_actions</span>
+                <span style="color:#4CAF50; font-weight:700; font-size:0.9rem;">Entregas Pendientes Hoy</span>
+                <span id="briefing-pending-count" style="background:#4CAF50; color:#fff; border-radius:10px; padding:1px 8px; font-size:0.7rem; font-weight:900; margin-left:auto;">0</span>
+            </div>
+            <div id="briefing-pending" style="max-height:200px; overflow-y:auto; padding:8px;"></div>
         </div>
     </div>
 </div>
@@ -1453,6 +1512,153 @@ function erpSetIdentityFromInicio(name) {
 
     // Update dynamic identity names (AI chat etc.)
     document.querySelectorAll('.dynamic-identity-name').forEach(function(el) { el.textContent = name; });
+
+    // Load briefing dashboard
+    setTimeout(function() { loadBriefingDashboard(); }, 300);
+}
+
+// =============================================
+//  BRIEFING DASHBOARD — Informe de situacion
+// =============================================
+window.loadBriefingDashboard = async function() {
+    var sub = document.getElementById('briefing-subtitle');
+    if (sub) sub.textContent = 'Cargando datos — ' + new Date().toLocaleString('es-ES', { weekday:'long', day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' }) + '...';
+
+    var prioritiesEl = document.getElementById('briefing-priorities');
+    var incidentsEl = document.getElementById('briefing-incidents');
+    var returnsEl = document.getElementById('briefing-returns');
+    var mailboxEl = document.getElementById('briefing-mailbox');
+    var pendingEl = document.getElementById('briefing-pending');
+
+    try {
+        // Parallel queries
+        var today = new Date(); today.setHours(0,0,0,0);
+        var tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+        var [ticketSnap, mailSnap] = await Promise.all([
+            db.collection('tickets').where('status', 'in', ['Incidencia', 'Devuelto', 'pending', 'pending_confirmation']).get(),
+            db.collection('mailbox').where('status', '==', 'nueva').get()
+        ]);
+
+        var incidents = [], returns = [], pendingToday = [], pendingAll = [];
+        ticketSnap.forEach(function(doc) {
+            var t = doc.data(); t.docId = doc.id;
+            if (t.status === 'Incidencia') incidents.push(t);
+            else if (t.status === 'Devuelto') returns.push(t);
+            else { pendingAll.push(t); }
+        });
+
+        // Sort incidents by date (newest first)
+        var sortByDate = function(a, b) {
+            var da = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt)) : new Date(0);
+            var db2 = b.createdAt ? (b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt)) : new Date(0);
+            return db2 - da;
+        };
+        incidents.sort(sortByDate);
+        returns.sort(sortByDate);
+
+        var mails = [];
+        mailSnap.forEach(function(doc) { var m = doc.data(); m.docId = doc.id; mails.push(m); });
+        mails.sort(sortByDate);
+
+        // Priority cards
+        var urgente = incidents.length;
+        var alto = returns.length;
+        var medio = mails.length;
+        var normal = pendingAll.length;
+
+        var cards = '';
+        cards += _briefCard('🔴 URGENTE', urgente, 'Incidencias activas', '#FF3B30', urgente > 0);
+        cards += _briefCard('🟠 ALTO', alto, 'Devoluciones', '#FF9800', alto > 0);
+        cards += _briefCard('🔵 MEDIO', medio, 'Correos sin leer', '#2196F3', medio > 0);
+        cards += _briefCard('🟢 NORMAL', normal, 'Entregas pendientes', '#4CAF50', false);
+        if (prioritiesEl) prioritiesEl.innerHTML = cards;
+
+        // Incidents list
+        document.getElementById('briefing-incident-count').textContent = incidents.length;
+        if (incidentsEl) {
+            if (incidents.length === 0) {
+                incidentsEl.innerHTML = '<div style="padding:16px; text-align:center; color:#666; font-size:0.8rem;">Sin incidencias activas</div>';
+            } else {
+                incidentsEl.innerHTML = incidents.slice(0, 20).map(function(t) { return _briefRow(t, '#FF3B30'); }).join('');
+            }
+        }
+
+        // Returns list
+        document.getElementById('briefing-return-count').textContent = returns.length;
+        if (returnsEl) {
+            if (returns.length === 0) {
+                returnsEl.innerHTML = '<div style="padding:16px; text-align:center; color:#666; font-size:0.8rem;">Sin devoluciones</div>';
+            } else {
+                returnsEl.innerHTML = returns.slice(0, 20).map(function(t) { return _briefRow(t, '#FF9800'); }).join('');
+            }
+        }
+
+        // Mailbox
+        document.getElementById('briefing-mail-count').textContent = mails.length;
+        if (mailboxEl) {
+            if (mails.length === 0) {
+                mailboxEl.innerHTML = '<div style="padding:16px; text-align:center; color:#666; font-size:0.8rem;">Buzon al dia</div>';
+            } else {
+                mailboxEl.innerHTML = mails.slice(0, 15).map(function(m) {
+                    var date = m.createdAt ? (m.createdAt.toDate ? m.createdAt.toDate() : new Date(m.createdAt)) : null;
+                    var dateStr = date ? date.toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) + ' ' + date.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}) : '';
+                    var catColors = { pod:'#4CAF50', abono:'#FF9800', rectificacion:'#E040FB', reclamacion:'#FF3B30', facturacion:'#2196F3', fiscal:'#FFD700', consulta_albaran:'#00BCD4', otro:'#888' };
+                    var catColor = catColors[m.category] || '#888';
+                    return '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #222; font-size:0.78rem;">' +
+                        '<span style="background:' + catColor + '; color:#fff; padding:1px 6px; border-radius:4px; font-size:0.65rem; font-weight:700; text-transform:uppercase; white-space:nowrap;">' + (m.category || 'otro') + '</span>' +
+                        '<span style="color:#ddd; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (m.subject || m.from || 'Sin asunto') + '</span>' +
+                        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + dateStr + '</span>' +
+                    '</div>';
+                }).join('');
+            }
+        }
+
+        // Pending deliveries
+        document.getElementById('briefing-pending-count').textContent = pendingAll.length;
+        if (pendingEl) {
+            if (pendingAll.length === 0) {
+                pendingEl.innerHTML = '<div style="padding:16px; text-align:center; color:#666; font-size:0.8rem;">Sin entregas pendientes</div>';
+            } else {
+                // Group by route
+                var byRoute = {};
+                pendingAll.forEach(function(t) {
+                    var r = t.routeLabel || t.route || 'Sin ruta';
+                    if (!byRoute[r]) byRoute[r] = 0;
+                    byRoute[r]++;
+                });
+                var routeHtml = Object.keys(byRoute).sort().map(function(r) {
+                    return '<div style="display:flex; justify-content:space-between; padding:5px 10px; border-bottom:1px solid #222; font-size:0.8rem;">' +
+                        '<span style="color:#ccc;"><span class="material-symbols-outlined" style="font-size:0.85rem; vertical-align:middle; color:#4CAF50;">route</span> ' + r + '</span>' +
+                        '<span style="color:#4CAF50; font-weight:700;">' + byRoute[r] + '</span></div>';
+                }).join('');
+                pendingEl.innerHTML = routeHtml;
+            }
+        }
+
+        if (sub) sub.textContent = new Date().toLocaleString('es-ES', { weekday:'long', day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+
+    } catch(err) {
+        if (prioritiesEl) prioritiesEl.innerHTML = '<div style="grid-column:1/-1; padding:20px; text-align:center; color:#FF3B30;">Error cargando briefing: ' + err.message + '</div>';
+    }
+};
+
+function _briefCard(label, count, desc, color, pulse) {
+    return '<div style="background:linear-gradient(135deg, ' + color + '15, ' + color + '08); border:1px solid ' + color + '40; border-radius:12px; padding:16px; text-align:center;' + (pulse && count > 0 ? ' animation:pulse 2s infinite;' : '') + '">' +
+        '<div style="font-size:0.72rem; color:' + color + '; font-weight:700; letter-spacing:1px; margin-bottom:4px;">' + label + '</div>' +
+        '<div style="font-size:2rem; font-weight:900; color:' + color + ';">' + count + '</div>' +
+        '<div style="font-size:0.72rem; color:#888;">' + desc + '</div></div>';
+}
+
+function _briefRow(t, color) {
+    var date = t.createdAt ? (t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt)) : null;
+    var dateStr = date ? date.toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) + ' ' + date.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}) : '';
+    var reason = t.incidentReason || t.incidentDetail || '';
+    return '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #222; font-size:0.78rem;">' +
+        '<span style="color:' + color + '; font-weight:700; white-space:nowrap;">' + (t.id || t.docId) + '</span>' +
+        '<span style="color:#aaa; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (t.receiver || '') + (reason ? ' — ' + reason : '') + '</span>' +
+        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + dateStr + '</span>' +
+    '</div>';
 }
 
 // On page load, check if identity already exists and toggle visibility
@@ -1469,6 +1675,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (welcomeMsg) welcomeMsg.style.display = 'block';
             var el = document.getElementById('erp-welcome-name');
             if (el && !el.textContent) el.textContent = savedIdentity;
+            // Load briefing on returning session
+            setTimeout(function() { if (typeof loadBriefingDashboard === 'function') loadBriefingDashboard(); }, 500);
         }
     }, 600);
 });
