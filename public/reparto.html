@@ -80,27 +80,32 @@
     <script>
         // --- Service Worker Registration with auto-update ---
         if ('serviceWorker' in navigator) {
+            var _swReloading = false;
+            // Track if there was already a controller (= this is an UPDATE, not first install)
+            var _hadController = !!navigator.serviceWorker.controller;
+            // Only reload on UPDATE (controller change after existing controller)
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+                if (_swReloading || !_hadController) return; // Skip first activation
+                _swReloading = true;
+                console.log('[SW] Updated, reloading...');
+                window.location.reload();
+            });
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js').then(function(reg) {
                     console.log('[SW] Registered, scope:', reg.scope);
                     // Check for updates every 30 min
                     setInterval(function() { reg.update(); }, 1800000);
-                    // Detect SW updates and auto-reload
+                    // When a new SW is found, tell it to activate immediately
                     reg.addEventListener('updatefound', function() {
                         var newWorker = reg.installing;
+                        if (!newWorker) return;
                         newWorker.addEventListener('statechange', function() {
                             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                // New SW installed while old one is active — trigger skipWaiting
                                 newWorker.postMessage('skipWaiting');
-                            }
-                            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
-                                // New version activated, reload to pick up new assets
-                                console.log('[SW] New version activated, reloading...');
-                                window.location.reload();
                             }
                         });
                     });
-                    // Register periodic sync to keep alive
+                    // Register periodic sync to keep alive (Android only)
                     if (reg.periodicSync) {
                         reg.periodicSync.register('keep-alive', { minInterval: 12 * 60 * 60 * 1000 }).catch(function() {});
                     }

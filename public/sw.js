@@ -1,4 +1,4 @@
-const CACHE_NAME = 'novapack-repartidor-v7';
+const CACHE_NAME = 'novapack-repartidor-v8';
 const urlsToCache = [
     '/reparto.html',
     '/reparto.css',
@@ -11,7 +11,8 @@ const urlsToCache = [
 ];
 
 self.addEventListener('install', event => {
-    self.skipWaiting();
+    // Do NOT call skipWaiting() here — let the page control activation
+    // via postMessage('skipWaiting') to avoid reload loops on iOS
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(urlsToCache))
@@ -20,15 +21,12 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
     event.waitUntil(
-        caches.keys().then(cacheNames => {
+        caches.keys().then(function(cacheNames) {
             return Promise.all(
-                cacheNames.map(cacheName => {
-                    if (cacheName !== CACHE_NAME) {
-                        return caches.delete(cacheName);
-                    }
-                })
+                cacheNames.filter(function(name) { return name !== CACHE_NAME; })
+                           .map(function(name) { return caches.delete(name); })
             );
-        }).then(() => self.clients.claim())
+        }).then(function() { return self.clients.claim(); })
     );
 });
 
