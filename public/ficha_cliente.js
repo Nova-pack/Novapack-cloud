@@ -201,7 +201,7 @@
 
         ${_sectionTitle('mail', 'Contacto', '#4CAF50')}
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Email (Login)', 'fc-email', d.email, { type: 'email', readonly: true })}
+            ${_field('Email (Login)', 'fc-email', d.email, { type: 'email' })}
             ${_field('Email Administración (Facturas)', 'fc-admin-email', d.adminEmail, { type: 'email', placeholder: 'administracion@empresa.com' })}
             ${_field('Teléfono', 'fc-phone', d.senderPhone || d.phone)}
         </div>
@@ -276,7 +276,13 @@
                     <option value="">-- Cargando tarifas... --</option>
                 </select>
             </div>
-            ${_field('Cuota Plana Activa', 'fc-flatrate', d.isFlatRate ? 'Sí' : 'No', { readonly: true })}
+            ${_field('Cuota Plana Activa', 'fc-flatrate', d.isFlatRate ? 'Sí' : 'No', {
+                type: 'select',
+                options: [
+                    { value: 'No', label: 'No' },
+                    { value: 'Sí', label: 'Sí' }
+                ]
+            })}
             ${_field('Importe Cuota Plana (€)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number' })}
         </div>
 
@@ -846,6 +852,7 @@
         if (getVal('fc-idnum') !== null) updates.idNum = getVal('fc-idnum');
         if (getVal('fc-name') !== null) updates.name = getVal('fc-name');
         if (getVal('fc-nif') !== null) updates.nif = getVal('fc-nif').toUpperCase();
+        if (getVal('fc-email') !== null) updates.email = getVal('fc-email').toLowerCase();
         if (getVal('fc-admin-email') !== null) updates.adminEmail = getVal('fc-admin-email').toLowerCase();
         if (getVal('fc-phone') !== null) updates.senderPhone = getVal('fc-phone');
         if (getVal('fc-street') !== null) updates.street = getVal('fc-street');
@@ -861,6 +868,7 @@
         if (getVal('fc-iban') !== null) updates.iban = getVal('fc-iban');
         if (getVal('fc-sepa-ref') !== null) updates.sepaRef = getVal('fc-sepa-ref');
         if (getVal('fc-sepa-date') !== null) updates.sepaDate = getVal('fc-sepa-date');
+        if (getVal('fc-flatrate') !== null) updates.isFlatRate = getVal('fc-flatrate') === 'Sí';
         if (getVal('fc-flatrate-amt') !== null) updates.flatRateAmount = parseFloat(getVal('fc-flatrate-amt')) || 0;
 
         // Remove null entries
