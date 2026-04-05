@@ -2689,6 +2689,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- COOPER CLIENT DIRECTORY ---
     var _cooperClients = null;
+    window._getCooperClients = function() { return _cooperClients; };
+    window._ensureCooperClients = async function() {
+        if (_cooperClients) return _cooperClients;
+        try {
+            var resp = await fetch('cooper_clients.json');
+            _cooperClients = await resp.json();
+        } catch(e) { _cooperClients = []; }
+        return _cooperClients;
+    };
 
     window.cooperLoadClientData = async function() {
         if (_cooperClients) return; // already loaded
@@ -5913,9 +5922,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                 </div>
 
-                <div style="margin-bottom:14px;">
-                    <label style="display:block; color:#aaa; font-size:0.78rem; margin-bottom:4px;">Direccion / Ubicacion *</label>
-                    <input type="text" id="pickup-alert-address" placeholder="Ej: C/ Gran Via 45, Malaga" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px; border-radius:8px; font-size:0.9rem; box-sizing:border-box;">
+                <div style="margin-bottom:14px; position:relative;">
+                    <label style="display:block; color:#aaa; font-size:0.78rem; margin-bottom:4px;">Direccion / Ubicacion * <span style="color:#CE93D8; font-size:0.7rem;">(busca clientes Cooper)</span></label>
+                    <input type="text" id="pickup-alert-address" placeholder="Buscar cliente o escribir direccion..." autocomplete="off" oninput="searchAlertClients()" onfocus="searchAlertClients()" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px; border-radius:8px; font-size:0.9rem; box-sizing:border-box;">
+                    <div id="pickup-alert-client-results" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:#1e1e2e; border:1px solid #CE93D8; border-top:none; border-radius:0 0 8px 8px; z-index:10; box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
                 </div>
 
                 <div style="margin-bottom:16px;">
@@ -5927,6 +5937,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="material-symbols-outlined">send</span> ENVIAR AVISO
                 </button>
                 <div id="pickup-alert-status" style="text-align:center; margin-top:10px; font-size:0.82rem;"></div>
+            </div>
+        </div>
+
+        <!-- Route Cooper Photos Modal -->
+        <div id="route-cooper-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.92); z-index:102070; overflow-y:auto; padding:0; cursor:pointer;">
+            <div onclick="event.stopPropagation()" style="background:#0d0d1a; min-height:100%; width:100%; max-width:900px; margin:0 auto; padding:20px; cursor:default; position:relative;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; position:sticky; top:0; background:#0d0d1a; padding:10px 0; z-index:2; border-bottom:1px solid #2d2d44;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="material-symbols-outlined" style="color:#CE93D8; font-size:1.5rem;">photo_library</span>
+                        <div>
+                            <h2 style="margin:0; color:#CE93D8; font-size:1.1rem;">Cooper — <span id="route-cooper-title">Ruta</span></h2>
+                            <div id="route-cooper-stats" style="color:#888; font-size:0.78rem; margin-top:2px;"></div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button onclick="routeCooperPrintAll()" style="background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:0.78rem; font-weight:700; display:flex; align-items:center; gap:4px;" title="Imprimir todas las fotos"><span class="material-symbols-outlined" style="font-size:0.95rem;">print</span> IMPRIMIR</button>
+                        <button onclick="document.getElementById('route-cooper-modal').style.display='none'" style="background:rgba(255,255,255,0.1); border:1px solid #555; color:white; font-size:1.3rem; cursor:pointer; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;">&times;</button>
+                    </div>
+                </div>
+                <div id="route-cooper-content" style="min-height:200px;"></div>
             </div>
         </div>
 
@@ -8152,10 +8182,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                         ${incidentDetails.join('')}
                                     </div>` : ''}
 
-                                    <div style="display:flex; gap:6px; border-top:1px solid #2d2d44; padding-top:10px;">
-                                        <button onclick="event.stopPropagation(); openRouteDetails('${routeData.label}', '${pNum}')" style="flex:1; padding:6px; background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2d5a8e'" onmouseout="this.style.background='#1e3a5f'"><span class="material-symbols-outlined" style="font-size:0.9rem;">list_alt</span> DETALLES</button>
-                                        <button onclick="event.stopPropagation(); openReassignRouteModal('${routeData.label}', '${pNum}')" style="flex:1; padding:6px; background:#3d2e11; border:1px solid #6b4e1f; color:#FF9800; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b4e1f'" onmouseout="this.style.background='#3d2e11'"><span class="material-symbols-outlined" style="font-size:0.9rem;">swap_horiz</span> REASIGNAR</button>
-                                        <button onclick="event.stopPropagation(); openPickupAlertModal('${routeData.label}', '${pNum}')" style="flex:1; padding:6px; background:#1b3d1b; border:1px solid #2e6b2e; color:#4CAF50; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2e6b2e'" onmouseout="this.style.background='#1b3d1b'"><span class="material-symbols-outlined" style="font-size:0.9rem;">campaign</span> AVISO</button>
+                                    <div style="display:flex; gap:6px; border-top:1px solid #2d2d44; padding-top:10px; flex-wrap:wrap;">
+                                        <button onclick="event.stopPropagation(); openRouteDetails('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2d5a8e'" onmouseout="this.style.background='#1e3a5f'"><span class="material-symbols-outlined" style="font-size:0.9rem;">list_alt</span> DETALLES</button>
+                                        <button onclick="event.stopPropagation(); openReassignRouteModal('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#3d2e11; border:1px solid #6b4e1f; color:#FF9800; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b4e1f'" onmouseout="this.style.background='#3d2e11'"><span class="material-symbols-outlined" style="font-size:0.9rem;">swap_horiz</span> REASIGNAR</button>
+                                        <button onclick="event.stopPropagation(); openPickupAlertModal('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1b3d1b; border:1px solid #2e6b2e; color:#4CAF50; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2e6b2e'" onmouseout="this.style.background='#1b3d1b'"><span class="material-symbols-outlined" style="font-size:0.9rem;">campaign</span> AVISO</button>
+                                        <button onclick="event.stopPropagation(); openRouteCooperModal('${routeData.label}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#2d1b3d; border:1px solid #6b2e6b; color:#CE93D8; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b2e6b'" onmouseout="this.style.background='#2d1b3d'"><span class="material-symbols-outlined" style="font-size:0.9rem;">photo_library</span> COOPER</button>
                                     </div>
                                 `;
                             }
@@ -8611,8 +8642,75 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('pickup-alert-address').value = '';
                 document.getElementById('pickup-alert-notes').value = '';
                 document.getElementById('pickup-alert-status').textContent = '';
+                var resultsEl = document.getElementById('pickup-alert-client-results');
+                if (resultsEl) resultsEl.style.display = 'none';
                 modal.style.display = 'flex';
+                // Preload client data
+                if (window._ensureCooperClients) window._ensureCooperClients();
             };
+
+            var _alertSearchTimer = null;
+            window.searchAlertClients = function() {
+                clearTimeout(_alertSearchTimer);
+                _alertSearchTimer = setTimeout(function() { _doAlertClientSearch(); }, 200);
+            };
+
+            function _doAlertClientSearch() {
+                var query = (document.getElementById('pickup-alert-address').value || '').toLowerCase().trim();
+                var resultsEl = document.getElementById('pickup-alert-client-results');
+                if (!resultsEl) return;
+                var clients = window._getCooperClients ? window._getCooperClients() : null;
+                if (!clients || query.length < 2) { resultsEl.style.display = 'none'; return; }
+
+                var matches = clients.filter(function(r) {
+                    return (r.c && r.c.toLowerCase().indexOf(query) !== -1) ||
+                           (r.d && r.d.toLowerCase().indexOf(query) !== -1) ||
+                           (r.p && r.p.toLowerCase().indexOf(query) !== -1) ||
+                           (r.t && r.t.indexOf(query) !== -1);
+                }).slice(0, 15);
+
+                if (matches.length === 0) {
+                    resultsEl.innerHTML = '<div style="padding:10px 12px; color:#888; font-size:0.78rem;">Sin resultados</div>';
+                    resultsEl.style.display = 'block';
+                    return;
+                }
+
+                var html = '';
+                matches.forEach(function(r, i) {
+                    var bg = i % 2 === 0 ? '#1e1e2e' : '#232338';
+                    html += '<div onclick="selectAlertClient(' + i + ')" data-idx="' + i + '" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44; transition:background 0.15s;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
+                    html += '<div style="color:#eee; font-size:0.82rem; font-weight:600;">' + (r.c || '-') + '</div>';
+                    html += '<div style="color:#aaa; font-size:0.72rem;">' + (r.d || '') + (r.p ? ', ' + r.p : '') + (r.pv ? ' (' + r.pv + ')' : '') + '</div>';
+                    if (r.t) html += '<div style="color:#CE93D8; font-size:0.7rem;">\u260e ' + r.t + '</div>';
+                    html += '</div>';
+                });
+                resultsEl.innerHTML = html;
+                resultsEl.style.display = 'block';
+                resultsEl._matches = matches;
+            }
+
+            window.selectAlertClient = function(idx) {
+                var resultsEl = document.getElementById('pickup-alert-client-results');
+                var matches = resultsEl ? resultsEl._matches : null;
+                if (!matches || !matches[idx]) return;
+                var r = matches[idx];
+                var addr = (r.d || '') + (r.p ? ', ' + r.p : '') + (r.pv ? ' (' + r.pv + ')' : '');
+                document.getElementById('pickup-alert-address').value = addr;
+                // Put client name in notes if empty
+                var notesEl = document.getElementById('pickup-alert-notes');
+                if (notesEl && !notesEl.value.trim()) {
+                    notesEl.value = 'Cliente: ' + (r.c || '') + (r.t ? ' | Tel: ' + r.t : '');
+                }
+                resultsEl.style.display = 'none';
+            };
+
+            // Close results on outside click
+            document.addEventListener('click', function(e) {
+                var resultsEl = document.getElementById('pickup-alert-client-results');
+                if (resultsEl && !resultsEl.contains(e.target) && e.target.id !== 'pickup-alert-address') {
+                    resultsEl.style.display = 'none';
+                }
+            });
 
             window.sendPickupAlert = async function() {
                 var type = document.getElementById('pickup-alert-type').value;
@@ -8647,6 +8745,282 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch(e) {
                     statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = '#FF3B30';
                 }
+            };
+
+            // --- ROUTE COOPER PHOTOS ---
+            var _routeCooperRoute = '';
+            var _routeCooperItems = [];
+            var _routeCooperOpenDay = null; // null = folder view, 'YYYY-MM-DD' = day view
+
+            window.openRouteCooperModal = async function(routeLabel) {
+                _routeCooperRoute = routeLabel;
+                _routeCooperItems = [];
+                _routeCooperOpenDay = null;
+                document.getElementById('route-cooper-title').textContent = routeLabel;
+                document.getElementById('route-cooper-stats').textContent = 'Cargando...';
+                document.getElementById('route-cooper-content').innerHTML = '<div style="text-align:center; padding:40px; color:#888;"><span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:8px; animation:spin 1s linear infinite;">sync</span>Cargando fotos...</div>';
+                document.getElementById('route-cooper-modal').style.display = 'block';
+
+                try {
+                    var snap = await db.collection('cooper_photos')
+                        .where('route', '==', routeLabel)
+                        .orderBy('createdAt', 'desc')
+                        .get();
+                    _routeCooperItems = [];
+                    snap.forEach(function(doc) {
+                        var d = doc.data();
+                        d.docId = doc.id;
+                        _routeCooperItems.push(d);
+                    });
+                    var recCount = _routeCooperItems.filter(function(i) { return i.type === 'recogida'; }).length;
+                    var entCount = _routeCooperItems.filter(function(i) { return i.type === 'entrega'; }).length;
+                    var drivers = {};
+                    _routeCooperItems.forEach(function(i) { drivers[i.driverName || '?'] = true; });
+                    document.getElementById('route-cooper-stats').textContent = _routeCooperItems.length + ' fotos — ' + recCount + ' recogidas, ' + entCount + ' entregas — ' + Object.keys(drivers).length + ' conductor(es)';
+                    _renderRouteCooper();
+                } catch(err) {
+                    console.error('Error loading route cooper:', err);
+                    document.getElementById('route-cooper-content').innerHTML = '<div style="color:#FF3B30; text-align:center; padding:40px;">Error al cargar: ' + err.message + '</div>';
+                }
+            };
+
+            function _renderRouteCooper() {
+                var container = document.getElementById('route-cooper-content');
+                if (!container) return;
+
+                if (_routeCooperItems.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:60px; color:#888;"><span class="material-symbols-outlined" style="font-size:3rem; display:block; margin-bottom:12px;">photo_library</span>No hay fotos Cooper para esta ruta.</div>';
+                    return;
+                }
+
+                // Group by day
+                var dayGroups = {};
+                _routeCooperItems.forEach(function(item) {
+                    var d = item.createdAt ? (typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt)) : null;
+                    var key = d ? d.toISOString().slice(0, 10) : 'sin-fecha';
+                    if (!dayGroups[key]) dayGroups[key] = [];
+                    dayGroups[key].push(item);
+                });
+                var dayKeys = Object.keys(dayGroups).sort().reverse();
+
+                var html = '';
+
+                // --- OPEN DAY VIEW ---
+                if (_routeCooperOpenDay !== null) {
+                    var dayItems = dayGroups[_routeCooperOpenDay] || [];
+                    var dayLabel = _routeCooperOpenDay;
+                    try {
+                        var dp = new Date(_routeCooperOpenDay + 'T12:00:00');
+                        dayLabel = dp.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+                    } catch(e) {}
+
+                    html += '<div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">';
+                    html += '<button onclick="_routeCooperBackToFolders()" style="background:#2a2a2d; border:1px solid #444; color:#CE93D8; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:6px;">';
+                    html += '<span class="material-symbols-outlined" style="font-size:1rem;">arrow_back</span> Volver</button>';
+                    html += '<span class="material-symbols-outlined" style="color:#FF9800; font-size:1.2rem;">folder_open</span>';
+                    html += '<span style="color:#FF9800; font-weight:bold; font-size:0.95rem;">' + dayLabel + '</span>';
+                    html += '<span style="color:#666; font-size:0.8rem;">(' + dayItems.length + ' fotos)</span>';
+                    html += '</div>';
+
+                    html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">';
+                    dayItems.forEach(function(item) {
+                        html += _renderRouteCooperCard(item);
+                    });
+                    html += '</div>';
+                    container.innerHTML = html;
+                    return;
+                }
+
+                // --- FOLDER VIEW ---
+                var today = new Date().toISOString().slice(0, 10);
+                html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:14px;">';
+                dayKeys.forEach(function(dk) {
+                    var dItems = dayGroups[dk];
+                    var isToday = dk === today;
+                    var dayLabel = dk;
+                    try {
+                        var dp = new Date(dk + 'T12:00:00');
+                        dayLabel = dp.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+                    } catch(e) {}
+                    var recC = dItems.filter(function(i) { return i.type === 'recogida'; }).length;
+                    var entC = dItems.filter(function(i) { return i.type === 'entrega'; }).length;
+
+                    html += '<div onclick="_routeCooperOpenDayFolder(\'' + dk + '\')" style="background:#1a1a2e; border:1px solid ' + (isToday ? '#CE93D8' : '#333') + '; border-radius:12px; cursor:pointer; overflow:hidden; transition:transform 0.2s, border-color 0.2s;" onmouseover="this.style.transform=\'scale(1.03)\'; this.style.borderColor=\'#CE93D8\'" onmouseout="this.style.transform=\'scale(1)\'; this.style.borderColor=\'' + (isToday ? '#CE93D8' : '#333') + '\'">';
+                    // Thumbnail strip
+                    html += '<div style="position:relative; height:80px; background:#111; overflow:hidden; display:flex;">';
+                    var previews = dItems.slice(0, 4);
+                    previews.forEach(function(p, idx) {
+                        html += '<img src="' + (p.photoURL || '') + '" style="flex:1; object-fit:cover; height:100%; opacity:' + (idx === 0 ? '0.8' : '0.45') + '; border-right:1px solid #222;" loading="lazy">';
+                    });
+                    html += '<div style="position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.35);">';
+                    html += '<span class="material-symbols-outlined" style="font-size:2rem; color:#CE93D8;">folder</span>';
+                    html += '</div></div>';
+                    // Info
+                    html += '<div style="padding:10px 12px;">';
+                    html += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">';
+                    html += '<span style="color:#eee; font-weight:bold; font-size:0.88rem;">' + dayLabel + '</span>';
+                    if (isToday) html += '<span style="background:#CE93D8; color:#000; font-size:0.6rem; font-weight:800; padding:1px 6px; border-radius:4px;">HOY</span>';
+                    html += '</div>';
+                    html += '<div style="display:flex; gap:10px; font-size:0.75rem; color:#888;">';
+                    html += '<span>📷 ' + dItems.length + '</span>';
+                    if (recC) html += '<span style="color:#FF9800;">📥 ' + recC + '</span>';
+                    if (entC) html += '<span style="color:#4CAF50;">📤 ' + entC + '</span>';
+                    html += '</div>';
+                    html += '</div></div>';
+                });
+                html += '</div>';
+                container.innerHTML = html;
+            }
+
+            window._routeCooperOpenDayFolder = function(dayKey) {
+                _routeCooperOpenDay = dayKey;
+                _renderRouteCooper();
+            };
+
+            window._routeCooperBackToFolders = function() {
+                _routeCooperOpenDay = null;
+                _renderRouteCooper();
+            };
+
+            function _renderRouteCooperCard(item) {
+                var dateStr = '-';
+                if (item.createdAt) {
+                    var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                    dateStr = d.toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit', month: 'short' }) +
+                        ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                }
+                var driver = item.driverName || 'Desconocido';
+                var typeIcon = item.type === 'recogida' ? '📥' : '📤';
+                var typeColor = item.type === 'recogida' ? '#FF9800' : '#4CAF50';
+                var typeLabel = item.type === 'recogida' ? 'Recogida' : 'Entrega';
+                var h = '';
+                h += '<div style="background:#1a1a2e; border:1px solid #333; border-radius:12px; overflow:hidden;">';
+                // Photo
+                h += '<a href="' + (item.photoURL || '#') + '" target="_blank" style="display:block;">';
+                h += '<img src="' + (item.photoURL || '') + '" style="width:100%; height:200px; object-fit:cover; display:block; background:#111;" loading="lazy">';
+                h += '</a>';
+                h += '<div style="padding:12px;">';
+                // Header row: type badge + date + actions
+                h += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
+                h += '<div style="display:flex; align-items:center; gap:6px;">';
+                h += '<span style="background:' + typeColor + '22; color:' + typeColor + '; font-size:0.72rem; font-weight:700; padding:2px 8px; border-radius:4px;">' + typeIcon + ' ' + typeLabel + '</span>';
+                h += '<span style="color:#aaa; font-size:0.75rem;">' + dateStr + '</span>';
+                h += '</div>';
+                h += '</div>';
+                // Driver
+                h += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">';
+                h += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
+                h += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
+                h += '</div>';
+                // Note (editable)
+                h += '<div id="rc-note-' + item.docId + '" style="margin-bottom:8px;">';
+                if (item.note) {
+                    h += '<div style="padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa; display:flex; align-items:start; gap:4px;">';
+                    h += '<span class="material-symbols-outlined" style="font-size:0.8rem; margin-top:2px;">note</span><span>' + item.note + '</span>';
+                    h += '</div>';
+                }
+                h += '</div>';
+                // Action buttons
+                h += '<div style="display:flex; gap:6px; flex-wrap:wrap;">';
+                // WhatsApp
+                var waMsg = '\ud83d\udce6 Foto Cooper (' + typeLabel + ')\n\ud83d\udcc5 ' + dateStr + '\n\ud83d\ude9b ' + (item.route || 'Sin ruta') + '\n\ud83d\udc64 ' + driver + (item.note ? '\n\ud83d\udcdd ' + item.note : '') + '\n\n' + (item.photoURL || '');
+                h += '<a href="https://wa.me/?text=' + encodeURIComponent(waMsg) + '" target="_blank" style="flex:1; background:#25D366; border:none; color:#fff; cursor:pointer; font-size:0.72rem; font-weight:700; padding:6px 8px; border-radius:4px; text-decoration:none; display:flex; align-items:center; justify-content:center; gap:3px;">\ud83d\udcf2 WhatsApp</a>';
+                // Edit note
+                h += '<button onclick="routeCooperEditNote(\'' + item.docId + '\')" style="flex:1; background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; padding:6px 8px; border-radius:4px; cursor:pointer; font-size:0.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:3px;"><span class="material-symbols-outlined" style="font-size:0.85rem;">edit_note</span> Nota</button>';
+                // Print
+                h += '<button onclick="routeCooperPrint(\'' + item.docId + '\', \'' + (item.photoURL || '').replace(/'/g, "\\'") + '\')" style="flex:1; background:#2d2d44; border:1px solid #444; color:#aaa; padding:6px 8px; border-radius:4px; cursor:pointer; font-size:0.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:3px;"><span class="material-symbols-outlined" style="font-size:0.85rem;">print</span> Imprimir</button>';
+                // Delete
+                h += '<button onclick="routeCooperDelete(\'' + item.docId + '\')" style="background:#3d1b1b; border:1px solid #6b2e2e; color:#FF3B30; padding:6px 8px; border-radius:4px; cursor:pointer; font-size:0.72rem; font-weight:700; display:flex; align-items:center; justify-content:center; gap:3px;"><span class="material-symbols-outlined" style="font-size:0.85rem;">delete</span></button>';
+                h += '</div>';
+                h += '</div></div>';
+                return h;
+            }
+
+            window.routeCooperEditNote = async function(docId) {
+                var currentNote = '';
+                var item = _routeCooperItems.find(function(i) { return i.docId === docId; });
+                if (item) currentNote = item.note || '';
+                var newNote = prompt('Editar nota:', currentNote);
+                if (newNote === null) return;
+                try {
+                    await db.collection('cooper_photos').doc(docId).update({ note: newNote });
+                    if (item) item.note = newNote;
+                    _renderRouteCooper();
+                } catch(err) {
+                    alert('Error: ' + err.message);
+                }
+            };
+
+            window.routeCooperDelete = async function(docId) {
+                if (!confirm('¿Eliminar esta foto permanentemente?')) return;
+                try {
+                    var snap = await db.collection('cooper_photos').doc(docId).get();
+                    if (snap.exists) {
+                        var data = snap.data();
+                        if (data.storagePath) {
+                            try { await firebase.storage().ref(data.storagePath).delete(); } catch(e) {}
+                        }
+                    }
+                    await db.collection('cooper_photos').doc(docId).delete();
+                    _routeCooperItems = _routeCooperItems.filter(function(i) { return i.docId !== docId; });
+                    var recCount = _routeCooperItems.filter(function(i) { return i.type === 'recogida'; }).length;
+                    var entCount = _routeCooperItems.filter(function(i) { return i.type === 'entrega'; }).length;
+                    document.getElementById('route-cooper-stats').textContent = _routeCooperItems.length + ' fotos — ' + recCount + ' recogidas, ' + entCount + ' entregas';
+                    _renderRouteCooper();
+                } catch(err) {
+                    alert('Error: ' + err.message);
+                }
+            };
+
+            window.routeCooperPrint = function(docId, photoURL) {
+                var item = _routeCooperItems.find(function(i) { return i.docId === docId; });
+                var dateStr = '';
+                if (item && item.createdAt) {
+                    var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                    dateStr = d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                }
+                var w = window.open('', '_blank');
+                w.document.write('<html><head><title>Cooper - ' + (item ? item.route : '') + '</title><style>body{font-family:Arial,sans-serif;max-width:700px;margin:20px auto;text-align:center}img{max-width:100%;max-height:70vh;object-fit:contain}table{margin:16px auto;text-align:left;border-collapse:collapse}td{padding:4px 12px;font-size:14px}td:first-child{font-weight:bold;color:#555}@media print{body{margin:0}}</style></head><body>');
+                w.document.write('<h2 style="margin-bottom:4px;">\ud83d\udce6 Foto Cooper</h2>');
+                w.document.write('<img src="' + photoURL + '">');
+                w.document.write('<table>');
+                if (item) {
+                    w.document.write('<tr><td>Tipo</td><td>' + (item.type === 'recogida' ? 'Recogida' : 'Entrega') + '</td></tr>');
+                    w.document.write('<tr><td>Ruta</td><td>' + (item.route || '-') + '</td></tr>');
+                    w.document.write('<tr><td>Conductor</td><td>' + (item.driverName || '-') + '</td></tr>');
+                    w.document.write('<tr><td>Fecha</td><td>' + dateStr + '</td></tr>');
+                    if (item.note) w.document.write('<tr><td>Nota</td><td>' + item.note + '</td></tr>');
+                }
+                w.document.write('</table>');
+                w.document.write('<script>setTimeout(function(){window.print()},500)<\/script>');
+                w.document.write('</body></html>');
+                w.document.close();
+            };
+
+            window.routeCooperPrintAll = function() {
+                if (_routeCooperItems.length === 0) { alert('No hay fotos para imprimir.'); return; }
+                var items = _routeCooperOpenDay ? _routeCooperItems.filter(function(i) {
+                    var d = i.createdAt ? (typeof i.createdAt.toDate === 'function' ? i.createdAt.toDate() : new Date(i.createdAt)) : null;
+                    return d ? d.toISOString().slice(0, 10) === _routeCooperOpenDay : false;
+                }) : _routeCooperItems;
+                var w = window.open('', '_blank');
+                w.document.write('<html><head><title>Cooper - ' + _routeCooperRoute + '</title><style>body{font-family:Arial,sans-serif;max-width:800px;margin:20px auto}.photo{page-break-inside:avoid;margin-bottom:24px;border:1px solid #ddd;padding:12px;border-radius:8px}img{max-width:100%;max-height:50vh;object-fit:contain;display:block;margin:0 auto 8px}table{font-size:13px;border-collapse:collapse}td{padding:2px 10px}td:first-child{font-weight:bold;color:#555}@media print{.photo{page-break-inside:avoid}}</style></head><body>');
+                w.document.write('<h2>\ud83d\udce6 Cooper — ' + _routeCooperRoute + (_routeCooperOpenDay ? ' (' + _routeCooperOpenDay + ')' : '') + '</h2>');
+                w.document.write('<p style="color:#555;">' + items.length + ' fotos</p>');
+                items.forEach(function(item) {
+                    var dateStr = '';
+                    if (item.createdAt) {
+                        var d = typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt);
+                        dateStr = d.toLocaleDateString('es-ES') + ' ' + d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                    }
+                    w.document.write('<div class="photo">');
+                    w.document.write('<img src="' + (item.photoURL || '') + '">');
+                    w.document.write('<table><tr><td>' + (item.type === 'recogida' ? '\ud83d\udce5 Recogida' : '\ud83d\udce4 Entrega') + '</td><td>' + dateStr + '</td><td>' + (item.driverName || '-') + '</td>' + (item.note ? '<td>\ud83d\udcdd ' + item.note + '</td>' : '') + '</tr></table>');
+                    w.document.write('</div>');
+                });
+                w.document.write('<script>setTimeout(function(){window.print()},800)<\/script>');
+                w.document.write('</body></html>');
+                w.document.close();
             };
 
             // --- REASSIGN ROUTE FUNCTIONS ---
