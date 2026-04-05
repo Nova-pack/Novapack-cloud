@@ -550,6 +550,7 @@ function initApp() {
 
         startDeliveryListener();
         startPickupListener();
+        startDriverAlertListener();
         requestNotificationPermission();
         showToast('Bienvenido, ' + currentDriverName, 'success');
     }
@@ -561,6 +562,7 @@ function initApp() {
             // Unsubscribe from Firestore listeners
             if (unsubscribe) { unsubscribe(); unsubscribe = null; }
             if (pickupUnsubscribe) { pickupUnsubscribe(); pickupUnsubscribe = null; }
+            if (alertUnsubscribe) { alertUnsubscribe(); alertUnsubscribe = null; }
             // Reset all session state
             currentDriverPhone = '';
             currentDriverName = '';
@@ -572,6 +574,8 @@ function initApp() {
             knownDeliveryIds = new Set();
             knownPickupIds = new Set();
             isFirstPickupSnapshot = true;
+            knownAlertIds = new Set();
+            isFirstAlertSnapshot = true;
             scannedPackages = {};
             isFirstSnapshot = true;
             _adminRoutes = [];
@@ -751,6 +755,56 @@ function initApp() {
                 renderPickupCards(pickups);
             }, function(err) {
                 console.warn('Pickup listener error:', err);
+            });
+    }
+
+    // --- DRIVER ALERTS LISTENER (admin pickup/collection alerts) ---
+    var alertUnsubscribe = null;
+    var knownAlertIds = new Set();
+    var isFirstAlertSnapshot = true;
+
+    function startDriverAlertListener() {
+        if (!currentDriverPhone) return;
+        if (alertUnsubscribe) alertUnsubscribe();
+
+        alertUnsubscribe = db.collection('driver_alerts')
+            .where('routePhone', '==', currentDriverPhone)
+            .where('read', '==', false)
+            .onSnapshot(function(snap) {
+                var alerts = [];
+                snap.forEach(function(doc) {
+                    var d = doc.data();
+                    d._id = doc.id;
+                    alerts.push(d);
+                });
+
+                if (!isFirstAlertSnapshot) {
+                    alerts.forEach(function(a) {
+                        if (!knownAlertIds.has(a._id)) {
+                            sendNotification(
+                                a.title || '📢 AVISO DE ADMIN',
+                                a.body || ''
+                            );
+                            // Mark as read
+                            db.collection('driver_alerts').doc(a._id).update({ read: true })
+                                .catch(function(e) { console.warn('Error marking alert read:', e); });
+                        }
+                    });
+                } else {
+                    // On first load, show unread alerts and mark them
+                    alerts.forEach(function(a) {
+                        sendNotification(
+                            a.title || '📢 AVISO DE ADMIN',
+                            a.body || ''
+                        );
+                        db.collection('driver_alerts').doc(a._id).update({ read: true })
+                            .catch(function(e) { console.warn('Error marking alert read:', e); });
+                    });
+                }
+                knownAlertIds = new Set(alerts.map(function(a) { return a._id; }));
+                isFirstAlertSnapshot = false;
+            }, function(err) {
+                console.warn('Driver alert listener error:', err);
             });
     }
 
