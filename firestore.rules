@@ -32,10 +32,11 @@ service cloud.firestore {
       allow create, update: if isAuth();
       allow delete: if isAdmin();
 
-      match /companies/{compId} {
+      // All subcollections: companies, destinations, config
+      match /{subcol}/{docId} {
         allow read: if isAuth();
         allow create, update: if isAuth();
-        allow delete: if isAdmin();
+        allow delete: if isAuth();
       }
     }
 
@@ -114,7 +115,7 @@ service cloud.firestore {
     match /user_notifications/{docId} {
       allow read, write: if isAuth();
     }
-    // Destinations: user's saved addresses subcollection
+    // Destinations (legacy top-level, actual data is in users/{uid}/destinations)
     match /destinations/{docId} {
       allow read, write: if isAuth();
     }
