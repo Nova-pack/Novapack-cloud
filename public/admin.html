@@ -5999,6 +5999,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Teléfono del Repartidor (Ej: 600123456)</label>
                         <input type="text" id="new-phone-number" required style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
                     </div>
+                    <div class="form-group" style="margin-bottom:15px; background:rgba(206,147,216,0.08); border:1px solid #CE93D8; border-radius:8px; padding:12px;">
+                        <label style="display:block; color:#CE93D8; font-size:0.8rem; font-weight:700; margin-bottom:5px;">Zonas de cobertura <span style="color:#888; font-size:0.7rem; font-weight:400;">(CPs y/o localidades separados por comas)</span></label>
+                        <input type="text" id="new-phone-coverage-zones" placeholder="Ej: 29001, 29002, Torremolinos, Benalmádena" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:0.85rem;">
+                        <div style="color:#888; font-size:0.7rem; margin-top:4px;">Los albaranes con estos CPs/localidades se asignarán a esta ruta automáticamente</div>
+                    </div>
                     <div class="form-group" style="margin-bottom:15px;">
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Nombre Chófer 1 (Ej: Paco / Mañana)</label>
                         <input type="text" id="new-phone-driver-name" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
@@ -6014,10 +6019,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="form-group" style="margin-bottom:20px;">
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Nombre Chófer 4 (Opcional)</label>
                         <input type="text" id="new-phone-driver-name-4" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
-                    </div>
-                    <div class="form-group" style="margin-bottom:20px;">
-                        <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Zonas de cobertura <span style="color:#888; font-size:0.7rem;">(CPs y/o localidades separados por comas)</span></label>
-                        <input type="text" id="new-phone-coverage-zones" placeholder="Ej: 29001, 29002, Torremolinos, Benalmádena" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:0.85rem;">
                     </div>
                     <div style="display:flex; gap:10px;">
                         <button type="submit" class="btn" style="flex:1; background:var(--brand-primary); color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;">Guardar</button>

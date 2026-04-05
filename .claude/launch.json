@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "firebase-serve",
+      "runtimeExecutable": "firebase",
+      "runtimeArgs": ["serve", "--only", "hosting", "--project", "novapack-68f05", "--port", "5000"],
+      "port": 5000
+    }
+  ]
+}
