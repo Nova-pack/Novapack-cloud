@@ -5923,7 +5923,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
 
                 <div style="margin-bottom:14px; position:relative;">
-                    <label style="display:block; color:#aaa; font-size:0.78rem; margin-bottom:4px;">Direccion / Ubicacion * <span style="color:#CE93D8; font-size:0.7rem;">(busca clientes Cooper)</span></label>
+                    <label style="display:block; color:#aaa; font-size:0.78rem; margin-bottom:4px;">Direccion / Ubicacion * <span style="color:#CE93D8; font-size:0.7rem;">(busca clientes GESCO/Global)</span></label>
                     <input type="text" id="pickup-alert-address" placeholder="Buscar cliente o escribir direccion..." autocomplete="off" oninput="searchAlertClients()" onfocus="searchAlertClients()" style="width:100%; background:#2a2a2d; border:1px solid #444; color:#d4d4d4; padding:10px; border-radius:8px; font-size:0.9rem; box-sizing:border-box;">
                     <div id="pickup-alert-client-results" style="display:none; position:absolute; top:100%; left:0; right:0; max-height:200px; overflow-y:auto; background:#1e1e2e; border:1px solid #CE93D8; border-top:none; border-radius:0 0 8px 8px; z-index:10; box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
                 </div>
@@ -8645,8 +8645,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 var resultsEl = document.getElementById('pickup-alert-client-results');
                 if (resultsEl) resultsEl.style.display = 'none';
                 modal.style.display = 'flex';
-                // Preload client data
-                if (window._ensureCooperClients) window._ensureCooperClients();
             };
 
             var _alertSearchTimer = null;
@@ -8656,21 +8654,15 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             function _doAlertClientSearch() {
-                var query = (document.getElementById('pickup-alert-address').value || '').toLowerCase().trim();
+                var query = (document.getElementById('pickup-alert-address').value || '').trim();
                 var resultsEl = document.getElementById('pickup-alert-client-results');
                 if (!resultsEl) return;
-                var clients = window._getCooperClients ? window._getCooperClients() : null;
-                if (!clients || query.length < 2) { resultsEl.style.display = 'none'; return; }
+                if (!window.isPhantomLoaded || query.length < 3) { resultsEl.style.display = 'none'; return; }
 
-                var matches = clients.filter(function(r) {
-                    return (r.c && r.c.toLowerCase().indexOf(query) !== -1) ||
-                           (r.d && r.d.toLowerCase().indexOf(query) !== -1) ||
-                           (r.p && r.p.toLowerCase().indexOf(query) !== -1) ||
-                           (r.t && r.t.indexOf(query) !== -1);
-                }).slice(0, 15);
+                var matches = window.searchPhantomDirectory(query);
 
                 if (matches.length === 0) {
-                    resultsEl.innerHTML = '<div style="padding:10px 12px; color:#888; font-size:0.78rem;">Sin resultados</div>';
+                    resultsEl.innerHTML = '<div style="padding:10px 12px; color:#888; font-size:0.78rem;">Sin resultados en directorio GESCO/Global</div>';
                     resultsEl.style.display = 'block';
                     return;
                 }
@@ -8679,9 +8671,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 matches.forEach(function(r, i) {
                     var bg = i % 2 === 0 ? '#1e1e2e' : '#232338';
                     html += '<div onclick="selectAlertClient(' + i + ')" data-idx="' + i + '" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44; transition:background 0.15s;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
-                    html += '<div style="color:#eee; font-size:0.82rem; font-weight:600;">' + (r.c || '-') + '</div>';
-                    html += '<div style="color:#aaa; font-size:0.72rem;">' + (r.d || '') + (r.p ? ', ' + r.p : '') + (r.pv ? ' (' + r.pv + ')' : '') + '</div>';
-                    if (r.t) html += '<div style="color:#CE93D8; font-size:0.7rem;">\u260e ' + r.t + '</div>';
+                    html += '<div style="color:#eee; font-size:0.82rem; font-weight:600;">' + (r.name || '-') + (r.nif ? ' <span style="color:#666; font-size:0.7rem;">(' + r.nif + ')</span>' : '') + '</div>';
+                    html += '<div style="color:#aaa; font-size:0.72rem;">' + (r.street || '') + (r.localidad ? ', ' + r.localidad : '') + (r.cp ? ' ' + r.cp : '') + '</div>';
+                    if (r.senderPhone) html += '<div style="color:#CE93D8; font-size:0.7rem;">\u260e ' + r.senderPhone + '</div>';
                     html += '</div>';
                 });
                 resultsEl.innerHTML = html;
@@ -8694,12 +8686,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 var matches = resultsEl ? resultsEl._matches : null;
                 if (!matches || !matches[idx]) return;
                 var r = matches[idx];
-                var addr = (r.d || '') + (r.p ? ', ' + r.p : '') + (r.pv ? ' (' + r.pv + ')' : '');
+                var addr = (r.street || '') + (r.localidad ? ', ' + r.localidad : '') + (r.cp ? ' ' + r.cp : '');
                 document.getElementById('pickup-alert-address').value = addr;
-                // Put client name in notes if empty
                 var notesEl = document.getElementById('pickup-alert-notes');
                 if (notesEl && !notesEl.value.trim()) {
-                    notesEl.value = 'Cliente: ' + (r.c || '') + (r.t ? ' | Tel: ' + r.t : '');
+                    notesEl.value = 'Cliente: ' + (r.name || '') + (r.senderPhone ? ' | Tel: ' + r.senderPhone : '') + (r.nif ? ' | NIF: ' + r.nif : '');
                 }
                 resultsEl.style.display = 'none';
             };
