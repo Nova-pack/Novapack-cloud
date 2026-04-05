@@ -2033,7 +2033,8 @@ function initApp() {
             showToast((_cooperType === 'recogida' ? 'Recogida' : 'Entrega') + ' Cooper registrada', 'success');
             document.getElementById('cooper-modal').classList.remove('active');
             _cooperType = null;
-            // Refresh log if open
+            // Refresh counters and log
+            cooperUpdateCounters();
             if (document.getElementById('cooper-log-panel').style.display !== 'none') {
                 loadCooperLog();
             }
@@ -2046,9 +2047,37 @@ function initApp() {
     });
 
     // =============================================
-    //  COOPER LOG — Registro semanal del repartidor
+    //  COOPER COUNTERS + DAILY FOLDER ARCHIVE
     // =============================================
     var _cooperLogOpen = false;
+    var _cooperAllItems = []; // cached from last load
+    var _cooperOpenDay = null; // null = folders view, 'YYYY-MM-DD' = open folder
+
+    // Update today's counters on buttons
+    window.cooperUpdateCounters = async function() {
+        try {
+            var snap = await db.collection('cooper_photos')
+                .where('driverName', '==', currentDriverName || 'Desconocido')
+                .get();
+            var today = new Date().toLocaleDateString('es-ES');
+            var recCount = 0, entCount = 0;
+            _cooperAllItems = [];
+            snap.forEach(function(doc) {
+                var item = doc.data(); item.docId = doc.id;
+                var d = item.createdAt ? (typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt)) : new Date(item.timestamp || 0);
+                _cooperAllItems.push({ data: item, date: d });
+                if (d.toLocaleDateString('es-ES') === today) {
+                    if (item.type === 'recogida') recCount++;
+                    else entCount++;
+                }
+            });
+            _cooperAllItems.sort(function(a, b) { return b.date - a.date; });
+            var cR = document.getElementById('cooper-count-recogida');
+            var cE = document.getElementById('cooper-count-entrega');
+            if (cR) cR.textContent = recCount;
+            if (cE) cE.textContent = entCount;
+        } catch(e) { console.warn('[Cooper] Counter error:', e.message); }
+    };
 
     window.toggleCooperLog = function() {
         var panel = document.getElementById('cooper-log-panel');
@@ -2057,6 +2086,7 @@ function initApp() {
         if (_cooperLogOpen) {
             panel.style.display = 'block';
             arrow.style.transform = 'rotate(180deg)';
+            _cooperOpenDay = null;
             loadCooperLog();
         } else {
             panel.style.display = 'none';
@@ -2064,84 +2094,114 @@ function initApp() {
         }
     };
 
+    window.cooperOpenDay = function(dayKey) {
+        _cooperOpenDay = dayKey;
+        _renderCooperLogContent();
+    };
+
+    window.cooperBackToFolders = function() {
+        _cooperOpenDay = null;
+        _renderCooperLogContent();
+    };
+
     window.loadCooperLog = async function() {
         var panel = document.getElementById('cooper-log-panel');
         if (!panel) return;
         panel.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Cargando...</div>';
+        await cooperUpdateCounters();
+        _renderCooperLogContent();
+    };
 
-        try {
-            var weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
+    function _renderCooperLogContent() {
+        var panel = document.getElementById('cooper-log-panel');
+        if (!panel) return;
 
-            var snap = await db.collection('cooper_photos')
-                .where('driverName', '==', currentDriverName || 'Desconocido')
-                .orderBy('createdAt', 'desc')
-                .limit(100)
-                .get();
+        if (_cooperAllItems.length === 0) {
+            panel.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:0.82rem;">No hay registros Cooper</div>';
+            return;
+        }
 
-            // Filter last 7 days in JS
-            var items = [];
-            snap.forEach(function(doc) {
-                var item = doc.data();
-                item.docId = doc.id;
-                var d = item.createdAt ? (typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate() : new Date(item.createdAt)) : new Date(item.timestamp || 0);
-                if (d >= weekAgo) items.push({ data: item, date: d });
-            });
+        // Group by day
+        var dayGroups = {};
+        _cooperAllItems.forEach(function(entry) {
+            var dayKey = entry.date.toISOString().split('T')[0];
+            var dayLabel = entry.date.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' });
+            if (!dayGroups[dayKey]) dayGroups[dayKey] = { label: dayLabel, items: [] };
+            dayGroups[dayKey].items.push(entry);
+        });
+        var dayKeys = Object.keys(dayGroups).sort().reverse();
 
-            if (items.length === 0) {
-                panel.innerHTML = '<div style="text-align:center; padding:20px; color:#666; font-size:0.82rem;">No hay registros Cooper esta semana</div>';
-                return;
-            }
-
-            // Group by date then by shift
-            var grouped = {};
-            items.forEach(function(entry) {
-                var d = entry.date;
-                var dateKey = d.toLocaleDateString('es-ES', { weekday: 'long', day: '2-digit', month: 'short' });
-                var hour = d.getHours();
-                var shift = hour < 14 ? 'MAÑANA' : 'TARDE';
-                if (!grouped[dateKey]) grouped[dateKey] = { 'MAÑANA': [], 'TARDE': [] };
-                grouped[dateKey][shift].push(entry);
-            });
-
+        // If a folder is open, show its photos
+        if (_cooperOpenDay && dayGroups[_cooperOpenDay]) {
+            var folder = dayGroups[_cooperOpenDay];
             var html = '';
-            Object.keys(grouped).forEach(function(dateKey) {
-                html += '<div style="margin-bottom:12px;">';
-                html += '<div style="font-size:0.82rem; font-weight:700; color:#FF9800; padding:6px 0; border-bottom:1px solid #333; text-transform:capitalize;">' + dateKey + '</div>';
+            html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">';
+            html += '<button onclick="cooperBackToFolders()" style="background:#2a2a2d; border:1px solid #444; color:#2196F3; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:0.78rem; display:flex; align-items:center; gap:4px;">';
+            html += '<span style="font-size:0.9rem;">←</span> Volver</button>';
+            html += '<span style="color:#FF9800; font-weight:700; font-size:0.82rem; text-transform:capitalize;">📂 ' + folder.label + '</span>';
+            html += '<span style="color:#666; font-size:0.72rem;">(' + folder.items.length + ')</span>';
+            html += '</div>';
 
-                ['MAÑANA', 'TARDE'].forEach(function(shift) {
-                    var items = grouped[dateKey][shift];
-                    if (items.length === 0) return;
-                    var shiftIcon = shift === 'MAÑANA' ? '☀️' : '🌙';
-                    var shiftColor = shift === 'MAÑANA' ? '#FFD700' : '#7B68EE';
-                    html += '<div style="margin:6px 0 4px; font-size:0.75rem; color:' + shiftColor + '; font-weight:600;">' + shiftIcon + ' ' + shift + ' (' + items.length + ')</div>';
+            folder.items.forEach(function(entry) {
+                var d = entry.date;
+                var time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                var typeIcon = entry.data.type === 'recogida' ? '📥' : '📤';
+                var typeLabel = entry.data.type === 'recogida' ? 'Recogida' : 'Entrega';
+                var shift = d.getHours() < 14 ? '☀️' : '🌙';
 
-                    items.forEach(function(entry) {
-                        var d = entry.date;
-                        var time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-                        var typeIcon = entry.data.type === 'recogida' ? '📥' : '📤';
-                        var typeLabel = entry.data.type === 'recogida' ? 'Recogida' : 'Entrega';
-                        html += '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:4px;">';
-                        html += '<a href="' + (entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
-                        html += '<img src="' + (entry.data.photoURL || '') + '" style="width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid #333;" loading="lazy">';
-                        html += '</a>';
-                        html += '<div style="flex:1; min-width:0;">';
-                        html += '<div style="font-size:0.78rem; color:#ddd;">' + typeIcon + ' ' + typeLabel + ' <span style="color:#888;">· ' + time + '</span></div>';
-                        if (entry.data.note) {
-                            html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + entry.data.note + '</div>';
-                        }
-                        html += '</div></div>';
-                    });
-                });
-
+                html += '<div style="display:flex; align-items:center; gap:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; margin-bottom:6px; border:1px solid #222;">';
+                html += '<a href="' + (entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
+                html += '<img src="' + (entry.data.photoURL || '') + '" style="width:52px; height:52px; object-fit:cover; border-radius:8px; border:1px solid #333;" loading="lazy">';
+                html += '</a>';
+                html += '<div style="flex:1; min-width:0;">';
+                html += '<div style="font-size:0.8rem; color:#ddd;">' + typeIcon + ' ' + typeLabel + ' <span style="color:#888;">' + shift + ' ' + time + '</span></div>';
+                if (entry.data.note) {
+                    html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + entry.data.note + '</div>';
+                }
+                html += '</div>';
+                // WhatsApp button
+                var waMsg = '📦 Cooper ' + typeLabel + '\n📅 ' + folder.label + ' ' + time + '\n🚛 ' + (entry.data.route || 'Sin ruta') + '\n👤 ' + (entry.data.driverName || '') + (entry.data.note ? '\n📝 ' + entry.data.note : '') + '\n\n' + (entry.data.photoURL || '');
+                html += '<a href="https://wa.me/?text=' + encodeURIComponent(waMsg) + '" target="_blank" style="flex-shrink:0; background:#25D366; color:#fff; padding:4px 8px; border-radius:6px; font-size:0.7rem; text-decoration:none; display:flex; align-items:center; gap:3px;">📲</a>';
                 html += '</div>';
             });
 
             panel.innerHTML = html;
-        } catch(err) {
-            panel.innerHTML = '<div style="text-align:center; padding:20px; color:#FF3B30; font-size:0.8rem;">Error: ' + err.message + '</div>';
+            return;
         }
-    };
+
+        // Folder view
+        var html = '';
+        dayKeys.forEach(function(dayKey) {
+            var folder = dayGroups[dayKey];
+            var recCount = 0, entCount = 0;
+            folder.items.forEach(function(e) {
+                if (e.data.type === 'recogida') recCount++; else entCount++;
+            });
+            var isToday = dayKey === new Date().toISOString().split('T')[0];
+
+            html += '<div onclick="cooperOpenDay(\'' + dayKey + '\')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '; border:1px solid ' + (isToday ? 'rgba(255,152,0,0.3)' : '#222') + '; border-radius:8px; margin-bottom:6px; cursor:pointer;" ontouchstart="this.style.background=\'rgba(255,152,0,0.15)\'" ontouchend="this.style.background=\'' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '\'">';
+            html += '<span style="font-size:1.4rem;">📁</span>';
+            html += '<div style="flex:1; min-width:0;">';
+            html += '<div style="font-size:0.82rem; color:#ddd; font-weight:600; text-transform:capitalize;">' + folder.label + (isToday ? ' <span style="color:#FF9800; font-size:0.7rem;">(HOY)</span>' : '') + '</div>';
+            html += '<div style="font-size:0.72rem; color:#888; display:flex; gap:10px; margin-top:2px;">';
+            html += '<span>📥 ' + recCount + ' recogidas</span>';
+            html += '<span>📤 ' + entCount + ' entregas</span>';
+            html += '<span>📷 ' + folder.items.length + ' total</span>';
+            html += '</div></div>';
+            html += '<span style="color:#555; font-size:1rem;">›</span>';
+            html += '</div>';
+        });
+
+        panel.innerHTML = html;
+    }
+
+    // Load counters on app init (after route selection)
+    var _counterInterval = setInterval(function() {
+        if (currentDriverName) {
+            clearInterval(_counterInterval);
+            cooperUpdateCounters();
+        }
+    }, 2000);
 
 } // END initApp
 })();
