@@ -736,9 +736,51 @@ function renderTicketItem(t, list) {
 
 // --- POD NOTIFICATIONS LOGIC ---
 let notificationsListener = null;
+let _prevUnreadCount = -1; // Track previous unread count for alert detection
+
+// Notification alert sound (short beep using Web Audio API)
+function _playNotifSound() {
+    try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.5);
+        setTimeout(function() { ctx.close(); }, 600);
+    } catch(e) {}
+}
+
+// Pulse animation on notification bell
+function _pulseNotifBell() {
+    var btn = document.getElementById('nav-notifications');
+    if (!btn) return;
+    btn.style.transition = 'none';
+    btn.style.animation = 'none';
+    // Inject keyframes if not already present
+    if (!document.getElementById('notif-pulse-style')) {
+        var style = document.createElement('style');
+        style.id = 'notif-pulse-style';
+        style.textContent =
+            '@keyframes notifPulse { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,59,48,0.7); } ' +
+            '40% { transform: scale(1.12); box-shadow: 0 0 0 10px rgba(255,59,48,0); } ' +
+            '100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,59,48,0); } }';
+        document.head.appendChild(style);
+    }
+    // Force reflow to restart animation
+    void btn.offsetWidth;
+    btn.style.animation = 'notifPulse 0.6s ease-out 3';
+    setTimeout(function() { btn.style.animation = ''; }, 2000);
+}
 
 window.initUserNotifications = function(uid) {
     if (notificationsListener) notificationsListener(); // Limpiar previo
+    _prevUnreadCount = -1; // Reset on init
 
     const badge = document.getElementById('notification-badge');
     const list = document.getElementById('notification-list');
@@ -783,6 +825,7 @@ window.initUserNotifications = function(uid) {
                 else if (data.type === 'delivery_confirmed') { typeIcon = '📦'; typeLabel = 'Entrega'; accentColor = '#4CAF50'; }
                 else if (data.type === 'POD_AVAILABLE') { typeIcon = '📋'; typeLabel = 'Justificante'; accentColor = '#FF9800'; }
                 else if (data.type === 'campaign') { typeIcon = '📢'; typeLabel = 'Comunicación'; accentColor = '#E91E63'; }
+                else if (data.type === 'incident') { typeIcon = '⚠️'; typeLabel = 'Incidencia'; accentColor = '#F44336'; }
 
                 const item = document.createElement('div');
                 item.style.cssText = 'padding:16px 20px; border-radius:10px; border-left:4px solid ' + (data.read ? 'var(--border-glass)' : accentColor) + '; background:rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + '); cursor:pointer; transition:background 0.2s;';
@@ -820,6 +863,13 @@ window.initUserNotifications = function(uid) {
             } else {
                 badge.classList.add('hidden');
             }
+
+            // Visual + sound alert when new unread notifications arrive
+            if (_prevUnreadCount >= 0 && unreadCount > _prevUnreadCount) {
+                _pulseNotifBell();
+                _playNotifSound();
+            }
+            _prevUnreadCount = unreadCount;
 
             // Update stats
             if (statsEl) {

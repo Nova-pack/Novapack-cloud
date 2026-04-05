@@ -1404,6 +1404,24 @@ function initApp() {
             var docRef = d._ref || db.collection('tickets').doc(d._id);
             await docRef.update(updateData);
 
+            // Notify the sender/user about the incident
+            try {
+                var notifUid = d.uid || d.clientIdNum || '';
+                if (notifUid) {
+                    await db.collection('user_notifications').add({
+                        uid: notifUid,
+                        type: 'incident',
+                        title: 'Incidencia en envío ' + escapeHtml(d.id || d._id),
+                        body: escapeHtml(fullReason),
+                        ticketId: d.id || d._id,
+                        docId: d._id,
+                        reportedBy: currentDriverName,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        read: false
+                    });
+                }
+            } catch(ne) { console.warn('No se pudo notificar al usuario:', ne); }
+
             document.getElementById('incident-modal').classList.remove('active');
             _incidentDelivery = null;
             showToast('Incidencia reportada: ' + (d.id || d._id), 'warning');
