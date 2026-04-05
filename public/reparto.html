@@ -106,10 +106,11 @@
     }
     #reparto-intro.fade-out { opacity:0; visibility:hidden; }
     .intro-logo-rpt {
-        font-family:'Xenotron', sans-serif; font-size:3rem; color:#FF4D00;
-        font-weight:300; letter-spacing:10px;
+        font-family:'Xenotron', sans-serif; font-size:clamp(1.8rem, 8vw, 3rem); color:#FF4D00;
+        font-weight:300; letter-spacing:clamp(3px, 2vw, 10px);
         animation: rptIntroScale 1.6s ease-out forwards;
         text-shadow:0 0 25px rgba(255,77,0,0.3);
+        max-width:90vw; text-align:center; overflow:hidden;
     }
     .intro-logo-rpt span { color:#FF3B30; font-family:sans-serif; font-weight:900; font-size:0.8em; margin-left:5px; filter:drop-shadow(0 0 5px rgba(255,59,48,0.5)); }
     .intro-sub-rpt {
@@ -263,9 +264,6 @@
 
     <!-- HEADER -->
     <header class="app-header">
-        <div>
-            <div class="logo">NOVAPACK<span>➤</span></div>
-        </div>
         <div style="display:flex; align-items:center; gap:6px;">
             <span id="connection-dot" class="conn-dot online" title="Conectado"></span>
             <span id="driver-name" class="driver-badge">REPARTIDOR</span>
