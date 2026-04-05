@@ -917,21 +917,16 @@ window.initUserNotifications = function(uid) {
                         e.stopPropagation();
                         var tdocid = this.dataset.ticketdocid;
                         var tid = this.dataset.ticketid;
-                        // Close notification panel
-                        var panel = document.getElementById('notifications-panel');
-                        if (panel) panel.classList.remove('active');
-                        // Try local cache first, then Firestore
-                        if (typeof mergedTickets !== 'undefined' && mergedTickets.has(tdocid)) {
-                            loadEditor(mergedTickets.get(tdocid));
-                        } else {
-                            db.collection('tickets').doc(tdocid).get().then(function(snap) {
-                                if (snap.exists) {
-                                    loadEditor({ ...snap.data(), docId: snap.id });
-                                } else {
-                                    alert('Albarán #' + tid + ' no encontrado.');
-                                }
-                            }).catch(function() { alert('Error cargando albarán.'); });
-                        }
+                        // Switch to dashboard view (closes notifications view)
+                        if (typeof showView === 'function') showView('dashboard-view');
+                        // Load ticket into editor from Firestore
+                        db.collection('tickets').doc(tdocid).get().then(function(snap) {
+                            if (snap.exists) {
+                                loadEditor({ ...snap.data(), docId: snap.id });
+                            } else {
+                                alert('Albarán #' + tid + ' no encontrado.');
+                            }
+                        }).catch(function() { alert('Error cargando albarán.'); });
                     });
                 }
 
