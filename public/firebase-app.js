@@ -863,10 +863,12 @@ window.initUserNotifications = function(uid) {
                     photoHtml = '<div class="notif-photo-placeholder" data-ticketdocid="' + escapeHtml(data.docId) + '" style="padding-left:28px; margin-top:8px;"></div>';
                 }
 
-                // Ticket reference + mark as read button
-                var footerHtml = '<div style="padding-left:28px; margin-top:6px; display:flex; align-items:center; gap:12px;">';
-                if (data.ticketId) {
-                    footerHtml += '<span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + escapeHtml(data.ticketId) + '</span>';
+                // Ticket reference link + mark as read button
+                var footerHtml = '<div style="padding-left:28px; margin-top:6px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">';
+                if (data.ticketId || data.docId) {
+                    var linkDocId = data.docId || data.ticketId || '';
+                    var linkLabel = data.ticketId || data.docId || '';
+                    footerHtml += '<button class="notif-goto-ticket" data-ticketdocid="' + escapeHtml(linkDocId) + '" data-ticketid="' + escapeHtml(linkLabel) + '" style="background:rgba(33,150,243,0.15); border:1px solid rgba(33,150,243,0.4); color:#2196F3; font-size:0.72rem; padding:3px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">📋 Ver Albarán #' + escapeHtml(linkLabel) + '</button>';
                 }
                 if (!data.read) {
                     footerHtml += '<button class="notif-read-btn" data-docid="' + docId + '" style="background:rgba(76,175,80,0.15); border:1px solid rgba(76,175,80,0.4); color:#4CAF50; font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer; font-weight:bold;">Marcar leído</button>';
@@ -904,6 +906,31 @@ window.initUserNotifications = function(uid) {
                         if (confirm('¿Eliminar esta notificación?')) {
                             item.style.opacity = '0.3';
                             db.collection('user_notifications').doc(this.dataset.docid).delete().catch(function(){});
+                        }
+                    });
+                }
+
+                // "Ver Albarán" button — navigate to ticket in editor
+                var gotoBtn = item.querySelector('.notif-goto-ticket');
+                if (gotoBtn) {
+                    gotoBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        var tdocid = this.dataset.ticketdocid;
+                        var tid = this.dataset.ticketid;
+                        // Close notification panel
+                        var panel = document.getElementById('notifications-panel');
+                        if (panel) panel.classList.remove('active');
+                        // Try local cache first, then Firestore
+                        if (typeof mergedTickets !== 'undefined' && mergedTickets.has(tdocid)) {
+                            loadEditor(mergedTickets.get(tdocid));
+                        } else {
+                            db.collection('tickets').doc(tdocid).get().then(function(snap) {
+                                if (snap.exists) {
+                                    loadEditor({ ...snap.data(), docId: snap.id });
+                                } else {
+                                    alert('Albarán #' + tid + ' no encontrado.');
+                                }
+                            }).catch(function() { alert('Error cargando albarán.'); });
                         }
                     });
                 }
