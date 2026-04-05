@@ -17,6 +17,14 @@
       ]
     },
     {
+      "collectionGroup": "driver_alerts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "routePhone", "order": "ASCENDING" },
+        { "fieldPath": "completed", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "tickets",
       "queryScope": "COLLECTION",
       "fields": [

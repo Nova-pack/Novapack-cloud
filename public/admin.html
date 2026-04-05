@@ -8728,7 +8728,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         notes: notes,
                         sentBy: window.adminIdentity || 'Admin',
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        read: false
+                        read: false,
+                        completed: false
                     });
                     statusEl.textContent = 'Aviso enviado a ' + window._alertRouteLabel;
                     statusEl.style.color = '#4CAF50';

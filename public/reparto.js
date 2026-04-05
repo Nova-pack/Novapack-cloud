@@ -762,6 +762,7 @@ function initApp() {
     var alertUnsubscribe = null;
     var knownAlertIds = new Set();
     var isFirstAlertSnapshot = true;
+    var _driverAlerts = [];
 
     function startDriverAlertListener() {
         if (!currentDriverPhone) return;
@@ -769,7 +770,7 @@ function initApp() {
 
         alertUnsubscribe = db.collection('driver_alerts')
             .where('routePhone', '==', currentDriverPhone)
-            .where('read', '==', false)
+            .where('completed', '==', false)
             .onSnapshot(function(snap) {
                 var alerts = [];
                 snap.forEach(function(doc) {
@@ -778,35 +779,146 @@ function initApp() {
                     alerts.push(d);
                 });
 
-                if (!isFirstAlertSnapshot) {
-                    alerts.forEach(function(a) {
-                        if (!knownAlertIds.has(a._id)) {
-                            sendNotification(
-                                a.title || '📢 AVISO DE ADMIN',
-                                a.body || ''
-                            );
-                            // Mark as read
-                            db.collection('driver_alerts').doc(a._id).update({ read: true })
-                                .catch(function(e) { console.warn('Error marking alert read:', e); });
-                        }
-                    });
-                } else {
-                    // On first load, show unread alerts and mark them
-                    alerts.forEach(function(a) {
+                // Sort newest first
+                alerts.sort(function(a, b) {
+                    var ta = a.createdAt ? (typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate().getTime() : new Date(a.createdAt).getTime()) : 0;
+                    var tb = b.createdAt ? (typeof b.createdAt.toDate === 'function' ? b.createdAt.toDate().getTime() : new Date(b.createdAt).getTime()) : 0;
+                    return tb - ta;
+                });
+
+                // Notify for new unread alerts
+                alerts.forEach(function(a) {
+                    if (!a.read && !knownAlertIds.has(a._id)) {
                         sendNotification(
-                            a.title || '📢 AVISO DE ADMIN',
+                            a.title || '\ud83d\udce2 AVISO DE ADMIN',
                             a.body || ''
                         );
+                        // Mark as read (seen) but NOT completed
                         db.collection('driver_alerts').doc(a._id).update({ read: true })
                             .catch(function(e) { console.warn('Error marking alert read:', e); });
-                    });
-                }
+                    }
+                });
+
                 knownAlertIds = new Set(alerts.map(function(a) { return a._id; }));
                 isFirstAlertSnapshot = false;
+                _driverAlerts = alerts;
+                _updateAlertsBadge();
+                _renderAlertsPanel();
             }, function(err) {
                 console.warn('Driver alert listener error:', err);
             });
     }
+
+    function _updateAlertsBadge() {
+        var badge = document.getElementById('alerts-count-badge');
+        if (!badge) return;
+        var count = _driverAlerts.length;
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'inline-block' : 'none';
+        // Pulse the button if there are pending alerts
+        var btn = document.getElementById('btn-alerts-toggle');
+        if (btn) {
+            btn.style.borderColor = count > 0 ? '#4CAF50' : '#333';
+            btn.style.boxShadow = count > 0 ? '0 0 12px rgba(76,175,80,0.3)' : 'none';
+        }
+    }
+
+    window.toggleAlertsPanel = function() {
+        var panel = document.getElementById('alerts-panel');
+        var arrow = document.getElementById('alerts-panel-arrow');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            if (arrow) arrow.style.transform = 'rotate(180deg)';
+            _renderAlertsPanel();
+        } else {
+            panel.style.display = 'none';
+            if (arrow) arrow.style.transform = 'rotate(0deg)';
+        }
+    };
+
+    function _renderAlertsPanel() {
+        var panel = document.getElementById('alerts-panel');
+        if (!panel || panel.style.display === 'none') return;
+
+        if (_driverAlerts.length === 0) {
+            panel.innerHTML = '<div style="text-align:center; padding:24px; color:#888; font-size:0.85rem;">' +
+                '<span class="material-symbols-outlined" style="font-size:2rem; display:block; margin-bottom:8px; color:#4CAF50;">check_circle</span>' +
+                'No hay recogidas ni avisos pendientes</div>';
+            return;
+        }
+
+        var html = '';
+        _driverAlerts.forEach(function(a) {
+            var typeIcon = '\ud83d\udce2';
+            var typeLabel = 'Aviso';
+            var typeColor = '#2196F3';
+            if (a.type === 'recogida') { typeIcon = '\ud83d\udce5'; typeLabel = 'Recogida'; typeColor = '#FF9800'; }
+            else if (a.type === 'entrega_urgente') { typeIcon = '\ud83d\udea8'; typeLabel = 'Entrega urgente'; typeColor = '#FF3B30'; }
+
+            var dateStr = '';
+            if (a.createdAt) {
+                var d = typeof a.createdAt.toDate === 'function' ? a.createdAt.toDate() : new Date(a.createdAt);
+                dateStr = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                var today = new Date();
+                if (d.toDateString() !== today.toDateString()) {
+                    dateStr = d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) + ' ' + dateStr;
+                }
+            }
+
+            html += '<div style="background:linear-gradient(135deg, ' + typeColor + '15, ' + typeColor + '08); border:1px solid ' + typeColor + '44; border-radius:12px; padding:14px; margin-bottom:10px;">';
+            // Header
+            html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
+            html += '<span style="color:' + typeColor + '; font-weight:800; font-size:0.82rem; letter-spacing:0.5px;">' + typeIcon + ' ' + typeLabel.toUpperCase() + '</span>';
+            html += '<span style="color:#888; font-size:0.72rem;">' + dateStr + '</span>';
+            html += '</div>';
+            // Address
+            if (a.address) {
+                html += '<div style="display:flex; align-items:start; gap:6px; margin-bottom:6px; color:#eee; font-size:0.9rem; line-height:1.5;">';
+                html += '<span style="font-size:1rem; flex-shrink:0;">\ud83d\udccd</span>';
+                html += '<span style="font-weight:600;">' + a.address + '</span>';
+                html += '</div>';
+            }
+            // Notes
+            if (a.notes) {
+                html += '<div style="display:flex; align-items:start; gap:6px; margin-bottom:6px; color:#aaa; font-size:0.82rem; line-height:1.4;">';
+                html += '<span style="font-size:0.9rem; flex-shrink:0;">\ud83d\udcdd</span>';
+                html += '<span>' + a.notes + '</span>';
+                html += '</div>';
+            }
+            // Sent by
+            if (a.sentBy) {
+                html += '<div style="color:#666; font-size:0.7rem; margin-bottom:8px;">Enviado por: ' + a.sentBy + '</div>';
+            }
+            // Action buttons
+            html += '<div style="display:flex; gap:8px; margin-top:10px;">';
+            // Google Maps
+            if (a.address) {
+                html += '<button onclick="window.open(\'https://www.google.com/maps/search/' + encodeURIComponent(a.address) + '\', \'_blank\')" style="flex:1; padding:10px; background:#1e3a5f; color:#5dade2; border:1px solid #2d5a8e; border-radius:8px; font-weight:800; font-size:0.78rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">\ud83d\udccd C\u00d3MO LLEGAR</button>';
+            }
+            // Complete
+            html += '<button onclick="completeDriverAlert(\'' + a._id + '\')" style="flex:1; padding:10px; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; border:none; border-radius:8px; font-weight:800; font-size:0.78rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">\u2705 COMPLETADA</button>';
+            html += '</div>';
+            html += '</div>';
+        });
+
+        panel.innerHTML = html;
+    }
+
+    window.completeDriverAlert = async function(alertId) {
+        if (!confirm('\u00bfMarcar como completada?')) return;
+        try {
+            await db.collection('driver_alerts').doc(alertId).update({
+                completed: true,
+                completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                completedBy: currentDriverName
+            });
+            showToast('Recogida/aviso completado', 'success');
+        } catch(e) {
+            console.error('Error completing alert:', e);
+            showToast('Error: ' + e.message, 'error');
+        }
+    };
 
     function renderPickupCards(pickups) {
         var container = document.getElementById('delivery-list');
