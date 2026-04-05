@@ -808,8 +808,9 @@ window.initUserNotifications = function(uid) {
 
             if(markBtn) markBtn.classList.remove('hidden');
 
-            snap.forEach(doc => {
-                const data = doc.data();
+            snap.forEach(docSnap => {
+                const data = docSnap.data();
+                const docId = docSnap.id;
                 totalCount++;
                 if (!data.read) unreadCount++;
 
@@ -829,31 +830,77 @@ window.initUserNotifications = function(uid) {
                 else if (data.type === 'incident_resolved') { typeIcon = '✅'; typeLabel = 'Incidencia Resuelta'; accentColor = '#4CAF50'; }
 
                 const item = document.createElement('div');
-                item.style.cssText = 'padding:16px 20px; border-radius:10px; border-left:4px solid ' + (data.read ? 'var(--border-glass)' : accentColor) + '; background:rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + '); cursor:pointer; transition:background 0.2s;';
+                item.style.cssText = 'padding:16px 20px; border-radius:10px; border-left:4px solid ' + (data.read ? 'var(--border-glass)' : accentColor) + '; background:rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + '); transition:background 0.2s;';
                 item.onmouseover = function() { this.style.background = 'rgba(255,255,255,0.07)'; };
                 item.onmouseout = function() { this.style.background = 'rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + ')'; };
 
-                item.innerHTML =
+                // Build header row with delete button
+                var headerHtml =
                     '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">' +
-                        '<div style="display:flex; align-items:center; gap:8px;">' +
+                        '<div style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">' +
                             '<span style="font-size:1.2rem;">' + typeIcon + '</span>' +
-                            '<span style="font-weight:800; color:var(--text-main); font-size:0.9rem;">' + escapeHtml(data.title || typeLabel) + '</span>' +
-                            (!data.read ? '<span style="background:' + accentColor + '; color:white; font-size:0.6rem; padding:1px 6px; border-radius:8px; font-weight:bold;">NUEVO</span>' : '') +
+                            '<span style="font-weight:800; color:var(--text-main); font-size:0.9rem; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(data.title || typeLabel) + '</span>' +
+                            (!data.read ? '<span class="notif-nuevo-badge" style="background:' + accentColor + '; color:white; font-size:0.6rem; padding:1px 6px; border-radius:8px; font-weight:bold; flex-shrink:0;">NUEVO</span>' : '') +
                         '</div>' +
-                        '<span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">' + dateStr + ' ' + timeStr + '</span>' +
-                    '</div>' +
-                    '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + escapeHtml(data.body || data.message || '') + '</div>' +
-                    (data.photoURL ? '<div style="padding-left:28px; margin-top:8px;"><img src="' + escapeHtml(data.photoURL) + '" alt="Foto" style="max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;" onclick="window.open(this.src,\'_blank\')"></div>' : '') +
-                    (data.ticketId ? '<div style="padding-left:28px; margin-top:6px;"><span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + escapeHtml(data.ticketId) + '</span></div>' : '');
+                        '<div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">' +
+                            '<span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">' + dateStr + ' ' + timeStr + '</span>' +
+                            '<button class="notif-delete-btn" data-docid="' + docId + '" style="background:none; border:1px solid rgba(255,59,48,0.4); color:#FF3B30; font-size:0.7rem; padding:2px 6px; border-radius:4px; cursor:pointer; line-height:1; flex-shrink:0;" title="Eliminar">✕</button>' +
+                        '</div>' +
+                    '</div>';
 
-                // Mark as read on click (read-only — no editing, just mark read)
-                item.onclick = async () => {
-                    if (!data.read) {
-                        item.style.borderLeftColor = 'var(--border-glass)';
-                        item.querySelector('[style*="NUEVO"]') && item.querySelector('[style*="NUEVO"]').remove();
-                        try { await db.collection('user_notifications').doc(doc.id).update({ read: true }); } catch(e){}
-                    }
-                };
+                // Build body
+                var bodyHtml = '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + escapeHtml(data.body || data.message || '') + '</div>';
+
+                // Photo thumbnail (clickable)
+                var photoHtml = '';
+                if (data.photoURL) {
+                    photoHtml = '<div style="padding-left:28px; margin-top:8px;"><img class="notif-photo" data-url="' + escapeHtml(data.photoURL) + '" src="' + escapeHtml(data.photoURL) + '" alt="Foto" style="max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;"></div>';
+                }
+
+                // Ticket reference + mark as read button
+                var footerHtml = '<div style="padding-left:28px; margin-top:6px; display:flex; align-items:center; gap:12px;">';
+                if (data.ticketId) {
+                    footerHtml += '<span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + escapeHtml(data.ticketId) + '</span>';
+                }
+                if (!data.read) {
+                    footerHtml += '<button class="notif-read-btn" data-docid="' + docId + '" style="background:rgba(76,175,80,0.15); border:1px solid rgba(76,175,80,0.4); color:#4CAF50; font-size:0.68rem; padding:2px 8px; border-radius:4px; cursor:pointer; font-weight:bold;">Marcar leído</button>';
+                }
+                footerHtml += '</div>';
+
+                item.innerHTML = headerHtml + bodyHtml + photoHtml + footerHtml;
+
+                // Attach event listeners via delegation (not inline onclick)
+                // Photo click — open in new tab
+                var photoEl = item.querySelector('.notif-photo');
+                if (photoEl) {
+                    photoEl.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        window.open(this.dataset.url, '_blank');
+                    });
+                }
+
+                // Mark as read button
+                var readBtn = item.querySelector('.notif-read-btn');
+                if (readBtn) {
+                    readBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        this.textContent = '...';
+                        this.disabled = true;
+                        db.collection('user_notifications').doc(this.dataset.docid).update({ read: true }).catch(function(){});
+                    });
+                }
+
+                // Delete button
+                var delBtn = item.querySelector('.notif-delete-btn');
+                if (delBtn) {
+                    delBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        if (confirm('¿Eliminar esta notificación?')) {
+                            item.style.opacity = '0.3';
+                            db.collection('user_notifications').doc(this.dataset.docid).delete().catch(function(){});
+                        }
+                    });
+                }
 
                 list.appendChild(item);
             });
@@ -889,7 +936,32 @@ window.initUserNotifications = function(uid) {
             console.error('[NOTIF] Error en listener de notificaciones:', err);
             if (list) list.innerHTML = '<div style="text-align:center; padding:40px; color:#F44336; font-size:0.85rem;">Error cargando notificaciones. Recarga la página.</div>';
         });
+
+    // Auto-cleanup: delete notifications older than 60 days
+    _cleanupOldNotifications(uid);
 };
+
+function _cleanupOldNotifications(uid) {
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 60);
+    db.collection('user_notifications')
+        .where('uid', '==', uid)
+        .where('createdAt', '<', cutoff)
+        .get()
+        .then(function(snap) {
+            if (snap.empty) return;
+            var batch = db.batch();
+            var count = 0;
+            snap.forEach(function(doc) {
+                batch.delete(doc.ref);
+                count++;
+            });
+            return batch.commit().then(function() {
+                console.log('[NOTIF] Limpieza automática: ' + count + ' notificaciones antiguas eliminadas (>60 días)');
+            });
+        })
+        .catch(function(e) { console.warn('[NOTIF] Error en limpieza automática:', e); });
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // Portes Debidos Toggle
