@@ -6015,6 +6015,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Nombre Chófer 4 (Opcional)</label>
                         <input type="text" id="new-phone-driver-name-4" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
                     </div>
+                    <div class="form-group" style="margin-bottom:20px;">
+                        <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:5px;">Zonas de cobertura <span style="color:#888; font-size:0.7rem;">(CPs y/o localidades separados por comas)</span></label>
+                        <input type="text" id="new-phone-coverage-zones" placeholder="Ej: 29001, 29002, Torremolinos, Benalmádena" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:0.85rem;">
+                    </div>
                     <div style="display:flex; gap:10px;">
                         <button type="submit" class="btn" style="flex:1; background:var(--brand-primary); color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;">Guardar</button>
                         <button type="button" id="btn-close-phone-modal" class="btn" style="flex:1; background:#333; color:white; border:none; padding:10px; border-radius:8px; cursor:pointer;">Cancelar</button>
@@ -7969,7 +7973,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <td>${data.number}</td>
     <td>${combinedNames}</td>
     <td style="display:flex; gap:10px;">
-        <button class="btn btn-secondary btn-sm" onclick="editPhone('${doc.id}', '${data.label.replace(/'/g, "\\'")}', '${data.number.replace(/'/g, "\\'")}', '${(data.driverName || '').replace(/'/g, "\\'")}', '${(data.driverName2 || '').replace(/'/g, "\\'")}', '${(data.driverName3 || '').replace(/'/g, "\\'")}', '${(data.driverName4 || '').replace(/'/g, "\\'")}')">✏️</button>
+        <button class="btn btn-secondary btn-sm" onclick="editPhone('${doc.id}', '${data.label.replace(/'/g, "\\'")}', '${data.number.replace(/'/g, "\\'")}', '${(data.driverName || '').replace(/'/g, "\\'")}', '${(data.driverName2 || '').replace(/'/g, "\\'")}', '${(data.driverName3 || '').replace(/'/g, "\\'")}', '${(data.driverName4 || '').replace(/'/g, "\\'")}', '${(data.coverageZones || '').replace(/'/g, "\\'")}')">✏️</button>
         <button class="btn btn-danger btn-sm" onclick="deletePhone('${doc.id}')">🗑️</button>
     </td>`;
                     phoneTableBody.appendChild(row);
@@ -7987,6 +7991,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     driverName2: document.getElementById('new-phone-driver-name-2').value.trim(),
                     driverName3: document.getElementById('new-phone-driver-name-3').value.trim(),
                     driverName4: document.getElementById('new-phone-driver-name-4').value.trim(),
+                    coverageZones: document.getElementById('new-phone-coverage-zones').value.trim(),
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
 
@@ -8004,7 +8009,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadPhones();
             };
 
-            window.editPhone = async (id, label, number, driverName, driverName2, driverName3, driverName4) => {
+            window.editPhone = async (id, label, number, driverName, driverName2, driverName3, driverName4, coverageZones) => {
                 if(document.getElementById('edit-phone-id')) document.getElementById('edit-phone-id').value = id;
                 document.getElementById('new-phone-label').value = label;
                 document.getElementById('new-phone-number').value = number;
@@ -8012,6 +8017,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('new-phone-driver-name-2').value = driverName2 || '';
                 document.getElementById('new-phone-driver-name-3').value = driverName3 || '';
                 document.getElementById('new-phone-driver-name-4').value = driverName4 || '';
+                document.getElementById('new-phone-coverage-zones').value = coverageZones || '';
                 if (addPhoneModal) addPhoneModal.style.display = 'flex';
             };
 
@@ -16479,12 +16485,30 @@ window.importTarifas50 = async () => {
             // Auto-route driver
             let driverPhone = '';
             try {
+                const routeLocality = (document.getElementById('mt-localidad') ? document.getElementById('mt-localidad').value : '').toLowerCase().trim();
+                const routeProvince = (province || '').toLowerCase().trim();
                 const phonesSnap = await db.collection('config').doc('phones').collection('list').get();
+                var rtList = [];
                 phonesSnap.forEach(doc => {
-                    const label = (doc.data().label || '').toLowerCase();
-                    const num = doc.data().number;
-                    if (cp && label.includes(cp)) driverPhone = num;
+                    var d = doc.data();
+                    rtList.push({ label: (d.label || '').toLowerCase(), number: d.number, zones: d.coverageZones || '' });
                 });
+                rtList.forEach(r => {
+                    if (r.zones && !driverPhone) {
+                        var zl = r.zones.toLowerCase().split(',').map(z => z.trim());
+                        if (cp && zl.indexOf(cp) !== -1) driverPhone = r.number;
+                        else if (routeLocality && zl.indexOf(routeLocality) !== -1) driverPhone = r.number;
+                    }
+                });
+                if (!driverPhone) {
+                    rtList.forEach(r => {
+                        if (driverPhone) return;
+                        if (cp && r.label.includes(cp)) driverPhone = r.number;
+                        else if (routeLocality && routeLocality.length > 3 && r.label.includes(routeLocality)) driverPhone = r.number;
+                        else if (routeProvince && routeProvince.length > 3 && r.label.includes(routeProvince)) driverPhone = r.number;
+                    });
+                }
+                if (!driverPhone && rtList.length === 1) driverPhone = rtList[0].number;
             } catch(e) { console.warn('Auto-route error:', e); }
 
             // Build package list

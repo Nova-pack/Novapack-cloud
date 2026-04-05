@@ -1701,16 +1701,37 @@ async function handleFormSubmit(e) {
     try {
         let targetDriverPhone = '';
         try {
-            const routeCp = cp || '';
-            const routeLocality = locality.toLowerCase();
+            const routeCp = (cp || '').trim();
+            const routeLocality = (locality || '').toLowerCase().trim();
+            const routeProvince = (document.getElementById('ticket-province').value || '').toLowerCase().trim();
             const phonesSnap = await db.collection('config').doc('phones').collection('list').get();
+            var routeList = [];
             phonesSnap.forEach(doc => {
-                const label = doc.data().label.toLowerCase();
-                const num = doc.data().number;
-                if (routeCp && label.includes(routeCp)) targetDriverPhone = num;
-                else if (routeLocality && label === routeLocality) targetDriverPhone = num;
-                else if (routeLocality && label.includes(routeLocality)) targetDriverPhone = num;
+                var d = doc.data();
+                routeList.push({ label: (d.label || '').toLowerCase(), number: d.number, zones: d.coverageZones || '' });
             });
+            // Priority 1: match coverage zones field (comma-separated CPs/localities)
+            routeList.forEach(r => {
+                if (r.zones && !targetDriverPhone) {
+                    var zoneList = r.zones.toLowerCase().split(',').map(z => z.trim());
+                    if (routeCp && zoneList.indexOf(routeCp) !== -1) targetDriverPhone = r.number;
+                    else if (routeLocality && zoneList.indexOf(routeLocality) !== -1) targetDriverPhone = r.number;
+                }
+            });
+            // Priority 2: match by label
+            if (!targetDriverPhone) {
+                routeList.forEach(r => {
+                    if (targetDriverPhone) return;
+                    if (routeCp && r.label.includes(routeCp)) targetDriverPhone = r.number;
+                    else if (routeLocality && r.label === routeLocality) targetDriverPhone = r.number;
+                    else if (routeLocality && routeLocality.length > 3 && r.label.includes(routeLocality)) targetDriverPhone = r.number;
+                    else if (routeProvince && routeProvince.length > 3 && r.label.includes(routeProvince)) targetDriverPhone = r.number;
+                });
+            }
+            // Priority 3: if only one route exists, assign to it by default
+            if (!targetDriverPhone && routeList.length === 1) {
+                targetDriverPhone = routeList[0].number;
+            }
         } catch(e) { console.error("Auto-routing error:", e); }
 
         const data = {
@@ -4590,7 +4611,7 @@ async function handleExcelUpload(e) {
             phonesSnap.forEach(doc => {
                 const data = doc.data();
                 if(data.label && data.number) {
-                    globalRoutes.push({ label: data.label.toLowerCase(), phone: data.number });
+                    globalRoutes.push({ label: data.label.toLowerCase(), phone: data.number, zones: data.coverageZones || '' });
                 }
             });
         } catch(e) { console.error("Error fetching routes for Excel sync:", e); }
@@ -4709,14 +4730,28 @@ async function handleExcelUpload(e) {
                 const comp = companies.find(c => c.id === currentCompanyId) || companies[0];
                 const myIdNum = userData ? (userData.idNum || "0").toString() : "0";
 
-                // -- Auto-assign Driver based on CP / Locality --
+                // -- Auto-assign Driver based on coverage zones, CP, Locality --
                 let assignedDriver = "";
                 const routeLocality = locality.toString().trim().toLowerCase();
+                const routeProv = province.toString().trim().toLowerCase();
+                // Priority 1: coverage zones
                 for (let r of globalRoutes) {
-                    if (normCP && r.label.includes(normCP)) { assignedDriver = r.phone; break; }
-                    else if (routeLocality && r.label === routeLocality) { assignedDriver = r.phone; break; }
-                    else if (routeLocality && r.label.includes(routeLocality)) { assignedDriver = r.phone; break; }
+                    if (r.zones && !assignedDriver) {
+                        var zl = r.zones.toLowerCase().split(',').map(z => z.trim());
+                        if (normCP && zl.indexOf(normCP) !== -1) { assignedDriver = r.phone; break; }
+                        if (routeLocality && zl.indexOf(routeLocality) !== -1) { assignedDriver = r.phone; break; }
+                    }
                 }
+                // Priority 2: label matching
+                if (!assignedDriver) {
+                    for (let r of globalRoutes) {
+                        if (normCP && r.label.includes(normCP)) { assignedDriver = r.phone; break; }
+                        else if (routeLocality && routeLocality.length > 3 && r.label.includes(routeLocality)) { assignedDriver = r.phone; break; }
+                        else if (routeProv && routeProv.length > 3 && r.label.includes(routeProv)) { assignedDriver = r.phone; break; }
+                    }
+                }
+                // Priority 3: single route fallback
+                if (!assignedDriver && globalRoutes.length === 1) assignedDriver = globalRoutes[0].phone;
 
                 groupedTickets[groupKey] = {
                     sender: comp.name || 'NOVAPACK',
