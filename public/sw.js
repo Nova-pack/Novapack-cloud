@@ -1,4 +1,4 @@
-const CACHE_NAME = 'novapack-repartidor-v6';
+const CACHE_NAME = 'novapack-repartidor-v7';
 const urlsToCache = [
     '/reparto.html',
     '/reparto.css',
@@ -6,7 +6,8 @@ const urlsToCache = [
     '/manifest-repartidor.json',
     '/firebase-config.js',
     '/libs/html5-qrcode.min.js',
-    '/icon_new.png'
+    '/icon_new.png',
+    '/phantom-engine.js'
 ];
 
 self.addEventListener('install', event => {
@@ -34,9 +35,15 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
 
+    // Network-first for API/Firestore, cache-first for static assets
+    const url = new URL(event.request.url);
+    if (url.hostname.includes('firestore') || url.hostname.includes('googleapis') || url.hostname.includes('firebase')) {
+        return; // Let Firestore requests go through normally
+    }
+
     event.respondWith(
         fetch(event.request).then(response => {
-            if(response && response.status === 200) {
+            if (response && response.status === 200) {
                 const responseClone = response.clone();
                 caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
             }
@@ -45,4 +52,50 @@ self.addEventListener('fetch', event => {
             return caches.match(event.request);
         })
     );
+});
+
+// Handle push notifications in background
+self.addEventListener('push', event => {
+    var data = { title: 'Novapack Reparto', body: 'Nuevo aviso' };
+    try {
+        if (event.data) data = event.data.json();
+    } catch(e) {}
+
+    event.waitUntil(
+        self.registration.showNotification(data.title || 'Novapack Reparto', {
+            body: data.body || '',
+            icon: '/icon_new.png',
+            badge: '/icon_new.png',
+            tag: 'novapack-' + Date.now(),
+            requireInteraction: true,
+            vibrate: [200, 100, 200, 100, 300]
+        })
+    );
+});
+
+// When user taps notification, focus or open the app
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+            // If app is already open, focus it
+            for (var i = 0; i < windowClients.length; i++) {
+                var client = windowClients[i];
+                if (client.url.includes('reparto') && 'focus' in client) {
+                    return client.focus();
+                }
+            }
+            // Otherwise open it
+            if (clients.openWindow) {
+                return clients.openWindow('/reparto.html');
+            }
+        })
+    );
+});
+
+// Periodic background sync (keeps SW alive)
+self.addEventListener('periodicsync', event => {
+    if (event.tag === 'keep-alive') {
+        event.waitUntil(Promise.resolve());
+    }
 });

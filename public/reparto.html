@@ -6,6 +6,10 @@
     <title>Novapack Reparto</title>
     <meta name="description" content="App de reparto y escáner de entregas Novapack">
     <meta name="theme-color" content="#FF4D00">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Reparto">
+    <meta name="mobile-web-app-capable" content="yes">
     <link rel="manifest" href="manifest-repartidor.json">
     <link rel="icon" href="icon_new.png">
     <link rel="apple-touch-icon" href="icon_new.png">
@@ -72,18 +76,86 @@
     </script>
 
 
-    <!-- Service Worker Registration -->
+    <!-- Service Worker + PWA Install + Wake Lock -->
     <script>
+        // --- Service Worker Registration with auto-update ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js').then(function(reg) {
                     console.log('[SW] Registered, scope:', reg.scope);
+                    // Check for updates every 30 min
+                    setInterval(function() { reg.update(); }, 1800000);
+                    // Register periodic sync to keep alive
+                    if (reg.periodicSync) {
+                        reg.periodicSync.register('keep-alive', { minInterval: 12 * 60 * 60 * 1000 }).catch(function() {});
+                    }
                 }).catch(function(err) {
                     console.warn('[SW] Registration failed:', err);
                 });
             });
         }
+
+        // --- PWA Install Prompt ---
+        var _deferredInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            _deferredInstallPrompt = e;
+            // Show install banner if not already installed
+            if (!window.matchMedia('(display-mode: standalone)').matches) {
+                _showInstallBanner();
+            }
+        });
+
+        function _showInstallBanner() {
+            if (document.getElementById('pwa-install-banner')) return;
+            if (localStorage.getItem('pwa-install-dismissed') === 'true') return;
+            var banner = document.createElement('div');
+            banner.id = 'pwa-install-banner';
+            banner.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:9999; background:linear-gradient(135deg,#FF4D00,#FF6600); color:white; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,0.5); animation:slideUp 0.3s ease;';
+            banner.innerHTML = '<span style="font-size:1.5rem;">📲</span>' +
+                '<div style="flex:1;"><div style="font-weight:800; font-size:0.9rem;">Instalar App Reparto</div><div style="font-size:0.75rem; opacity:0.85;">Funciona como app nativa, no se cierra sola</div></div>' +
+                '<button id="pwa-install-btn" style="background:white; color:#FF4D00; border:none; padding:8px 16px; border-radius:8px; font-weight:800; font-size:0.82rem; cursor:pointer; white-space:nowrap;">INSTALAR</button>' +
+                '<button id="pwa-install-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.7); font-size:1.2rem; cursor:pointer; padding:4px;">&times;</button>';
+            document.body.appendChild(banner);
+            document.getElementById('pwa-install-btn').onclick = function() {
+                if (_deferredInstallPrompt) {
+                    _deferredInstallPrompt.prompt();
+                    _deferredInstallPrompt.userChoice.then(function(result) {
+                        if (result.outcome === 'accepted') { banner.remove(); }
+                        _deferredInstallPrompt = null;
+                    });
+                }
+            };
+            document.getElementById('pwa-install-dismiss').onclick = function() {
+                banner.remove();
+                localStorage.setItem('pwa-install-dismissed', 'true');
+            };
+        }
+
+        // --- Wake Lock: keep screen on during delivery ---
+        var _wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    _wakeLock = await navigator.wakeLock.request('screen');
+                    _wakeLock.addEventListener('release', function() { _wakeLock = null; });
+                }
+            } catch(e) { console.log('[WakeLock] Not available:', e.message); }
+        }
+        // Re-acquire on visibility change (tab switch back)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible' && !_wakeLock) requestWakeLock();
+        });
+
+        // --- Detect standalone mode (installed PWA) ---
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+            document.documentElement.classList.add('pwa-standalone');
+        }
     </script>
+    <style>
+        @keyframes slideUp { from { transform:translateY(100%); } to { transform:translateY(0); } }
+        .pwa-standalone body { overflow: auto; -webkit-overflow-scrolling: touch; }
+    </style>
 
     <!-- App Logic -->
     <script src="reparto.js" defer></script>

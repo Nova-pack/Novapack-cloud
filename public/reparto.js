@@ -552,6 +552,7 @@ function initApp() {
         startPickupListener();
         startDriverAlertListener();
         requestNotificationPermission();
+        if (typeof requestWakeLock === 'function') requestWakeLock();
         showToast('Bienvenido, ' + currentDriverName, 'success');
     }
 
