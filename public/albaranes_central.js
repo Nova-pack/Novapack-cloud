@@ -219,17 +219,21 @@
         }
     };
 
+    var _albApplyFiltersTimer;
     window._albApplyFilters = function() {
-        const fromEl = document.getElementById('alb-date-from');
-        const toEl = document.getElementById('alb-date-to');
-        const textEl = document.getElementById('alb-text-filter');
-        if (fromEl) _albDateFrom = fromEl.value;
-        if (toEl) _albDateTo = toEl.value;
-        if (textEl) _albTextFilter = textEl.value;
+        clearTimeout(_albApplyFiltersTimer);
+        _albApplyFiltersTimer = setTimeout(function() {
+            const fromEl = document.getElementById('alb-date-from');
+            const toEl = document.getElementById('alb-date-to');
+            const textEl = document.getElementById('alb-text-filter');
+            if (fromEl) _albDateFrom = fromEl.value;
+            if (toEl) _albDateTo = toEl.value;
+            if (textEl) _albTextFilter = textEl.value;
 
-        // If dates changed, reload from Firestore
-        _albPage = 0;
-        _albLoadData();
+            // If dates changed, reload from Firestore
+            _albPage = 0;
+            _albLoadData();
+        }, 500);
     };
 
     window._albRefresh = function() {
@@ -888,13 +892,18 @@
         // Search filter
         var searchInput = document.getElementById('alb-reassign-search');
         var selectEl = document.getElementById('alb-reassign-select');
+        var _albReassignTimer;
         searchInput.addEventListener('input', function() {
-            var q = this.value.trim().toLowerCase();
-            var opts = selectEl.options;
-            for (var i = 0; i < opts.length; i++) {
-                if (i === 0) continue; // skip placeholder
-                opts[i].style.display = opts[i].textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
-            }
+            var self = this;
+            clearTimeout(_albReassignTimer);
+            _albReassignTimer = setTimeout(function() {
+                var q = self.value.trim().toLowerCase();
+                var opts = selectEl.options;
+                for (var i = 0; i < opts.length; i++) {
+                    if (i === 0) continue; // skip placeholder
+                    opts[i].style.display = opts[i].textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+                }
+            }, 300);
         });
         searchInput.focus();
 

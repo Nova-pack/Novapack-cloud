@@ -2283,21 +2283,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    var _trashFilterTimer;
     window.trashFilter = function() {
-        var q = (document.getElementById('trash-search') ? document.getElementById('trash-search').value : '').trim().toLowerCase();
-        var items = _getCurrentItems();
-        if (!q) {
-            _trashFiltered = items.slice();
-        } else {
-            _trashFiltered = items.filter(function(t) {
-                return [t.id, t.sender, t.receiver, t.erpId, t._deleteReason, t._deleteSource, t.docId,
-                        t.invoiceNum, t.clientName, t.name, t.numero]
-                    .join(' ').toLowerCase().indexOf(q) !== -1;
-            });
-        }
-        if (_currentTrashTab === 'tickets') _renderTrashTableTickets();
-        else if (_currentTrashTab === 'invoices') _renderTrashTableInvoices();
-        else _renderTrashTableAbonos();
+        clearTimeout(_trashFilterTimer);
+        _trashFilterTimer = setTimeout(function() {
+            var q = (document.getElementById('trash-search') ? document.getElementById('trash-search').value : '').trim().toLowerCase();
+            var items = _getCurrentItems();
+            if (!q) {
+                _trashFiltered = items.slice();
+            } else {
+                _trashFiltered = items.filter(function(t) {
+                    return [t.id, t.sender, t.receiver, t.erpId, t._deleteReason, t._deleteSource, t.docId,
+                            t.invoiceNum, t.clientName, t.name, t.numero]
+                        .join(' ').toLowerCase().indexOf(q) !== -1;
+                });
+            }
+            if (_currentTrashTab === 'tickets') _renderTrashTableTickets();
+            else if (_currentTrashTab === 'invoices') _renderTrashTableInvoices();
+            else _renderTrashTableAbonos();
+        }, 300);
     };
 
     function _renderTrashStats() {
@@ -2715,7 +2719,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    var _cooperSearchTimer;
     window.cooperSearchClients = function() {
+        clearTimeout(_cooperSearchTimer);
+        _cooperSearchTimer = setTimeout(function() { _doCooperSearchClients(); }, 300);
+    };
+    function _doCooperSearchClients() {
         if (!_cooperClients) return;
         var query = (document.getElementById('cooper-client-search').value || '').toLowerCase().trim();
         var prov = document.getElementById('cooper-client-prov').value;
@@ -6322,13 +6331,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            var _filterArticlesTimer;
             window.filterArticles = (val) => {
-                const f = val.toLowerCase();
-                const filtered = articlesMaster.filter(a =>
-                    (a.name || '').toLowerCase().includes(f) ||
-                    (a.description || '').toLowerCase().includes(f)
-                );
-                renderArticlesTable(filtered);
+                clearTimeout(_filterArticlesTimer);
+                _filterArticlesTimer = setTimeout(() => {
+                    const f = val.toLowerCase();
+                    const filtered = articlesMaster.filter(a =>
+                        (a.name || '').toLowerCase().includes(f) ||
+                        (a.description || '').toLowerCase().includes(f)
+                    );
+                    renderArticlesTable(filtered);
+                }, 300);
             };
 
             window.editArticle = (id) => {
@@ -6400,19 +6413,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderAbonoLines();
             }
 
+            var _filterAbonoTimer;
             window.filterAbonoClients = () => {
-                const val = document.getElementById('abono-client-search').value.toLowerCase();
-                const select = document.getElementById('abono-client-select');
-                select.innerHTML = '<option value="">-- Seleccione Cliente --</option>';
-                Object.keys(userMap).forEach(uid => {
-                    const u = userMap[uid];
-                    if (u.name.toLowerCase().includes(val) || (u.idNum || "").includes(val)) {
-                        const opt = document.createElement('option');
-                        opt.value = uid;
-                        opt.textContent = `[#${u.idNum || '?'}] ${u.name}`;
-                        select.appendChild(opt);
-                    }
-                });
+                clearTimeout(_filterAbonoTimer);
+                _filterAbonoTimer = setTimeout(() => {
+                    const val = document.getElementById('abono-client-search').value.toLowerCase();
+                    const select = document.getElementById('abono-client-select');
+                    select.innerHTML = '<option value="">-- Seleccione Cliente --</option>';
+                    Object.keys(userMap).forEach(uid => {
+                        const u = userMap[uid];
+                        if (u.name.toLowerCase().includes(val) || (u.idNum || "").includes(val)) {
+                            const opt = document.createElement('option');
+                            opt.value = uid;
+                            opt.textContent = `[#${u.idNum || '?'}] ${u.name}`;
+                            select.appendChild(opt);
+                        }
+                    });
+                }, 300);
             };
 
             window.populateAbonoCompanySelect = async (uid) => {
@@ -10751,7 +10768,10 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 if (!t) return;
 
                 // Marcar como impreso
-                db.collection('tickets').doc(docId).update({ printed: true }).catch(err => console.error("Error al marcar impreso:", err));
+                db.collection('tickets').doc(docId).update({ printed: true }).catch(err => {
+                    console.error("Error al marcar impreso:", err);
+                    alert("Aviso: el ticket se imprimió pero no se pudo marcar como impreso en la base de datos.");
+                });
 
                 // Usar el mismo formato de impresión que la app de usuario
                 const win = window.open('', '_blank');
@@ -11379,7 +11399,12 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             const adminTResults = document.getElementById('admin-t-destinations-results');
 
             if (adminTReceiver && adminTResults) {
+                let _adminDestTimer;
                 const showAdminDestinations = () => {
+                    clearTimeout(_adminDestTimer);
+                    _adminDestTimer = setTimeout(() => { _doShowAdminDestinations(); }, 200);
+                };
+                const _doShowAdminDestinations = () => {
                     const q = adminTReceiver.value.toLowerCase().trim();
                     let matches = adminDestinationsCache;
 
@@ -15167,32 +15192,36 @@ window.importTarifas50 = async () => {
         }
     };
     
+    var _advMgmtFilterTimer;
     window.advMgmtFilterClients = function() {
-        const qEl = document.getElementById('adv-mgmt-client-search');
-        const q = (qEl ? qEl.value : '').toLowerCase().trim();
-        const fromVal = document.getElementById('adv-mgmt-client-num-from') ? document.getElementById('adv-mgmt-client-num-from').value : '';
-        const toVal = document.getElementById('adv-mgmt-client-num-to') ? document.getElementById('adv-mgmt-client-num-to').value : '';
-        const fromNum = fromVal ? parseInt(fromVal) : -Infinity;
-        const toNum = toVal ? parseInt(toVal) : Infinity;
+        clearTimeout(_advMgmtFilterTimer);
+        _advMgmtFilterTimer = setTimeout(function() {
+            const qEl = document.getElementById('adv-mgmt-client-search');
+            const q = (qEl ? qEl.value : '').toLowerCase().trim();
+            const fromVal = document.getElementById('adv-mgmt-client-num-from') ? document.getElementById('adv-mgmt-client-num-from').value : '';
+            const toVal = document.getElementById('adv-mgmt-client-num-to') ? document.getElementById('adv-mgmt-client-num-to').value : '';
+            const fromNum = fromVal ? parseInt(fromVal) : -Infinity;
+            const toNum = toVal ? parseInt(toVal) : Infinity;
 
-        const filtered = window._advClientsCache.filter(c => {
-            const matchesText = !q || (
-                   (c.name || '').toLowerCase().includes(q) ||
-                   (c.email || '').toLowerCase().includes(q) ||
-                   (c.idNum || '').toLowerCase().includes(q) ||
-                   (c.nif || '').toLowerCase().includes(q) ||
-                   (c.phone || '').toLowerCase().includes(q) ||
-                   (c.city || '').toLowerCase().includes(q) ||
-                   (c.street || '').toLowerCase().includes(q) ||
-                   (String(c.clientNumber || '')).includes(q)
-            );
-            // Parse client number: try clientNumber first, then idNum (strip non-digits)
-            let cNumRaw = c.clientNumber || c.idNum || '';
-            let cNum = parseInt(String(cNumRaw).replace(/[^0-9]/g, ''), 10);
-            const matchesRange = isNaN(cNum) ? (!fromVal && !toVal) : (cNum >= fromNum && cNum <= toNum);
-            return matchesText && ((fromVal || toVal) ? matchesRange : true);
-        });
-        window.advRenderClients(filtered);
+            const filtered = window._advClientsCache.filter(c => {
+                const matchesText = !q || (
+                       (c.name || '').toLowerCase().includes(q) ||
+                       (c.email || '').toLowerCase().includes(q) ||
+                       (c.idNum || '').toLowerCase().includes(q) ||
+                       (c.nif || '').toLowerCase().includes(q) ||
+                       (c.phone || '').toLowerCase().includes(q) ||
+                       (c.city || '').toLowerCase().includes(q) ||
+                       (c.street || '').toLowerCase().includes(q) ||
+                       (String(c.clientNumber || '')).includes(q)
+                );
+                // Parse client number: try clientNumber first, then idNum (strip non-digits)
+                let cNumRaw = c.clientNumber || c.idNum || '';
+                let cNum = parseInt(String(cNumRaw).replace(/[^0-9]/g, ''), 10);
+                const matchesRange = isNaN(cNum) ? (!fromVal && !toVal) : (cNum >= fromNum && cNum <= toNum);
+                return matchesText && ((fromVal || toVal) ? matchesRange : true);
+            });
+            window.advRenderClients(filtered);
+        }, 300);
     };
     
     window.advRenderClients = function(clients) {
@@ -15574,17 +15603,21 @@ window.importTarifas50 = async () => {
         }
     };
     
+    var _advFilterProvsTimer;
     window.advFilterProviders = function(query) {
-        const q = (query || '').toLowerCase().trim();
-        if (!q) { window.advRenderProviders(window._advProvsCache); return; }
-        const filtered = window._advProvsCache.filter(p =>
-            (p.name || '').toLowerCase().includes(q) ||
-            (p.nif || '').toLowerCase().includes(q) ||
-            (p.email || '').toLowerCase().includes(q) ||
-            (p.category || '').toLowerCase().includes(q) ||
-            (p.phone || '').includes(q)
-        );
-        window.advRenderProviders(filtered);
+        clearTimeout(_advFilterProvsTimer);
+        _advFilterProvsTimer = setTimeout(function() {
+            const q = (query || '').toLowerCase().trim();
+            if (!q) { window.advRenderProviders(window._advProvsCache); return; }
+            const filtered = window._advProvsCache.filter(p =>
+                (p.name || '').toLowerCase().includes(q) ||
+                (p.nif || '').toLowerCase().includes(q) ||
+                (p.email || '').toLowerCase().includes(q) ||
+                (p.category || '').toLowerCase().includes(q) ||
+                (p.phone || '').includes(q)
+            );
+            window.advRenderProviders(filtered);
+        }, 300);
     };
     
     window.advRenderProviders = function(provs) {

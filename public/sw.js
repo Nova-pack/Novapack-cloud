@@ -93,6 +93,13 @@ self.addEventListener('notificationclick', event => {
     );
 });
 
+// Allow app to trigger skipWaiting for immediate activation
+self.addEventListener('message', event => {
+    if (event.data === 'skipWaiting') {
+        self.skipWaiting();
+    }
+});
+
 // Periodic background sync (keeps SW alive)
 self.addEventListener('periodicsync', event => {
     if (event.tag === 'keep-alive') {

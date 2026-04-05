@@ -85,6 +85,21 @@
                     console.log('[SW] Registered, scope:', reg.scope);
                     // Check for updates every 30 min
                     setInterval(function() { reg.update(); }, 1800000);
+                    // Detect SW updates and auto-reload
+                    reg.addEventListener('updatefound', function() {
+                        var newWorker = reg.installing;
+                        newWorker.addEventListener('statechange', function() {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New SW installed while old one is active — trigger skipWaiting
+                                newWorker.postMessage('skipWaiting');
+                            }
+                            if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                                // New version activated, reload to pick up new assets
+                                console.log('[SW] New version activated, reloading...');
+                                window.location.reload();
+                            }
+                        });
+                    });
                     // Register periodic sync to keep alive
                     if (reg.periodicSync) {
                         reg.periodicSync.register('keep-alive', { minInterval: 12 * 60 * 60 * 1000 }).catch(function() {});

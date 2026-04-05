@@ -800,8 +800,10 @@ window.advRenderDrawerList = (filter = '') => {
     }
 };
 
+var _advFilterDrawerTimerV3;
 window.advFilterDrawer = (val) => {
-    advRenderDrawerList(val);
+    clearTimeout(_advFilterDrawerTimerV3);
+    _advFilterDrawerTimerV3 = setTimeout(() => { advRenderDrawerList(val); }, 300);
 };
 
 window.advAddRowFromDrawer = (desc, price) => {

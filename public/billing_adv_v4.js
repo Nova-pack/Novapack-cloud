@@ -91,8 +91,11 @@ window.advPopulateClientPicker = async () => {
             searchInput.placeholder = `Buscar entre ${uniqueEntries.length} clientes...`;
             
             // Live search on input
+            var _advFilterClientsTimer;
             searchInput.addEventListener('input', function() {
-                advFilterClients(this.value.trim());
+                var val = this.value.trim();
+                clearTimeout(_advFilterClientsTimer);
+                _advFilterClientsTimer = setTimeout(function() { advFilterClients(val); }, 300);
             });
             
             // Show all on focus if empty
@@ -1241,8 +1244,10 @@ window.advRenderDrawerList = (filter = '') => {
     }
 };
 
+var _advFilterDrawerTimer;
 window.advFilterDrawer = (val) => {
-    advRenderDrawerList(val);
+    clearTimeout(_advFilterDrawerTimer);
+    _advFilterDrawerTimer = setTimeout(() => { advRenderDrawerList(val); }, 300);
 };
 
 window.advAddRowFromDrawer = (desc, price) => {

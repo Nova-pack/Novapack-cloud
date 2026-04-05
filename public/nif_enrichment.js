@@ -389,11 +389,15 @@
         _applyFilters();
     };
 
+    var _nifFilterTimer;
     window.nifFilterClients = function() {
-        var input = document.getElementById('nif-client-search');
-        _searchText = (input ? input.value : '').trim().toLowerCase();
-        _currentPage = 1;
-        _applyFilters();
+        clearTimeout(_nifFilterTimer);
+        _nifFilterTimer = setTimeout(function() {
+            var input = document.getElementById('nif-client-search');
+            _searchText = (input ? input.value : '').trim().toLowerCase();
+            _currentPage = 1;
+            _applyFilters();
+        }, 300);
     };
 
     function _applyFilters() {

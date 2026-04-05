@@ -46,7 +46,12 @@
       "Bash(python3:*)",
       "Bash(pip install:*)",
       "Bash(ls -lh gesco*.json cooper*.json)",
-      "Bash(python3 -c \"import json; data=json.load\\(open\\(''''gesco_clients.json'''', encoding=''''utf-8''''\\)\\); print\\(f''''Total gesco clients: {len\\(data\\)}''''\\); print\\(''''Sample fields:'''', list\\(data[0].keys\\(\\)\\) if data else ''''Empty''''\\); print\\(''''First client:'''', data[0] if data else ''''Empty''''\\)\")"
+      "Bash(python3 -c \"import json; data=json.load\\(open\\(''''gesco_clients.json'''', encoding=''''utf-8''''\\)\\); print\\(f''''Total gesco clients: {len\\(data\\)}''''\\); print\\(''''Sample fields:'''', list\\(data[0].keys\\(\\)\\) if data else ''''Empty''''\\); print\\(''''First client:'''', data[0] if data else ''''Empty''''\\)\")",
+      "Bash(node -e \"const d=require\\(''./gesco_clients.json''\\); console.log\\(''GESCO/Global clients:'', d.length\\)\")",
+      "Bash(node -e \"const d=require\\(''./cooper_clients.json''\\); console.log\\(''Cooper clients:'', d.length\\)\")",
+      "Bash(du -h 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz\\\\public/{firebase-app.js,admin.html,app.html,reparto.html,cooper_clients.json,sw.js,firebase-config.js,manifest.json,manifest-repartidor.json}')",
+      "Bash(grep -r \"NOVAPACK_SENTRY_DSN\\\\|sentry\" 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz\\\\public' --include=*.js --include=*.html)",
+      "Bash(find 'C:\\\\NOVAPACK CLOUD\\\\.claude\\\\worktrees\\\\angry-swartz' -type f \\\\\\(-name *.bak -o -name *.backup -o -name *~ \\\\\\))"
     ]
   }
 }

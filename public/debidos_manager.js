@@ -192,21 +192,25 @@ window.renderDebidosTable = (ticketsArray) => {
     tbody.innerHTML = html;
 };
 
+var _filterDebidosTimer;
 window.filterDebidosList = (query) => {
-    const q = query.toLowerCase().trim();
-    const matchFn = t => {
-        const s = (t.senderName || '').toLowerCase();
-        const r = (t.receiver || '').toLowerCase();
-        const id = (t.id || t.docId || '').toLowerCase();
-        return s.includes(q) || r.includes(q) || id.includes(q);
-    };
-    if (!q) {
-        renderDebidosTable(debidosTicketsCache);
-        renderDebidosAssignedTable(debidosAssignedCache);
-    } else {
-        renderDebidosTable(debidosTicketsCache.filter(matchFn));
-        renderDebidosAssignedTable(debidosAssignedCache.filter(matchFn));
-    }
+    clearTimeout(_filterDebidosTimer);
+    _filterDebidosTimer = setTimeout(() => {
+        const q = query.toLowerCase().trim();
+        const matchFn = t => {
+            const s = (t.senderName || '').toLowerCase();
+            const r = (t.receiver || '').toLowerCase();
+            const id = (t.id || t.docId || '').toLowerCase();
+            return s.includes(q) || r.includes(q) || id.includes(q);
+        };
+        if (!q) {
+            renderDebidosTable(debidosTicketsCache);
+            renderDebidosAssignedTable(debidosAssignedCache);
+        } else {
+            renderDebidosTable(debidosTicketsCache.filter(matchFn));
+            renderDebidosAssignedTable(debidosAssignedCache.filter(matchFn));
+        }
+    }, 300);
 };
 
 // ================= MODAL DE ASIGNACIÓN =================
@@ -259,8 +263,11 @@ window.closeAssignDebidoModal = () => {
 document.addEventListener('DOMContentLoaded', () => {
     const searchInput = document.getElementById('assign-debido-search');
     if(searchInput) {
+        var _debidosClientTimer;
         searchInput.addEventListener('input', function() {
-            debidosFilterClients(this.value.trim());
+            var val = this.value.trim();
+            clearTimeout(_debidosClientTimer);
+            _debidosClientTimer = setTimeout(function() { debidosFilterClients(val); }, 300);
         });
     }
 });

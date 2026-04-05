@@ -2007,7 +2007,11 @@ if (btnDeleteSelectedClients) {
     btnDeleteSelectedClients.onclick = deleteSelectedClients;
 }
 
-document.getElementById('client-view-search').oninput = renderClientsList;
+var _clientViewSearchTimer;
+document.getElementById('client-view-search').oninput = function() {
+    clearTimeout(_clientViewSearchTimer);
+    _clientViewSearchTimer = setTimeout(function() { renderClientsList(); }, 500);
+};
 
 let isLoadingClientData = false;
 async function loadClientToEdit(c) {
@@ -3767,7 +3771,13 @@ async function printShiftBatch(slot, reprint = false) {
         });
 
         renderTicketsList();
-        updatePromises.forEach(p => p.catch(e => console.error("Batch update fail:", e)));
+        Promise.allSettled(updatePromises).then(function(results) {
+            var failed = results.filter(function(r) { return r.status === 'rejected'; });
+            if (failed.length > 0) {
+                console.error("Batch update failures:", failed);
+                alert("Aviso: " + failed.length + " ticket(s) no se pudieron marcar como impresos en la base de datos. Verifique la conexión.");
+            }
+        });
 
         // Append manifest via appendChild to avoid innerHTML re-serialization (preserves QR images)
         const manifestWrapper = document.createElement('div');

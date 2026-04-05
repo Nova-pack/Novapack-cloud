@@ -294,10 +294,20 @@ function initApp() {
     window.addEventListener('online', function() {
         updateConnectionDot(true);
         showToast('Conexión restablecida.', 'success');
+        var banner = document.getElementById('offline-banner');
+        if (banner) banner.remove();
     });
     window.addEventListener('offline', function() {
         updateConnectionDot(false);
         showToast('Sin conexión a Internet.', 'warning', 5000);
+        var existing = document.getElementById('offline-banner');
+        if (!existing) {
+            var banner = document.createElement('div');
+            banner.id = 'offline-banner';
+            banner.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:99999; background:#FF3B30; color:white; text-align:center; padding:8px; font-weight:bold; font-size:0.85rem;';
+            banner.textContent = '\u26a0\ufe0f SIN CONEXI\u00d3N \u2014 Las operaciones no se guardar\u00e1n';
+            document.body.appendChild(banner);
+        }
     });
 
     // --- AUTH: PHONE SMS ---
@@ -502,6 +512,23 @@ function initApp() {
                 hideLoading();
             }
         } else {
+            // Session expired while driver was logged in
+            if (currentDriverPhone) {
+                console.warn('[REPARTO] Sesión expirada para', currentDriverPhone);
+                showToast('Sesión expirada. Redirigiendo al login...', 'warning', 4000);
+                // Clean up listeners
+                if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+                if (pickupUnsubscribe) { pickupUnsubscribe(); pickupUnsubscribe = null; }
+                if (alertUnsubscribe) { alertUnsubscribe(); alertUnsubscribe = null; }
+                // Reset session state
+                currentDriverPhone = '';
+                currentDriverName = '';
+                currentRouteLabel = '';
+                deliveries = [];
+                manualOrder = null;
+                setTimeout(function() { window.location.reload(); }, 3000);
+                return;
+            }
             document.getElementById('login-view').style.display = 'flex';
             document.getElementById('main-app').style.display = 'none';
             document.getElementById('driver-selector-view').style.display = 'none';
@@ -596,7 +623,7 @@ function initApp() {
             document.getElementById('phone-input').value = '';
             document.getElementById('login-error').textContent = '';
             // Sign out Firebase auth (for SMS users; no-op for PIN users)
-            auth.signOut().catch(function() {});
+            auth.signOut().catch(function(e) { console.error('Logout error:', e); });
             showToast('Sesión cerrada.', 'info');
         }
     });
@@ -925,6 +952,10 @@ function initApp() {
     }
 
     window.completeDriverAlert = async function(alertId) {
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
+            return;
+        }
         if (!confirm('\u00bfMarcar como completada?')) return;
         try {
             await db.collection('driver_alerts').doc(alertId).update({
@@ -986,6 +1017,10 @@ function initApp() {
     }
 
     window.completePickup = async function(pickupId) {
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
+            return;
+        }
         if (!confirm('\u00bfMarcar esta recogida como completada?')) return;
         try {
             await db.collection('pickupRequests').doc(pickupId).update({
@@ -1339,6 +1374,11 @@ function initApp() {
         var detail = (document.getElementById('incident-detail').value || '').trim();
         var fullReason = reason + (detail ? ' - ' + detail : '');
 
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
+            return;
+        }
+
         var sendBtn = document.getElementById('btn-incident-send');
         sendBtn.disabled = true;
         sendBtn.textContent = 'Enviando...';
@@ -1416,6 +1456,11 @@ function initApp() {
 
         if (!newAddr && !newPkgs && !newNotes) {
             showToast('Indica al menos un cambio o motivo.', 'warning');
+            return;
+        }
+
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
             return;
         }
 
@@ -2250,6 +2295,11 @@ function initApp() {
     document.getElementById('btn-cooper-send').addEventListener('click', async function() {
         var photoFile = document.getElementById('cooper-photo-input').files[0];
         if (!photoFile) { showToast('Haz una foto primero', 'error'); return; }
+
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
+            return;
+        }
 
         var sendBtn = document.getElementById('btn-cooper-send');
         sendBtn.disabled = true;

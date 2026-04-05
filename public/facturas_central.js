@@ -266,18 +266,22 @@
         _facApplyFiltersInternal();
     };
 
+    var _facApplyFiltersTimer;
     window._facApplyFilters = function() {
-        const fromEl = document.getElementById('fac-date-from');
-        const toEl = document.getElementById('fac-date-to');
-        const textEl = document.getElementById('fac-text-filter');
-        const compEl = document.getElementById('fac-company-filter');
-        if (fromEl) _facDateFrom = fromEl.value;
-        if (toEl) _facDateTo = toEl.value;
-        if (textEl) _facTextFilter = textEl.value;
-        if (compEl) _facCompanyFilter = compEl.value;
+        clearTimeout(_facApplyFiltersTimer);
+        _facApplyFiltersTimer = setTimeout(function() {
+            const fromEl = document.getElementById('fac-date-from');
+            const toEl = document.getElementById('fac-date-to');
+            const textEl = document.getElementById('fac-text-filter');
+            const compEl = document.getElementById('fac-company-filter');
+            if (fromEl) _facDateFrom = fromEl.value;
+            if (toEl) _facDateTo = toEl.value;
+            if (textEl) _facTextFilter = textEl.value;
+            if (compEl) _facCompanyFilter = compEl.value;
 
-        _facPage = 0;
-        _facLoadData();
+            _facPage = 0;
+            _facLoadData();
+        }, 500);
     };
 
     window._facRefresh = function() {

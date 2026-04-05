@@ -123,7 +123,12 @@ window.loadMailbox = function() {
 };
 
 
+var _renderMailboxTimer;
 window.renderMailbox = function() {
+    clearTimeout(_renderMailboxTimer);
+    _renderMailboxTimer = setTimeout(function() { _doRenderMailbox(); }, 300);
+};
+function _doRenderMailbox() {
     const tbody = document.getElementById('mailbox-list-body');
     if (!tbody) return;
 
