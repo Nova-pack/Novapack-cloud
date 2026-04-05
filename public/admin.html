@@ -2652,14 +2652,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Folder view: show route folders as cards
-        if (routeNames.length === 1) {
-            // Single route — show photos directly, no folder needed
-            routeGroups[routeNames[0]].forEach(function(item) {
-                html += _renderCooperCard(item);
-            });
-        } else {
-            // Multiple routes — show folder cards
+        // Folder view: always show route folders as cards
+        {
             html += '<div style="grid-column:1/-1; margin-bottom:6px; display:flex; align-items:center; gap:6px;">';
             html += '<span class="material-symbols-outlined" style="color:#FF9800; font-size:1rem;">folder_copy</span>';
             html += '<span style="color:#aaa; font-size:0.82rem;">' + routeNames.length + ' zonas de reparto</span>';
@@ -2707,6 +2701,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 html += '</div></div>';
             });
         }
+
 
         grid.innerHTML = html;
     }
