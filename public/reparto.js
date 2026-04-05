@@ -1408,7 +1408,7 @@ function initApp() {
             try {
                 var notifUid = d.uid || d.clientIdNum || '';
                 if (notifUid) {
-                    await db.collection('user_notifications').add({
+                    var notifData = {
                         uid: notifUid,
                         type: 'incident',
                         title: 'Incidencia en envío ' + escapeHtml(d.id || d._id),
@@ -1418,7 +1418,11 @@ function initApp() {
                         reportedBy: currentDriverName,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         read: false
-                    });
+                    };
+                    if (updateData.incidentPhotoURL) {
+                        notifData.photoURL = updateData.incidentPhotoURL;
+                    }
+                    await db.collection('user_notifications').add(notifData);
                 }
             } catch(ne) { console.warn('No se pudo notificar al usuario:', ne); }
 

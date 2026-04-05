@@ -5893,6 +5893,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span id="incident-m-reason" style="color:#ddd; font-style:italic;">Cargando...</span>
                 </div>
 
+                <div id="incident-m-photo-wrap" style="display:none; margin-bottom:20px; text-align:center;">
+                    <strong style="color:#FF9800; display:block; margin-bottom:8px;">Foto adjunta:</strong>
+                    <img id="incident-m-photo" src="" alt="Foto incidencia" style="max-width:100%; max-height:300px; border-radius:8px; border:1px solid #FF9800; cursor:pointer;" onclick="window.open(this.src, '_blank')">
+                </div>
+
                 <div class="form-group" style="margin-bottom:20px;">
                     <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:10px;">Actualizar Bultos Físicos (Autorizar modificación)</label>
                     <div style="display:flex; align-items:center; gap:15px;">
@@ -5904,10 +5909,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="form-group" style="margin-bottom:20px;">
                     <label style="display:block; color:#aaa; font-size:0.8rem; margin-bottom:10px;">Forzar Cambio de Estado</label>
                     <select id="incident-m-status" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px; font-size:1rem;">
-                        <option value="Pendiente"><span class="material-symbols-outlined">check_circle</span> Limpiar Incidencia (Volver a Pendiente)</option>
-                        <option value="Entregado"><span class="material-symbols-outlined">inventory_2</span> Marcar como Entregado Definitivo</option>
-                        <option value="Incidencia"><span class="material-symbols-outlined">warning</span> Mantener en Incidencia</option>
-                        <option value="Devuelto"><span class="material-symbols-outlined">refresh</span> Mantener como Devuelto</option>
+                        <option value="Pendiente">✅ Limpiar Incidencia (Volver a Pendiente)</option>
+                        <option value="Entregado">📦 Marcar como Entregado Definitivo</option>
+                        <option value="Incidencia">⚠️ Mantener en Incidencia</option>
+                        <option value="Devuelto">↩️ Mantener como Devuelto</option>
                     </select>
                 </div>
 
@@ -8499,7 +8504,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('incident-m-id').textContent = tid;
                 document.getElementById('incident-m-reason').textContent = "Cargando...";
                 document.getElementById('incident-m-packages').value = "";
-                
+                document.getElementById('incident-m-photo-wrap').style.display = 'none';
+
                 try {
                     const docSnap = await db.collection('tickets').doc(tid).get();
                     if(docSnap.exists) {
@@ -8508,7 +8514,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const bultos = data.packagesList ? data.packagesList.reduce((s,p)=>s+(parseInt(p.qty)||1),0) : (data.packages || 1);
                         document.getElementById('incident-m-packages').value = bultos;
                         document.getElementById('incident-m-status').value = data.status || 'Incidencia';
-                        window.currentIncidentTicketData = data; 
+                        // Show incident photo if available
+                        if (data.incidentPhotoURL) {
+                            document.getElementById('incident-m-photo').src = data.incidentPhotoURL;
+                            document.getElementById('incident-m-photo-wrap').style.display = 'block';
+                        }
+                        window.currentIncidentTicketData = data;
                     } else {
                         document.getElementById('incident-m-reason').textContent = "Albarán no encontrado.";
                     }

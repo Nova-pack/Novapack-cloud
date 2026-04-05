@@ -826,6 +826,7 @@ window.initUserNotifications = function(uid) {
                 else if (data.type === 'POD_AVAILABLE') { typeIcon = '📋'; typeLabel = 'Justificante'; accentColor = '#FF9800'; }
                 else if (data.type === 'campaign') { typeIcon = '📢'; typeLabel = 'Comunicación'; accentColor = '#E91E63'; }
                 else if (data.type === 'incident') { typeIcon = '⚠️'; typeLabel = 'Incidencia'; accentColor = '#F44336'; }
+                else if (data.type === 'incident_resolved') { typeIcon = '✅'; typeLabel = 'Incidencia Resuelta'; accentColor = '#4CAF50'; }
 
                 const item = document.createElement('div');
                 item.style.cssText = 'padding:16px 20px; border-radius:10px; border-left:4px solid ' + (data.read ? 'var(--border-glass)' : accentColor) + '; background:rgba(255,255,255,' + (data.read ? '0.02' : '0.05') + '); cursor:pointer; transition:background 0.2s;';
@@ -842,6 +843,7 @@ window.initUserNotifications = function(uid) {
                         '<span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">' + dateStr + ' ' + timeStr + '</span>' +
                     '</div>' +
                     '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + escapeHtml(data.body || data.message || '') + '</div>' +
+                    (data.photoURL ? '<div style="padding-left:28px; margin-top:8px;"><img src="' + escapeHtml(data.photoURL) + '" alt="Foto" style="max-width:200px; max-height:150px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); cursor:pointer;" onclick="window.open(this.src,\'_blank\')"></div>' : '') +
                     (data.ticketId ? '<div style="padding-left:28px; margin-top:6px;"><span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + escapeHtml(data.ticketId) + '</span></div>' : '');
 
                 // Mark as read on click (read-only — no editing, just mark read)
@@ -883,6 +885,9 @@ window.initUserNotifications = function(uid) {
                         '<div style="font-size:0.7rem; color:var(--text-dim);">Sin leer</div>' +
                     '</div>';
             }
+        }, err => {
+            console.error('[NOTIF] Error en listener de notificaciones:', err);
+            if (list) list.innerHTML = '<div style="text-align:center; padding:40px; color:#F44336; font-size:0.85rem;">Error cargando notificaciones. Recarga la página.</div>';
         });
 };
 
