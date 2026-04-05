@@ -1,5 +1,11 @@
 // --- GLOBAL STATE ---
 console.log("NOVAPACK CLOUD - ENGINE v2.2 ACTIVE");
+
+// Security: escape user-supplied strings before inserting into innerHTML
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
 const DEBUG_MODE = location.hostname === 'localhost';
 
 window.onerror = function(msg, url, lineNo, columnNo, error) {
@@ -711,10 +717,10 @@ function renderTicketItem(t, list) {
     const sfFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif";
     div.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-            <strong style="font-family:${sfFont}; color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${docIdDisplay}</strong>
+            <strong style="font-family:${sfFont}; color:var(--brand-primary); font-size:0.85rem; letter-spacing:0.5px;">${escapeHtml(docIdDisplay)}</strong>
             <span class="status-badge ${badgeClass}" style="font-size:0.55rem; padding:2px 4px; ${isPendingDelete ? 'background:#FF3B30; color:white; border-radius:4px; font-weight:bold;' : ''}">${badgeText}</span>
         </div>
-        <div style="font-family:${sfFont}; font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${receiverName}</div>
+        <div style="font-family:${sfFont}; font-weight:600; font-size:0.9rem; margin:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-main);">${escapeHtml(receiverName)}</div>
         <div style="font-family:${sfFont}; display:flex; justify-content:space-between; font-size:0.7rem; color:var(--text-dim); opacity:0.8;">
             <span>${dateStr}</span>
             <span>📦 ${pkgCount}</span>
@@ -787,13 +793,13 @@ window.initUserNotifications = function(uid) {
                     '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px;">' +
                         '<div style="display:flex; align-items:center; gap:8px;">' +
                             '<span style="font-size:1.2rem;">' + typeIcon + '</span>' +
-                            '<span style="font-weight:800; color:var(--text-main); font-size:0.9rem;">' + (data.title || typeLabel) + '</span>' +
+                            '<span style="font-weight:800; color:var(--text-main); font-size:0.9rem;">' + escapeHtml(data.title || typeLabel) + '</span>' +
                             (!data.read ? '<span style="background:' + accentColor + '; color:white; font-size:0.6rem; padding:1px 6px; border-radius:8px; font-weight:bold;">NUEVO</span>' : '') +
                         '</div>' +
                         '<span style="font-size:0.7rem; color:var(--text-dim); white-space:nowrap;">' + dateStr + ' ' + timeStr + '</span>' +
                     '</div>' +
-                    '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + (data.body || data.message || '') + '</div>' +
-                    (data.ticketId ? '<div style="padding-left:28px; margin-top:6px;"><span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + data.ticketId + '</span></div>' : '');
+                    '<div style="font-size:0.85rem; color:var(--text-dim); line-height:1.5; padding-left:28px;">' + escapeHtml(data.body || data.message || '') + '</div>' +
+                    (data.ticketId ? '<div style="padding-left:28px; margin-top:6px;"><span style="font-size:0.72rem; color:' + accentColor + '; font-weight:bold;">Albarán: #' + escapeHtml(data.ticketId) + '</span></div>' : '');
 
                 // Mark as read on click (read-only — no editing, just mark read)
                 item.onclick = async () => {
@@ -1151,12 +1157,12 @@ function renderCompanyList() {
         item.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:10px 15px; border-radius:10px; border:1px solid var(--border-glass);";
         item.innerHTML = `
             <div>
-                <div style="font-weight:bold; font-size:0.9rem;">${c.name}</div>
-                <div style="font-size:0.7rem; color:var(--text-dim);">${c.prefix || 'NP'} | ${c.address}</div>
+                <div style="font-weight:bold; font-size:0.9rem;">${escapeHtml(c.name)}</div>
+                <div style="font-size:0.7rem; color:var(--text-dim);">${escapeHtml(c.prefix || 'NP')} | ${escapeHtml(c.address)}</div>
             </div>
             <div style="display:flex; gap:8px;">
-                <button class="btn btn-xs btn-outline" onclick="editCompanyUI('${c.id}')">✏️</button>
-                <button class="btn btn-xs btn-danger" onclick="deleteCompanyCloud('${c.id}')">🗑️</button>
+                <button class="btn btn-xs btn-outline" onclick="editCompanyUI('${escapeHtml(c.id)}')">✏️</button>
+                <button class="btn btn-xs btn-danger" onclick="deleteCompanyCloud('${escapeHtml(c.id)}')">🗑️</button>
             </div>
         `;
         container.appendChild(item);
@@ -1770,7 +1776,8 @@ async function handleFormSubmit(e) {
 
         if (editingId) {
             const currentDoc = await db.collection('tickets').doc(editingId).get();
-            if (currentDoc.exists && (currentDoc.data().invoiceId || currentDoc.data().invoiceNum)) {
+            const cData = currentDoc.data();
+            if (currentDoc.exists && cData && (cData.invoiceId || cData.invoiceNum)) {
                 alert("Albarán bloqueado por facturación.");
                 hideLoading();
                 return;
@@ -1928,9 +1935,9 @@ async function renderClientsList() {
             const displayName = String(c.name || 'Cliente sin nombre').toUpperCase();
             
             item.innerHTML = `
-                <input type="checkbox" class="client-list-check" value="${c.id}" onclick="event.stopPropagation(); updateClientDeleteButton();" style="width:20px; height:20px; cursor:pointer;">
+                <input type="checkbox" class="client-list-check" value="${escapeHtml(c.id)}" onclick="event.stopPropagation(); updateClientDeleteButton();" style="width:20px; height:20px; cursor:pointer;">
                 <div style="flex:1;">
-                    <div style="font-weight:600; color:var(--text-main); font-size:0.9rem;">${displayName}</div>
+                    <div style="font-weight:600; color:var(--text-main); font-size:0.9rem;">${escapeHtml(displayName)}</div>
                     <div style="font-size:0.7rem; color:var(--text-dim); opacity:0.8;">${addrCount} DIRECCIONES</div>
                 </div>
             `;
@@ -2977,7 +2984,7 @@ if (clientPickerInput) {
                 
                 const badge = m.isGlobal ? `<span style="font-size:0.65rem; background:rgba(255,255,255,0.1); padding:2px 6px; border-radius:4px; margin-left:8px; color:#aaa; border:1px solid #555;">🌐 Global</span>` : `<span style="font-size:0.65rem; background:rgba(76,175,80,0.2); padding:2px 6px; border-radius:4px; margin-left:8px; color:#4CAF50; border:1px solid #4CAF50;">👤 Mi Agenda</span>`;
                 
-                div.innerHTML = `<strong>${m.name}</strong> ${badge}<br><span style="font-size:0.8rem; color:#888;">${m.address} - ${m.localidad}</span>`;
+                div.innerHTML = `<strong>${escapeHtml(m.name)}</strong> ${badge}<br><span style="font-size:0.8rem; color:#888;">${escapeHtml(m.address)} - ${escapeHtml(m.localidad)}</span>`;
                 div.onclick = () => {
                     document.getElementById('ticket-receiver').value = m.name;
                     document.getElementById('ticket-address').value = m.street || m.address;
@@ -3378,10 +3385,10 @@ function generateTicketHTML(t, footerLabel) {
 
         rowsHtml += `
             <tr>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${qty}</td>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${w}</td>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${p.size || 'Bulto'}</td>
-               ${hasCod ? `<td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${t.cod} €</td>` : ''}
+               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(qty)}</td>
+               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(w)}</td>
+               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(p.size || 'Bulto')}</td>
+               ${hasCod ? `<td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(t.cod)} €</td>` : ''}
             </tr>
         `;
     });
@@ -3389,14 +3396,14 @@ function generateTicketHTML(t, footerLabel) {
     return `
     <div style="font-family: Arial, sans-serif; padding: 4px; border: 2px solid #000; min-height: 110mm; height: 110mm; position: relative; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: white;">
         <!-- Watermark (Province/Zone) -->
-        ${t.province ? `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:4.5rem; color:#000; font-weight:900; white-space:nowrap; z-index:0; pointer-events:none; width: 100%; text-align: center; font-family: 'Arial Black', sans-serif; opacity: 0.04; text-transform: uppercase;">${t.province}</div>` : ''}
+        ${t.province ? `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:4.5rem; color:#000; font-weight:900; white-space:nowrap; z-index:0; pointer-events:none; width: 100%; text-align: center; font-family: 'Arial Black', sans-serif; opacity: 0.04; text-transform: uppercase;">${escapeHtml(t.province)}</div>` : ''}
         
         <div style="z-index: 2;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                 <!-- Left: Logo -->
                 <div style="flex: 1;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${companyName.toUpperCase()}</div>
-                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${companyEmail}</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${escapeHtml(companyName.toUpperCase())}</div>
+                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
                 </div>
 
                  <!-- Center: Zona Reparto -->
@@ -3406,10 +3413,10 @@ function generateTicketHTML(t, footerLabel) {
                             PORTES ${t.shippingType === 'Debidos' ? 'DEBIDOS' : 'PAGADOS'}
                         </div>
                         <div style="font-size: 1.6rem; font-weight: 900; color: #FF6600; text-transform:uppercase; line-height: 1.1;">
-                            ${t.province || '&nbsp;'}
+                            ${t.province ? escapeHtml(t.province) : '&nbsp;'}
                         </div>
-                            ${t.timeSlot ? `<div style="font-size: 0.9rem; font-weight: 900; background: #EEE; color: #000; text-align: center; padding: 3px 5px; margin-top: 4px; border-radius: 4px;">TURNO: ${t.timeSlot}</div>` : ''}
-                            ${hasCod ? `<div style="font-size: 1.1rem; font-weight: 900; color: #FF3B30; margin-top: 5px; border-top: 1px solid #FF6600; padding-top:4px;">REEMBOLSO: ${t.cod} €</div>` : ''}
+                            ${t.timeSlot ? `<div style="font-size: 0.9rem; font-weight: 900; background: #EEE; color: #000; text-align: center; padding: 3px 5px; margin-top: 4px; border-radius: 4px;">TURNO: ${escapeHtml(t.timeSlot)}</div>` : ''}
+                            ${hasCod ? `<div style="font-size: 1.1rem; font-weight: 900; color: #FF3B30; margin-top: 5px; border-top: 1px solid #FF6600; padding-top:4px;">REEMBOLSO: ${escapeHtml(t.cod)} €</div>` : ''}
                          </div>
                     </div>
 
@@ -3418,7 +3425,7 @@ function generateTicketHTML(t, footerLabel) {
                          <div style="text-align: right;">
                               <div style="font-size: 1rem; font-weight: bold; margin-bottom: 5px;">${validDateStr}</div>
                               <div style="font-size: 0.75rem; color: #555; text-transform:uppercase; font-weight: 800;">Albarán Nº</div>
-                              <div style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${t.id}</div>
+                              <div style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${escapeHtml(t.id)}</div>
                          </div>
                          <div style="background: white; padding: 2px; border: 1px solid #eee;">
                             <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}`)}" 
@@ -3430,14 +3437,14 @@ function generateTicketHTML(t, footerLabel) {
             <div style="margin-top: 5px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; position:relative;">
                 <div style="border: 1px solid #ccc; padding: 5px; font-size: 0.8rem;">
                     <strong>REMITENTE:</strong><br>
-                    ${t.sender}<br>
-                    ${t.senderAddress || ''}<br>
-                    ${t.senderPhone ? `Telf: ${t.senderPhone}` : ''}
+                    ${escapeHtml(t.sender)}<br>
+                    ${escapeHtml(t.senderAddress || '')}<br>
+                    ${t.senderPhone ? `Telf: ${escapeHtml(t.senderPhone)}` : ''}
                 </div>
                 <div style="border: 1px solid #000; padding: 5px; font-size: 10pt;">
                     <strong>DESTINATARIO:</strong><br>
-                    <div style="font-weight:bold; font-size:1.1em;">${t.receiver}</div>
-                    ${t.address}
+                    <div style="font-weight:bold; font-size:1.1em;">${escapeHtml(t.receiver)}</div>
+                    ${escapeHtml(t.address)}
                 </div>
             </div>
 
@@ -3462,14 +3469,14 @@ function generateTicketHTML(t, footerLabel) {
             </div>
 
              <div style="margin-top: 4px; border: 1px solid #ccc; padding: 2px 5px; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; overflow: hidden; max-height: 50px;">
-                <strong>Observaciones:</strong> ${t.notes}
+                <strong>Observaciones:</strong> ${escapeHtml(t.notes)}
             </div>
         </div>
 
         <div style="margin-top: 5px; font-size: 0.7rem; width: 100%; display: flex; justify-content: flex-end; padding-right: 10px;">
             <div style="text-align:right;">
                 <span>Firma y Sello:</span><br>
-                <span style="font-weight: bold; text-transform: uppercase;">${footerLabel}</span>
+                <span style="font-weight: bold; text-transform: uppercase;">${escapeHtml(footerLabel)}</span>
             </div>
         </div>
     </div>
@@ -3585,21 +3592,21 @@ function generateManifestHTML(tickets) {
                     const qty = parseInt(p.qty) || 1;
                     items[size] = (items[size] || 0) + qty;
                 });
-                contentStr = Object.entries(items).map(([name, count]) => `${count}x ${name}`).join(', ');
+                contentStr = Object.entries(items).map(([name, count]) => `${count}x ${escapeHtml(name)}`).join(', ');
             } else {
                 contentStr = `${t.packages || 1}x Bulto`;
             }
 
             return `
                                 <tr>
-                                    <td style="border: 1px solid #999; padding: 4px; text-align: center; font-weight:bold;">${t.id}</td>
-                                    <td style="border: 1px solid #999; padding: 4px;">${t.receiver}</td>
+                                    <td style="border: 1px solid #999; padding: 4px; text-align: center; font-weight:bold;">${escapeHtml(t.id)}</td>
+                                    <td style="border: 1px solid #999; padding: 4px;">${escapeHtml(t.receiver)}</td>
                                     <td style="border: 1px solid #999; padding: 4px; font-size: 0.9rem;">${contentStr}</td>
                                     <td style="border: 1px solid #999; padding: 4px; text-align: center;">${pkgs}</td>
                                     <td style="border: 1px solid #999; padding: 4px; text-align: center;">${weight.toFixed(2)}</td>
                                     <td style="border: 1px solid #999; padding: 4px; text-align: center; font-weight:bold;">${t.shippingType === 'Debidos' ? 'D' : 'P'}</td>
-                                    ${hasCOD ? `<td style="border: 1px solid #999; padding: 4px; text-align: center; font-weight:bold; color:red;">${(t.cod && parseFloat(t.cod) > 0) ? t.cod + ' €' : ''}</td>` : ''}
-                                    ${hasNotes ? `<td style="border: 1px solid #999; padding: 4px; font-size: 0.7rem;">${t.notes || ''}</td>` : ''}
+                                    ${hasCOD ? `<td style="border: 1px solid #999; padding: 4px; text-align: center; font-weight:bold; color:red;">${(t.cod && parseFloat(t.cod) > 0) ? escapeHtml(t.cod) + ' €' : ''}</td>` : ''}
+                                    ${hasNotes ? `<td style="border: 1px solid #999; padding: 4px; font-size: 0.7rem;">${escapeHtml(t.notes || '')}</td>` : ''}
                                 </tr>
                             `;
         }).join('')}
@@ -3634,7 +3641,7 @@ function generateManifestHTML(tickets) {
                     <div style="font-size:0.9rem;">RELACIÓN DE ENVÍOS DIARIOS</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-size: 1.2rem; font-weight:bold;">${tickets[0] ? tickets[0].sender : (getCompanyName(db.companyId) || 'NOVAPACK')}</div>
+                    <div style="font-size: 1.2rem; font-weight:bold;">${escapeHtml(tickets[0] ? tickets[0].sender : (getCompanyName(db.companyId) || 'NOVAPACK'))}</div>
                     <div style="font-size: 1.2rem; font-weight:bold;">Fecha: ${new Date().toLocaleDateString()}</div>
                     <div style="font-size: 0.9rem;">Total Envíos: ${tickets.length}</div>
                 </div>
@@ -3680,7 +3687,7 @@ async function printManifestOnlyBatch(slot = 'AMBOS') {
     area.innerHTML = `
                 <div style="background:white; padding:20px; min-height:297mm;">
                     <div style="text-align:center; font-weight:bold; font-size:1.2rem; margin-bottom:10px; color:#FF6600;">
-                        MANIFIESTO - TURNO: ${slot}
+                        MANIFIESTO - TURNO: ${escapeHtml(slot)}
                     </div>
             ${generateManifestHTML(tickets)}
         </div>

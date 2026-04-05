@@ -29,6 +29,11 @@ var isFirstSnapshot = true; // Skip notifications on initial load
 var notificationSound = null;
 var _isMasterPinSession = false; // Flag to prevent onAuthStateChanged interference
 
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
 // --- NOTIFICATION SYSTEM ---
 function requestNotificationPermission() {
     if (!('Notification' in window)) return;
@@ -102,7 +107,7 @@ function sendNotification(title, body, onTapCallback) {
         var banner = document.createElement('div');
         banner.id = 'new-delivery-banner';
         banner.style.cssText = 'position:fixed; top:0; left:0; width:100%; z-index:9998; background:linear-gradient(135deg,#FF4D00,#FF6600); color:white; padding:14px 20px; font-weight:800; font-size:0.9rem; text-align:center; cursor:pointer; box-shadow:0 4px 20px rgba(255,77,0,0.5); animation:slideDown 0.3s ease;';
-        banner.innerHTML = '\ud83d\udce6 <span style="text-decoration:underline;">' + title + '</span> \u2014 ' + body + ' <span style="opacity:0.7; font-size:0.75rem; margin-left:10px;">(toca para ver)</span>';
+        banner.innerHTML = '\ud83d\udce6 <span style="text-decoration:underline;">' + escapeHtml(title) + '</span> \u2014 ' + escapeHtml(body) + ' <span style="opacity:0.7; font-size:0.75rem; margin-left:10px;">(toca para ver)</span>';
         banner.onclick = function() { banner.remove(); if (typeof onTapCallback === 'function') onTapCallback(); };
         document.body.appendChild(banner);
         // Auto-remove after 20s
@@ -131,7 +136,7 @@ function showToast(message, type, duration) {
     var t = document.createElement('div');
     t.className = 'toast ' + type;
     var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-    t.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + message + '</span>';
+    t.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + escapeHtml(message) + '</span>';
     container.appendChild(t);
 
     // Sound + vibration by type
@@ -420,7 +425,7 @@ function initApp() {
             btn.className = 'driver-option-btn';
             btn.style.borderColor = 'rgba(171,71,188,0.3)';
             btn.style.background = 'rgba(171,71,188,0.06)';
-            btn.innerHTML = '<span class="driver-icon">📍</span><div style="text-align:left;"><div>' + route.label.toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + driversText + '</div></div>';
+            btn.innerHTML = '<span class="driver-icon">📍</span><div style="text-align:left;"><div>' + escapeHtml(route.label).toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + escapeHtml(driversText) + '</div></div>';
             btn.addEventListener('click', function() {
                 currentDriverPhone = normalizePhone(route.number);
                 currentRouteLabel = route.label;
@@ -525,7 +530,7 @@ function initApp() {
         names.forEach(function(name, idx) {
             var btn = document.createElement('button');
             btn.className = 'driver-option-btn';
-            btn.innerHTML = '<span class="driver-icon">' + (driverIcons[idx] || '🚛') + '</span><span>' + name.toUpperCase() + '</span>';
+            btn.innerHTML = '<span class="driver-icon">' + (driverIcons[idx] || '🚛') + '</span><span>' + escapeHtml(name).toUpperCase() + '</span>';
             btn.addEventListener('click', function() {
                 currentDriverName = name;
                 document.getElementById('driver-selector-view').style.display = 'none';
@@ -883,26 +888,26 @@ function initApp() {
             html += '<div style="background:linear-gradient(135deg, ' + typeColor + '15, ' + typeColor + '08); border:1px solid ' + typeColor + '44; border-radius:12px; padding:14px; margin-bottom:10px;">';
             // Header
             html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">';
-            html += '<span style="color:' + typeColor + '; font-weight:800; font-size:0.82rem; letter-spacing:0.5px;">' + typeIcon + ' ' + typeLabel.toUpperCase() + '</span>';
-            html += '<span style="color:#888; font-size:0.72rem;">' + dateStr + '</span>';
+            html += '<span style="color:' + typeColor + '; font-weight:800; font-size:0.82rem; letter-spacing:0.5px;">' + typeIcon + ' ' + escapeHtml(typeLabel).toUpperCase() + '</span>';
+            html += '<span style="color:#888; font-size:0.72rem;">' + escapeHtml(dateStr) + '</span>';
             html += '</div>';
             // Address
             if (a.address) {
                 html += '<div style="display:flex; align-items:start; gap:6px; margin-bottom:6px; color:#eee; font-size:0.9rem; line-height:1.5;">';
                 html += '<span style="font-size:1rem; flex-shrink:0;">\ud83d\udccd</span>';
-                html += '<span style="font-weight:600;">' + a.address + '</span>';
+                html += '<span style="font-weight:600;">' + escapeHtml(a.address) + '</span>';
                 html += '</div>';
             }
             // Notes
             if (a.notes) {
                 html += '<div style="display:flex; align-items:start; gap:6px; margin-bottom:6px; color:#aaa; font-size:0.82rem; line-height:1.4;">';
                 html += '<span style="font-size:0.9rem; flex-shrink:0;">\ud83d\udcdd</span>';
-                html += '<span>' + a.notes + '</span>';
+                html += '<span>' + escapeHtml(a.notes) + '</span>';
                 html += '</div>';
             }
             // Sent by
             if (a.sentBy) {
-                html += '<div style="color:#666; font-size:0.7rem; margin-bottom:8px;">Enviado por: ' + a.sentBy + '</div>';
+                html += '<div style="color:#666; font-size:0.7rem; margin-bottom:8px;">Enviado por: ' + escapeHtml(a.sentBy) + '</div>';
             }
             // Action buttons
             html += '<div style="display:flex; gap:8px; margin-top:10px;">';
@@ -911,7 +916,7 @@ function initApp() {
                 html += '<button onclick="window.open(\'https://www.google.com/maps/search/' + encodeURIComponent(a.address) + '\', \'_blank\')" style="flex:1; padding:10px; background:#1e3a5f; color:#5dade2; border:1px solid #2d5a8e; border-radius:8px; font-weight:800; font-size:0.78rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">\ud83d\udccd C\u00d3MO LLEGAR</button>';
             }
             // Complete
-            html += '<button onclick="completeDriverAlert(\'' + a._id + '\')" style="flex:1; padding:10px; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; border:none; border-radius:8px; font-weight:800; font-size:0.78rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">\u2705 COMPLETADA</button>';
+            html += '<button onclick="completeDriverAlert(\'' + escapeHtml(a._id) + '\')" style="flex:1; padding:10px; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; border:none; border-radius:8px; font-weight:800; font-size:0.78rem; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">\u2705 COMPLETADA</button>';
             html += '</div>';
             html += '</div>';
         });
@@ -950,8 +955,8 @@ function initApp() {
             card.style.cssText = 'background:linear-gradient(135deg,rgba(76,175,80,0.15),rgba(76,175,80,0.05)); border:2px solid #4CAF50; border-radius:12px; padding:14px; margin-bottom:10px; animation:slideDown 0.3s ease;';
 
             var turnIcon = p.timeSlot === 'TARDE' ? '\ud83c\udf19' : '\u2600\ufe0f';
-            var notesHtml = p.notes ? '<div style="margin-top:6px; font-style:italic; color:#aaa; font-size:0.75rem;">\ud83d\udcdd ' + p.notes + '</div>' : '';
-            var destHtml = p.destination ? '<div style="margin-top:4px;"><strong>Destino:</strong> ' + p.destination + '</div>' : '';
+            var notesHtml = p.notes ? '<div style="margin-top:6px; font-style:italic; color:#aaa; font-size:0.75rem;">\ud83d\udcdd ' + escapeHtml(p.notes) + '</div>' : '';
+            var destHtml = p.destination ? '<div style="margin-top:4px;"><strong>Destino:</strong> ' + escapeHtml(p.destination) + '</div>' : '';
             var createdStr = '';
             if (p.createdAt && typeof p.createdAt.toDate === 'function') {
                 var d = p.createdAt.toDate();
@@ -964,11 +969,11 @@ function initApp() {
                     '<span style="color:#888; font-size:0.7rem;">' + turnIcon + ' ' + (p.timeSlot || '') + (createdStr ? ' \u2022 ' + createdStr : '') + '</span>' +
                 '</div>' +
                 '<div style="font-size:0.9rem; line-height:1.7; color:#eee;">' +
-                    '<div><strong>\ud83d\udc64 ' + (p.senderName || 'Cliente') + '</strong></div>' +
-                    '<div>\ud83d\udccd ' + (p.senderAddress || 'Sin direcci\u00f3n') + '</div>' +
-                    '<div>\ud83d\udcde ' + (p.senderPhone || '---') + '</div>' +
+                    '<div><strong>\ud83d\udc64 ' + escapeHtml(p.senderName || 'Cliente') + '</strong></div>' +
+                    '<div>\ud83d\udccd ' + escapeHtml(p.senderAddress || 'Sin direcci\u00f3n') + '</div>' +
+                    '<div>\ud83d\udcde ' + escapeHtml(p.senderPhone || '---') + '</div>' +
                     destHtml +
-                    '<div>\ud83d\udce6 ' + (p.packages || 1) + ' bultos</div>' +
+                    '<div>\ud83d\udce6 ' + escapeHtml(p.packages || 1) + ' bultos</div>' +
                     notesHtml +
                 '</div>' +
                 '<div style="display:flex; gap:8px; margin-top:10px;">' +
@@ -1021,17 +1026,17 @@ function initApp() {
             var pkgCount = getPackageCount(d);
             var orderNum = isDelivered ? '' : '<span class="route-order">' + (idx + 1) + '</span>';
 
-            return '<div class="delivery-card ' + statusClass + '" data-id="' + d._id + '" data-idx="' + idx + '" draggable="true">' +
+            return '<div class="delivery-card ' + statusClass + '" data-id="' + escapeHtml(d._id) + '" data-idx="' + idx + '" draggable="true">' +
                 '<span class="drag-handle">⠿</span>' +
                 '<div class="dc-header">' +
-                    '<span class="dc-id">' + orderNum + (d.id || d._id.substring(0,12)) + '</span>' +
+                    '<span class="dc-id">' + orderNum + escapeHtml(d.id || d._id.substring(0,12)) + '</span>' +
                     '<span class="dc-status ' + statusClass + '">' + statusText + '</span>' +
                 '</div>' +
-                '<div class="dc-name">' + (d.receiver || d.clientName || 'Sin nombre') + '</div>' +
-                '<div class="dc-addr">' + (addr || 'Sin dirección') + '</div>' +
+                '<div class="dc-name">' + escapeHtml(d.receiver || d.clientName || 'Sin nombre') + '</div>' +
+                '<div class="dc-addr">' + escapeHtml(addr || 'Sin dirección') + '</div>' +
                 '<div class="dc-footer">' +
                     '<span class="dc-packages">📦 ' + pkgCount + ' bultos ' + (d.timeSlot ? (d.timeSlot === 'MAÑANA' ? '☀️' : '🌙') : '') + '</span>' +
-                    '<button class="dc-gps" data-addr="' + (addr || '').replace(/"/g, '&quot;') + '">📍 GPS</button>' +
+                    '<button class="dc-gps" data-addr="' + escapeHtml(addr || '') + '">📍 GPS</button>' +
                 '</div>' +
             '</div>';
         }).join('');
@@ -1227,18 +1232,18 @@ function initApp() {
 
         content.innerHTML =
             '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">' +
-                '<h3 style="color:var(--brand); margin:0; font-size:1rem; font-weight:800;">' + (d.id || '') + '</h3>' +
+                '<h3 style="color:var(--brand); margin:0; font-size:1rem; font-weight:800;">' + escapeHtml(d.id || '') + '</h3>' +
                 '<span class="dc-status ' + (isDelivered ? 'delivered' : 'pending') + '">' + (isDelivered ? 'ENTREGADO' : 'PENDIENTE') + '</span>' +
             '</div>' +
             '<div style="font-size:0.9rem; line-height:1.8; margin-bottom:20px;">' +
-                '<b>Destinatario:</b> ' + (d.receiver || '---') + '<br>' +
-                '<b>Dirección:</b> ' + (addr || '---') + '<br>' +
+                '<b>Destinatario:</b> ' + escapeHtml(d.receiver || '---') + '<br>' +
+                '<b>Dirección:</b> ' + escapeHtml(addr || '---') + '<br>' +
                 '<b>Bultos:</b> ' + pkgCount + '<br>' +
                 '<b>Turno:</b> ' + (d.timeSlot === 'MAÑANA' ? '☀️ Mañana' : '🌙 Tarde') + '<br>' +
-                '<b>Remitente:</b> ' + (d.sender || '---') + '<br>' +
-                (d.notes ? '<b>Observaciones:</b> ' + d.notes + '<br>' : '') +
-                (d.cod ? '<b>Reembolso:</b> ' + d.cod + '€<br>' : '') +
-                (d.deliveryReceiverName ? '<b>Recibido por:</b> ' + d.deliveryReceiverName + '<br>' : '') +
+                '<b>Remitente:</b> ' + escapeHtml(d.sender || '---') + '<br>' +
+                (d.notes ? '<b>Observaciones:</b> ' + escapeHtml(d.notes) + '<br>' : '') +
+                (d.cod ? '<b>Reembolso:</b> ' + escapeHtml(d.cod) + '€<br>' : '') +
+                (d.deliveryReceiverName ? '<b>Recibido por:</b> ' + escapeHtml(d.deliveryReceiverName) + '<br>' : '') +
             '</div>' +
             '<div style="display:flex; flex-direction:column; gap:8px;">' +
                 '<button class="btn btn-primary" id="modal-btn-gps">📍 ABRIR EN GPS</button>' +
@@ -1379,9 +1384,9 @@ function initApp() {
         modDocId = d._id;
         var addr = [d.address, d.localidad, d.cp, d.province].filter(Boolean).join(', ');
         document.getElementById('mod-ticket-info').innerHTML =
-            '<b>Albarán:</b> ' + (d.id || d._id) + '<br>' +
-            '<b>Destino:</b> ' + (d.receiver || '---') + '<br>' +
-            '<b>Dirección actual:</b> ' + (addr || '---');
+            '<b>Albarán:</b> ' + escapeHtml(d.id || d._id) + '<br>' +
+            '<b>Destino:</b> ' + escapeHtml(d.receiver || '---') + '<br>' +
+            '<b>Dirección actual:</b> ' + escapeHtml(addr || '---');
         document.getElementById('mod-address').value = '';
         document.getElementById('mod-packages').value = '';
         document.getElementById('mod-notes').value = '';
@@ -1651,12 +1656,12 @@ function initApp() {
         }
 
         document.getElementById('scan-ticket-details').innerHTML =
-            '<b>Destino:</b> ' + (d.receiver || '---') + '<br>' +
-            '<b>Dirección:</b> ' + addr + '<br>' +
-            '<b>Bultos:</b> ' + totalPkgs + '<br>' +
-            '<b>Remitente:</b> ' + (d.sender || '---') + '<br>' +
-            (d.notes ? '<b>Obs:</b> ' + d.notes + '<br>' : '') +
-            (isDelivered ? '<div style="margin:8px 0; padding:10px; background:rgba(76,217,100,0.15); border:1px solid rgba(76,217,100,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#4CD964;">✅ YA ENTREGADO' + (d.deliveredTo ? ' — Receptor: ' + d.deliveredTo : '') + '</div>' : '') +
+            '<b>Destino:</b> ' + escapeHtml(d.receiver || '---') + '<br>' +
+            '<b>Dirección:</b> ' + escapeHtml(addr) + '<br>' +
+            '<b>Bultos:</b> ' + escapeHtml(totalPkgs) + '<br>' +
+            '<b>Remitente:</b> ' + escapeHtml(d.sender || '---') + '<br>' +
+            (d.notes ? '<b>Obs:</b> ' + escapeHtml(d.notes) + '<br>' : '') +
+            (isDelivered ? '<div style="margin:8px 0; padding:10px; background:rgba(76,217,100,0.15); border:1px solid rgba(76,217,100,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#4CD964;">✅ YA ENTREGADO' + (d.deliveredTo ? ' — Receptor: ' + escapeHtml(d.deliveredTo) : '') + '</div>' : '') +
             (d.status === 'Devuelto' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,59,48,0.15); border:1px solid rgba(255,59,48,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF3B30;">🚫 DEVUELTO — No entregar</div>' : '') +
             (d.status === 'Incidencia' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF9800;">⚠️ INCIDENCIA — Consultar con administración</div>' : '') +
             pkgProgressHtml;
@@ -1696,6 +1701,11 @@ function initApp() {
     document.getElementById('btn-confirm-delivery').addEventListener('click', async function() {
         if (!currentScanDoc) return;
         if (confirmInProgress) return; // Prevent double-click
+
+        if (!navigator.onLine) {
+            sendNotification('Sin conexión', 'No puedes confirmar entregas sin conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
+            return;
+        }
 
         // Check all packages scanned
         var ticketKey = currentScanDoc.id || currentScanDoc._id;
@@ -1803,7 +1813,7 @@ function initApp() {
                 '<div style="text-align:center; padding:20px;">' +
                     '<div style="font-size:3rem;">✅</div>' +
                     '<div style="font-size:1.1rem; font-weight:900; color:var(--success); margin:8px 0;">¡ENTREGA REGISTRADA!</div>' +
-                    '<div style="color:var(--text-dim); font-size:0.85rem;">Receptor: <b>' + receiverName + '</b></div>' +
+                    '<div style="color:var(--text-dim); font-size:0.85rem;">Receptor: <b>' + escapeHtml(receiverName) + '</b></div>' +
                 '</div>';
             document.getElementById('confirm-panel').style.display = 'none';
             btn.style.display = 'none';
@@ -2376,7 +2386,7 @@ function initApp() {
             html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">';
             html += '<button onclick="cooperBackToFolders()" style="background:#2a2a2d; border:1px solid #444; color:#2196F3; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:0.78rem; display:flex; align-items:center; gap:4px;">';
             html += '<span style="font-size:0.9rem;">←</span> Volver</button>';
-            html += '<span style="color:#FF9800; font-weight:700; font-size:0.82rem; text-transform:capitalize;">📂 ' + folder.label + '</span>';
+            html += '<span style="color:#FF9800; font-weight:700; font-size:0.82rem; text-transform:capitalize;">📂 ' + escapeHtml(folder.label) + '</span>';
             html += '<span style="color:#666; font-size:0.72rem;">(' + folder.items.length + ')</span>';
             html += '</div>';
 
@@ -2388,13 +2398,13 @@ function initApp() {
                 var shift = d.getHours() < 14 ? '☀️' : '🌙';
 
                 html += '<div style="display:flex; align-items:center; gap:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; margin-bottom:6px; border:1px solid #222;">';
-                html += '<a href="' + (entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
-                html += '<img src="' + (entry.data.photoURL || '') + '" style="width:52px; height:52px; object-fit:cover; border-radius:8px; border:1px solid #333;" loading="lazy">';
+                html += '<a href="' + escapeHtml(entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
+                html += '<img src="' + escapeHtml(entry.data.photoURL || '') + '" style="width:52px; height:52px; object-fit:cover; border-radius:8px; border:1px solid #333;" loading="lazy">';
                 html += '</a>';
                 html += '<div style="flex:1; min-width:0;">';
-                html += '<div style="font-size:0.8rem; color:#ddd;">' + typeIcon + ' ' + typeLabel + ' <span style="color:#888;">' + shift + ' ' + time + '</span></div>';
+                html += '<div style="font-size:0.8rem; color:#ddd;">' + typeIcon + ' ' + escapeHtml(typeLabel) + ' <span style="color:#888;">' + shift + ' ' + escapeHtml(time) + '</span></div>';
                 if (entry.data.note) {
-                    html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + entry.data.note + '</div>';
+                    html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + escapeHtml(entry.data.note) + '</div>';
                 }
                 html += '</div>';
                 // WhatsApp button
@@ -2420,7 +2430,7 @@ function initApp() {
             html += '<div onclick="cooperOpenDay(\'' + dayKey + '\')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '; border:1px solid ' + (isToday ? 'rgba(255,152,0,0.3)' : '#222') + '; border-radius:8px; margin-bottom:6px; cursor:pointer;" ontouchstart="this.style.background=\'rgba(255,152,0,0.15)\'" ontouchend="this.style.background=\'' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '\'">';
             html += '<span style="font-size:1.4rem;">📁</span>';
             html += '<div style="flex:1; min-width:0;">';
-            html += '<div style="font-size:0.82rem; color:#ddd; font-weight:600; text-transform:capitalize;">' + folder.label + (isToday ? ' <span style="color:#FF9800; font-size:0.7rem;">(HOY)</span>' : '') + '</div>';
+            html += '<div style="font-size:0.82rem; color:#ddd; font-weight:600; text-transform:capitalize;">' + escapeHtml(folder.label) + (isToday ? ' <span style="color:#FF9800; font-size:0.7rem;">(HOY)</span>' : '') + '</div>';
             html += '<div style="font-size:0.72rem; color:#888; display:flex; gap:10px; margin-top:2px;">';
             html += '<span>📥 ' + recCount + ' recogidas</span>';
             html += '<span>📤 ' + entCount + ' entregas</span>';

@@ -13,6 +13,10 @@
             console.error("ASYNC CRASH:\n" + (e.reason ? e.reason.message : "Desconocida"));
             if (typeof Sentry !== 'undefined' && Sentry.captureException && e.reason) Sentry.captureException(e.reason);
         });
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+        }
     </script>
     <title>novapaack.login</title>
     <meta name="description" content="Centro de control y facturación Novapack Cloud management.">
@@ -1606,9 +1610,9 @@ window.loadBriefingDashboard = async function() {
                     var catColors = { pod:'#4CAF50', abono:'#FF9800', rectificacion:'#E040FB', reclamacion:'#FF3B30', facturacion:'#2196F3', fiscal:'#FFD700', consulta_albaran:'#00BCD4', otro:'#888' };
                     var catColor = catColors[m.category] || '#888';
                     return '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #222; font-size:0.78rem;">' +
-                        '<span style="background:' + catColor + '; color:#fff; padding:1px 6px; border-radius:4px; font-size:0.65rem; font-weight:700; text-transform:uppercase; white-space:nowrap;">' + (m.category || 'otro') + '</span>' +
-                        '<span style="color:#ddd; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (m.subject || m.from || 'Sin asunto') + '</span>' +
-                        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + dateStr + '</span>' +
+                        '<span style="background:' + catColor + '; color:#fff; padding:1px 6px; border-radius:4px; font-size:0.65rem; font-weight:700; text-transform:uppercase; white-space:nowrap;">' + escapeHtml(m.category || 'otro') + '</span>' +
+                        '<span style="color:#ddd; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(m.subject || m.from || 'Sin asunto') + '</span>' +
+                        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + escapeHtml(dateStr) + '</span>' +
                     '</div>';
                 }).join('');
             }
@@ -1629,7 +1633,7 @@ window.loadBriefingDashboard = async function() {
                 });
                 var routeHtml = Object.keys(byRoute).sort().map(function(r) {
                     return '<div style="display:flex; justify-content:space-between; padding:5px 10px; border-bottom:1px solid #222; font-size:0.8rem;">' +
-                        '<span style="color:#ccc;"><span class="material-symbols-outlined" style="font-size:0.85rem; vertical-align:middle; color:#4CAF50;">route</span> ' + r + '</span>' +
+                        '<span style="color:#ccc;"><span class="material-symbols-outlined" style="font-size:0.85rem; vertical-align:middle; color:#4CAF50;">route</span> ' + escapeHtml(r) + '</span>' +
                         '<span style="color:#4CAF50; font-weight:700;">' + byRoute[r] + '</span></div>';
                 }).join('');
                 pendingEl.innerHTML = routeHtml;
@@ -1639,7 +1643,7 @@ window.loadBriefingDashboard = async function() {
         if (sub) sub.textContent = new Date().toLocaleString('es-ES', { weekday:'long', day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
 
     } catch(err) {
-        if (prioritiesEl) prioritiesEl.innerHTML = '<div style="grid-column:1/-1; padding:20px; text-align:center; color:#FF3B30;">Error cargando briefing: ' + err.message + '</div>';
+        if (prioritiesEl) prioritiesEl.innerHTML = '<div style="grid-column:1/-1; padding:20px; text-align:center; color:#FF3B30;">Error cargando briefing: ' + escapeHtml(err.message) + '</div>';
     }
 };
 
@@ -1655,9 +1659,9 @@ function _briefRow(t, color) {
     var dateStr = date ? date.toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) + ' ' + date.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'}) : '';
     var reason = t.incidentReason || t.incidentDetail || '';
     return '<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid #222; font-size:0.78rem;">' +
-        '<span style="color:' + color + '; font-weight:700; white-space:nowrap;">' + (t.id || t.docId) + '</span>' +
-        '<span style="color:#aaa; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (t.receiver || '') + (reason ? ' — ' + reason : '') + '</span>' +
-        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + dateStr + '</span>' +
+        '<span style="color:' + color + '; font-weight:700; white-space:nowrap;">' + escapeHtml(t.id || t.docId) + '</span>' +
+        '<span style="color:#aaa; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(t.receiver || '') + (reason ? ' — ' + escapeHtml(reason) : '') + '</span>' +
+        '<span style="color:#666; font-size:0.7rem; white-space:nowrap;">' + escapeHtml(dateStr) + '</span>' +
     '</div>';
 }
 
@@ -2747,11 +2751,11 @@ document.addEventListener('DOMContentLoaded', () => {
         show.forEach(function(r, i) {
             var bg = i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
             html += '<tr style="background:' + bg + '; border-bottom:1px solid #222;">';
-            html += '<td style="padding:8px 12px; color:#ddd;">' + (r.c || '-') + '</td>';
-            html += '<td style="padding:8px 12px; color:#aaa;">' + (r.d || '-') + '</td>';
-            html += '<td style="padding:8px 12px; color:#aaa;">' + (r.p || '-') + '</td>';
-            html += '<td style="padding:8px 12px; color:#2196F3;">' + (r.pv || '-') + '</td>';
-            html += '<td style="padding:8px 12px; color:#4CAF50; white-space:nowrap;">' + (r.t || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#ddd;">' + escapeHtml(r.c || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#aaa;">' + escapeHtml(r.d || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#aaa;">' + escapeHtml(r.p || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#2196F3;">' + escapeHtml(r.pv || '-') + '</td>';
+            html += '<td style="padding:8px 12px; color:#4CAF50; white-space:nowrap;">' + escapeHtml(r.t || '-') + '</td>';
             html += '</tr>';
         });
         html += '</tbody></table>';
@@ -2877,7 +2881,7 @@ document.addEventListener('DOMContentLoaded', () => {
         routes.forEach(function(r) {
             var active = _cooperRouteFilter === r;
             html += '<button onclick="cooperSwitchRoute(\'' + r.replace(/'/g, "\\'") + '\')" style="background:' + (active ? '#2196F3' : '#2a2a2d') + '; color:' + (active ? '#fff' : '#aaa') + '; border:1px solid ' + (active ? '#2196F3' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (active ? 'bold' : 'normal') + '; cursor:pointer; display:flex; align-items:center; gap:4px;">';
-            html += '<span class="material-symbols-outlined" style="font-size:0.85rem;">route</span>' + r + ' (' + routeSet[r] + ')</button>';
+            html += '<span class="material-symbols-outlined" style="font-size:0.85rem;">route</span>' + escapeHtml(r) + ' (' + routeSet[r] + ')</button>';
         });
         el.innerHTML = html;
     }
@@ -2912,11 +2916,11 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '</div>';
         html += '<div style="display:flex; align-items:center; gap:6px;">';
         html += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
-        html += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
+        html += '<span style="color:#ccc; font-size:0.8rem;">' + escapeHtml(driver) + '</span>';
         html += '</div>';
         if (item.note) {
             html += '<div style="margin-top:6px; padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa;">';
-            html += '<span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:3px;">note</span>' + item.note;
+            html += '<span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:3px;">note</span>' + escapeHtml(item.note);
             html += '</div>';
         }
         html += '</div></div>';
@@ -4242,7 +4246,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             btn.onmouseover = function() { this.style.background = 'rgba(255,152,0,0.3)'; };
                             btn.onmouseout = function() { this.style.background = 'rgba(255,152,0,0.15)'; };
                             btn.onclick = function() {
-                                try { eval(a.fn); } catch(e) { console.warn('[NOVA-IA] Action error:', e); }
+                                try { if (typeof a.fn === 'function') { a.fn(); } else if (typeof window[a.fn] === 'function') { window[a.fn](); } } catch(e) { console.warn('[NOVA-IA] Action error:', e); }
                             };
                             actBar.appendChild(btn);
                         });
@@ -5488,7 +5492,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Object.entries(userMap).forEach(([uid, u]) => {
                     const name = u.name || u.email || uid;
                     const idNum = u.idNum || '';
-                    sel.innerHTML += `<option value="${uid}">${idNum ? '['+idNum+'] ' : ''}${name}</option>`;
+                    sel.innerHTML += `<option value="${escapeHtml(uid)}">${idNum ? '['+escapeHtml(idNum)+'] ' : ''}${escapeHtml(name)}</option>`;
                 });
             }
         }
@@ -6441,7 +6445,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         let firstId = "";
                         snap.forEach(doc => {
                             const data = doc.data();
-                            html += `<option value="${doc.id}">${data.name || 'Empresa sin nombre'}</option>`;
+                            html += `<option value="${escapeHtml(doc.id)}">${escapeHtml(data.name || 'Empresa sin nombre')}</option>`;
                             if (!firstId) firstId = doc.id;
                         });
                         select.innerHTML = html;
@@ -7041,7 +7045,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 } catch (e) {
                     console.error(e);
-                    userTableBody.innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Error: ${e.message}</td></tr>`;
+                    userTableBody.innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Error: ${escapeHtml(e.message)}</td></tr>`;
                 }
             }
 
@@ -7115,7 +7119,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     div.style.padding = '10px';
                                     div.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
                                     div.style.cursor = 'pointer';
-                                    div.innerHTML = `<strong>${r.name || ''}</strong> <span style="font-size:0.7rem; color:#888;">NIF: ${r.nif || 'N/A'}</span>`;
+                                    div.innerHTML = `<strong>${escapeHtml(r.name || '')}</strong> <span style="font-size:0.7rem; color:#888;">NIF: ${escapeHtml(r.nif || 'N/A')}</span>`;
                                     
                                     div.onmouseover = () => div.style.background = 'rgba(255,102,0,0.2)';
                                     div.onmouseout = () => div.style.background = 'transparent';
@@ -7342,7 +7346,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const bSel = document.getElementById('new-user-billing-company');
                     bSel.innerHTML = '<option value="">-- Por Defecto (Central) --</option>';
                     Object.entries(billingCompaniesMap).forEach(([id, d]) => {
-                        bSel.innerHTML += `<option value="${id}">${d.name}</option>`;
+                        bSel.innerHTML += `<option value="${escapeHtml(id)}">${escapeHtml(d.name)}</option>`;
                     });
                     bSel.value = data.billingCompanyId || '';
                 }
@@ -7364,7 +7368,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (u.parentClientId) return; // Un hijo no puede ser padre
                         const name = u.name || u.email || uid;
                         const idNum = u.idNum || '';
-                        sel.innerHTML += `<option value="${uid}">${idNum ? '[#'+idNum+'] ' : ''}${name}</option>`;
+                        sel.innerHTML += `<option value="${escapeHtml(uid)}">${idNum ? '[#'+escapeHtml(idNum)+'] ' : ''}${escapeHtml(name)}</option>`;
                     });
                 }
                 if (currentVal) sel.value = currentVal;
@@ -8107,12 +8111,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const row = document.createElement('tr');
                     row.className = 'user-row';
-                    row.innerHTML = `<td>${data.label}</td>
-    <td>${data.number}</td>
-    <td>${combinedNames}</td>
+                    row.innerHTML = `<td>${escapeHtml(data.label)}</td>
+    <td>${escapeHtml(data.number)}</td>
+    <td>${escapeHtml(combinedNames)}</td>
     <td style="display:flex; gap:10px;">
-        <button class="btn btn-secondary btn-sm" onclick="editPhone('${doc.id}', '${data.label.replace(/'/g, "\\'")}', '${data.number.replace(/'/g, "\\'")}', '${(data.driverName || '').replace(/'/g, "\\'")}', '${(data.driverName2 || '').replace(/'/g, "\\'")}', '${(data.driverName3 || '').replace(/'/g, "\\'")}', '${(data.driverName4 || '').replace(/'/g, "\\'")}', '${(data.coverageZones || '').replace(/'/g, "\\'")}')">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deletePhone('${doc.id}')">🗑️</button>
+        <button class="btn btn-secondary btn-sm" onclick="editPhone('${escapeHtml(doc.id)}', '${escapeHtml((data.label || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.number || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.driverName || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.driverName2 || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.driverName3 || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.driverName4 || '').replace(/'/g, "\\'"))}', '${escapeHtml((data.coverageZones || '').replace(/'/g, "\\'"))}')">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePhone('${escapeHtml(doc.id)}')">🗑️</button>
     </td>`;
                     phoneTableBody.appendChild(row);
                 });
@@ -8207,7 +8211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         card.onmouseout = () => { card.style.transform = 'translateY(0)'; card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'; card.style.borderColor = '#2d2d44'; };
                         card.onclick = () => openRouteDetails(routeData.label, pNum);
                         
-                        card.innerHTML = `<div style="color:#555; text-align:center; padding:20px;">Sincronizando ${routeData.label}...</div>`;
+                        card.innerHTML = `<div style="color:#555; text-align:center; padding:20px;">Sincronizando ${escapeHtml(routeData.label)}...</div>`;
                         grid.appendChild(card);
 
                         // Attach real-time listener for this specific route
@@ -8229,12 +8233,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                     incidents += bultos;
                                     incidentTicketIds.push(tDoc.id);
                                     const reason = tData.incidentReason || 'Incidencia general';
-                                    incidentDetails.push(`<div onclick="event.stopPropagation(); openIncidentManagerModal('${tDoc.id}')" style="cursor:pointer; padding:4px 6px; margin:2px 0; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,59,48,0.2)'" onmouseout="this.style.background='transparent'"><b>${tData.id}</b>: ${reason} <span style='color:#FF9800; font-weight:bold;'>→ RESOLVER</span></div>`);
+                                    incidentDetails.push(`<div onclick="event.stopPropagation(); openIncidentManagerModal('${tDoc.id}')" style="cursor:pointer; padding:4px 6px; margin:2px 0; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,59,48,0.2)'" onmouseout="this.style.background='transparent'"><b>${escapeHtml(tData.id)}</b>: ${escapeHtml(reason)} <span style='color:#FF9800; font-weight:bold;'>→ RESOLVER</span></div>`);
                                 }
                                 else pending += bultos;
                                 
                                 if (tData.notes && tData.notes.includes("MODIFICADO POR REPARTIDOR") && !tData.adminAcknowledged) {
-                                    incidentDetails.push(`<div style="display:flex; align-items:center; gap:6px; padding:4px 6px; margin:2px 0; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,152,0,0.2)'" onmouseout="this.style.background='transparent'"><div onclick="openIncidentManagerModal('${tDoc.id}')" style="cursor:pointer; flex:1;"><b>${tData.id}</b>: El repartidor modificó bultos. <span style='color:#FF9800; font-weight:bold;'>→ VER</span></div><button onclick="event.stopPropagation(); acknowledgeDriverModification('${tDoc.id}')" style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:3px 8px; font-size:0.7rem; cursor:pointer; font-weight:bold; white-space:nowrap;" title="Marcar como revisado">✓ VISTO</button></div>`);
+                                    incidentDetails.push(`<div style="display:flex; align-items:center; gap:6px; padding:4px 6px; margin:2px 0; border-radius:4px; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,152,0,0.2)'" onmouseout="this.style.background='transparent'"><div onclick="openIncidentManagerModal('${tDoc.id}')" style="cursor:pointer; flex:1;"><b>${escapeHtml(tData.id)}</b>: El repartidor modificó bultos. <span style='color:#FF9800; font-weight:bold;'>→ VER</span></div><button onclick="event.stopPropagation(); acknowledgeDriverModification('${tDoc.id}')" style="background:#4CAF50; color:white; border:none; border-radius:4px; padding:3px 8px; font-size:0.7rem; cursor:pointer; font-weight:bold; white-space:nowrap;" title="Marcar como revisado">✓ VISTO</button></div>`);
                                 }
 
                                 // Collect ticket data for expandable list
@@ -8290,8 +8294,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 cardElem.innerHTML = `
                                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
                                         <div style="flex:1; min-width:0;">
-                                            <div style="font-size:0.95rem; font-weight:700; color:#FF4D00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${routeData.label}">${routeData.label}</div>
-                                            <div style="font-size:0.68rem; color:#888; margin-top:2px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${names}"><span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:2px;">person</span>${names}</div>
+                                            <div style="font-size:0.95rem; font-weight:700; color:#FF4D00; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(routeData.label)}">${escapeHtml(routeData.label)}</div>
+                                            <div style="font-size:0.68rem; color:#888; margin-top:2px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(names)}"><span class="material-symbols-outlined" style="font-size:0.8rem; vertical-align:middle; margin-right:2px;">person</span>${escapeHtml(names)}</div>
                                         </div>
                                         <div style="font-size:0.65rem; color:#666; background:#111; padding:2px 8px; border-radius:3px; font-weight:700; white-space:nowrap;">${pct}%</div>
                                     </div>
@@ -8327,10 +8331,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                     </div>` : ''}
 
                                     <div style="display:flex; gap:6px; border-top:1px solid #2d2d44; padding-top:10px; flex-wrap:wrap;">
-                                        <button onclick="event.stopPropagation(); openRouteDetails('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2d5a8e'" onmouseout="this.style.background='#1e3a5f'"><span class="material-symbols-outlined" style="font-size:0.9rem;">list_alt</span> DETALLES</button>
-                                        <button onclick="event.stopPropagation(); openReassignRouteModal('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#3d2e11; border:1px solid #6b4e1f; color:#FF9800; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b4e1f'" onmouseout="this.style.background='#3d2e11'"><span class="material-symbols-outlined" style="font-size:0.9rem;">swap_horiz</span> REASIGNAR</button>
-                                        <button onclick="event.stopPropagation(); openPickupAlertModal('${routeData.label}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1b3d1b; border:1px solid #2e6b2e; color:#4CAF50; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2e6b2e'" onmouseout="this.style.background='#1b3d1b'"><span class="material-symbols-outlined" style="font-size:0.9rem;">campaign</span> AVISO</button>
-                                        <button onclick="event.stopPropagation(); openRouteCooperModal('${routeData.label}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#2d1b3d; border:1px solid #6b2e6b; color:#CE93D8; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b2e6b'" onmouseout="this.style.background='#2d1b3d'"><span class="material-symbols-outlined" style="font-size:0.9rem;">photo_library</span> COOPER</button>
+                                        <button onclick="event.stopPropagation(); openRouteDetails('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2d5a8e'" onmouseout="this.style.background='#1e3a5f'"><span class="material-symbols-outlined" style="font-size:0.9rem;">list_alt</span> DETALLES</button>
+                                        <button onclick="event.stopPropagation(); openReassignRouteModal('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#3d2e11; border:1px solid #6b4e1f; color:#FF9800; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b4e1f'" onmouseout="this.style.background='#3d2e11'"><span class="material-symbols-outlined" style="font-size:0.9rem;">swap_horiz</span> REASIGNAR</button>
+                                        <button onclick="event.stopPropagation(); openPickupAlertModal('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1b3d1b; border:1px solid #2e6b2e; color:#4CAF50; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2e6b2e'" onmouseout="this.style.background='#1b3d1b'"><span class="material-symbols-outlined" style="font-size:0.9rem;">campaign</span> AVISO</button>
+                                        <button onclick="event.stopPropagation(); openRouteCooperModal('${escapeHtml(routeData.label)}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#2d1b3d; border:1px solid #6b2e6b; color:#CE93D8; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b2e6b'" onmouseout="this.style.background='#2d1b3d'"><span class="material-symbols-outlined" style="font-size:0.9rem;">photo_library</span> COOPER</button>
                                     </div>
                                 `;
                             }
@@ -8392,14 +8396,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                         row.innerHTML = `
                             <td style="text-align:center;" onclick="event.stopPropagation();"><input type="checkbox" class="route-ticket-checkbox" value="${item.id}" style="cursor:pointer; transform:scale(1.2);"></td>
-                            <td style="font-weight:bold; color:#FFD700;">${data.id}</td>
+                            <td style="font-weight:bold; color:#FFD700;">${escapeHtml(data.id)}</td>
                             <td>
-                                <div>${data.receiver || 'Desconocido'}</div>
-                                <div style="font-size:0.72rem; color:var(--text-dim);">${data.address || ''}</div>
-                                <div style="font-size:0.68rem; color:#888;">Remitente: ${sender}</div>
+                                <div>${escapeHtml(data.receiver || 'Desconocido')}</div>
+                                <div style="font-size:0.72rem; color:var(--text-dim);">${escapeHtml(data.address || '')}</div>
+                                <div style="font-size:0.68rem; color:#888;">Remitente: ${escapeHtml(sender)}</div>
                             </td>
                             <td>${bultos}</td>
-                            <td style="color:${badgeColor}; font-weight:bold;">${data.status || 'Pendiente'}</td>
+                            <td style="color:${badgeColor}; font-weight:bold;">${escapeHtml(data.status || 'Pendiente')}</td>
                             <td onclick="event.stopPropagation();">
                                 <button class="btn btn-outline btn-sm" onclick="unassignTicketFromRoute('${item.id}')" title="Quitar de esta ruta" style="font-size:0.7rem;">❌</button>
                                 ${(data.status === 'Incidencia' || data.status === 'Devuelto' || data.status === 'pending_confirmation') ? `<button class="btn btn-sm btn-outline" style="border-color:#FF9800; color:#FF9800; margin-left:5px; font-size:0.65rem;" onclick="openIncidentManagerModal('${item.id}')">⚙️</button>` : ''}
@@ -8417,15 +8421,15 @@ document.addEventListener('DOMContentLoaded', () => {
                                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:0.75rem;">
                                         <div style="grid-column:1/-1;">
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Destinatario</label>
-                                            <input type="text" data-field="receiver" value="${(data.receiver||'').replace(/"/g,'&quot;')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
+                                            <input type="text" data-field="receiver" value="${escapeHtml(data.receiver||'')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
                                         </div>
                                         <div style="grid-column:1/-1;">
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Dirección</label>
-                                            <input type="text" data-field="address" value="${(data.address||'').replace(/"/g,'&quot;')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
+                                            <input type="text" data-field="address" value="${escapeHtml(data.address||'')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
                                         </div>
                                         <div>
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Provincia</label>
-                                            <input type="text" data-field="province" value="${(data.province||'').replace(/"/g,'&quot;')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
+                                            <input type="text" data-field="province" value="${escapeHtml(data.province||'')}" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box;" onclick="event.stopPropagation()">
                                         </div>
                                         <div>
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Bultos</label>
@@ -8453,11 +8457,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                         </div>
                                         <div style="grid-column:1/-1;">
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Remitente</label>
-                                            <div style="padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:#FFD700; border-radius:4px; font-size:0.78rem; font-weight:600;">${sender}</div>
+                                            <div style="padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:#FFD700; border-radius:4px; font-size:0.78rem; font-weight:600;">${escapeHtml(sender)}</div>
                                         </div>
                                         <div style="grid-column:1/-1;">
                                             <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px; display:block;">Observaciones</label>
-                                            <textarea data-field="notes" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box; resize:none; min-height:36px;" onclick="event.stopPropagation()">${notes}</textarea>
+                                            <textarea data-field="notes" style="width:100%; padding:5px 8px; background:#0d0d15; border:1px solid #2d2d44; color:white; border-radius:4px; font-size:0.78rem; box-sizing:border-box; resize:none; min-height:36px;" onclick="event.stopPropagation()">${escapeHtml(notes)}</textarea>
                                         </div>
                                     </div>
                                     <div style="display:flex; gap:6px; margin-top:10px; justify-content:flex-end;" onclick="event.stopPropagation();">
@@ -9046,13 +9050,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Driver
                 h += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">';
                 h += '<span class="material-symbols-outlined" style="font-size:0.9rem; color:#888;">person</span>';
-                h += '<span style="color:#ccc; font-size:0.8rem;">' + driver + '</span>';
+                h += '<span style="color:#ccc; font-size:0.8rem;">' + escapeHtml(driver) + '</span>';
                 h += '</div>';
                 // Note (editable)
                 h += '<div id="rc-note-' + item.docId + '" style="margin-bottom:8px;">';
                 if (item.note) {
                     h += '<div style="padding:6px 8px; background:rgba(255,255,255,0.05); border-radius:4px; font-size:0.78rem; color:#aaa; display:flex; align-items:start; gap:4px;">';
-                    h += '<span class="material-symbols-outlined" style="font-size:0.8rem; margin-top:2px;">note</span><span>' + item.note + '</span>';
+                    h += '<span class="material-symbols-outlined" style="font-size:0.8rem; margin-top:2px;">note</span><span>' + escapeHtml(item.note) + '</span>';
                     h += '</div>';
                 }
                 h += '</div>';
@@ -9179,7 +9183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 phoneSnap.forEach(doc => {
                     const r = doc.data();
                     if (r.number !== phone) { // Exclude the current route
-                        sel.innerHTML += `<option value="${r.number}">${r.label} (${r.number})</option>`;
+                        sel.innerHTML += `<option value="${escapeHtml(r.number)}">${escapeHtml(r.label)} (${escapeHtml(r.number)})</option>`;
                     }
                 });
                 
@@ -9203,7 +9207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 phoneSnap.forEach(doc => {
                     const r = doc.data();
                     if (r.number !== currentRouteDetailPhone) {
-                        sel.innerHTML += `<option value="${r.number}">${r.label} (${r.number})</option>`;
+                        sel.innerHTML += `<option value="${escapeHtml(r.number)}">${escapeHtml(r.label)} (${escapeHtml(r.number)})</option>`;
                     }
                 });
                 
@@ -9263,7 +9267,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const bSel = document.getElementById('new-user-billing-company');
                     bSel.innerHTML = '<option value="">-- Por Defecto (Central) --</option>';
                     Object.entries(billingCompaniesMap).forEach(([id, d]) => {
-                        bSel.innerHTML += `<option value="${id}">${d.name}</option>`;
+                        bSel.innerHTML += `<option value="${escapeHtml(id)}">${escapeHtml(d.name)}</option>`;
                     });
                     bSel.value = '';
                 }
@@ -9423,7 +9427,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 keys.forEach(name => {
                     const row = document.createElement('tr');
                     const price = parseFloat(items[name]).toFixed(2);
-                    row.innerHTML = `<td style="font-weight:700">${name}</td><td>${price}€</td>
+                    row.innerHTML = `<td style="font-weight:700">${escapeHtml(name)}</td><td>${escapeHtml(price)}€</td>
                     <td style="text-align:right"><button class="btn btn-sm tariff-edit-btn" style="background:#007acc; color:white; border:none; margin-right:4px; cursor:pointer; padding:2px 8px;">✏️</button><button class="btn btn-danger btn-sm tariff-del-btn">🗑️</button></td>`;
                     // Bind edit
                     row.querySelector('.tariff-edit-btn').addEventListener('click', () => editTariffItem(name, parseFloat(items[name])));
@@ -9461,7 +9465,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const cells = row.querySelectorAll('td');
                     if (cells.length >= 3 && cells[0].textContent.trim() === oldName) {
                         // Transform row into inline edit mode
-                        cells[0].innerHTML = `<input type="text" value="${oldName.replace(/"/g, '&quot;')}" style="width:100%; padding:3px 6px; background:#1e1e1e; border:1px solid #007acc; color:white; border-radius:3px; font-size:0.85rem;" id="edit-tariff-name">`;
+                        cells[0].innerHTML = `<input type="text" value="${escapeHtml(oldName)}" style="width:100%; padding:3px 6px; background:#1e1e1e; border:1px solid #007acc; color:white; border-radius:3px; font-size:0.85rem;" id="edit-tariff-name">`;
                         cells[1].innerHTML = `<input type="number" step="0.01" value="${oldPrice}" style="width:80px; padding:3px 6px; background:#1e1e1e; border:1px solid #007acc; color:white; border-radius:3px; font-size:0.85rem;" id="edit-tariff-price">`;
                         cells[2].innerHTML = `<button style="background:#4CAF50; color:white; border:none; padding:3px 10px; cursor:pointer; border-radius:3px; font-size:0.85rem;" id="btn-save-tariff-edit">💾</button>`;
                         document.getElementById('edit-tariff-name').focus();
@@ -9916,7 +9920,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         snap.forEach(doc => {
                             const data = doc.data();
                             adminCompaniesCache[doc.id] = data; // Cache for pricing logic
-                            html += `<option value="${doc.id}">${data.name || 'Empresa sin nombre'}</option>`;
+                            html += `<option value="${escapeHtml(doc.id)}">${escapeHtml(data.name || 'Empresa sin nombre')}</option>`;
                             if (!firstId) firstId = doc.id;
                         });
                         select.innerHTML = html;
@@ -10315,7 +10319,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span style="font-weight:bold;">${inv.invoiceId}</span>
                             </td>
                             <td>${date.toLocaleDateString()}</td>
-                            <td>${inv.clientName}</td>
+                            <td>${escapeHtml(inv.clientName)}</td>
                             <td>${inv.subtotal.toFixed(2)}€</td>
                             <td>${inv.iva.toFixed(2)}€ (${inv.ivaRate}%)</td>
                             <td>${inv.irpf.toFixed(2)}€ (${inv.irpfRate}%)</td>
@@ -11405,7 +11409,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         let printLoc = cleanStr(m.localidad) || cleanStr(m.province);
                         let fullSpan = [printAddr, cleanStr(m.number), printLoc].filter(Boolean).join(', ');
 
-                        div.innerHTML = `<strong>${cleanStr(m.name)}</strong><br><span style="color:#888;">${fullSpan}</span>`;
+                        div.innerHTML = `<strong>${escapeHtml(cleanStr(m.name))}</strong><br><span style="color:#888;">${escapeHtml(fullSpan)}</span>`;
                         div.onclick = () => {
                             adminTReceiver.value = cleanStr(m.name);
                             document.getElementById('admin-t-phone').value = cleanStr(m.phone);
@@ -11505,7 +11509,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 const baseT = tariffsCache[currentAdminTargetUid] || (uData.tariffId && tariffsCache["GLOBAL_" + uData.tariffId]);
                 if (baseT && baseT.subTariff) {
                     Object.keys(baseT.subTariff).forEach(id => {
-                        select.innerHTML += `<option value="${id}">${id}</option>`;
+                        select.innerHTML += `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`;
                     });
                 }
             };
@@ -11816,7 +11820,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     }
                 } catch (e) { console.warn("Error refreshing suggested sizes", e); }
 
-                datalist.innerHTML = items.map(s => `<option value="${s}">`).join('');
+                datalist.innerHTML = items.map(s => `<option value="${escapeHtml(s)}">`).join('');
             }
 
             document.getElementById('admin-ticket-company-select').onchange = (e) => {
@@ -12011,16 +12015,16 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                                         tr.style.borderLeft = '4px solid #2196F3';
                                     }
 
-                                    const childLabel = t._childBranch ? `<div style="font-size:0.65rem; color:#2196F3; font-weight:bold; margin-top:2px;"><span class="material-symbols-outlined" style="font-size:0.7rem; vertical-align:middle;">account_tree</span> ${t._childBranch}</div>` : '';
+                                    const childLabel = t._childBranch ? `<div style="font-size:0.65rem; color:#2196F3; font-weight:bold; margin-top:2px;"><span class="material-symbols-outlined" style="font-size:0.7rem; vertical-align:middle;">account_tree</span> ${escapeHtml(t._childBranch)}</div>` : '';
 
                                     tr.innerHTML = `
                                 <td><input type="checkbox" class="admin-ticket-check" data-index="${i}" onchange="updateAdminSelectedTotal()"></td>
                                 <td>${date}</td>
-                                <td>${t.id}${childLabel}</td>
-                                <td>${t.receiver}</td>
+                                <td>${escapeHtml(t.id)}${childLabel}</td>
+                                <td>${escapeHtml(t.receiver)}</td>
                                 <td>${pkgs}</td>
                                 <td>${price.toFixed(2)}€</td>
-                                <td>${t.driverPhone ? '🚚 ' + t.driverPhone : '<span style="color:#888;font-size:0.75rem;">---</span>'}</td>
+                                <td>${t.driverPhone ? '🚚 ' + escapeHtml(t.driverPhone) : '<span style="color:#888;font-size:0.75rem;">---</span>'}</td>
                                 <td><span class="badge ${isPendingDelete ? 'badge-danger' : (isPrinted ? 'badge-success' : 'badge-warning')}" style="${isPendingDelete ? 'background:#FF3B30;' : ''}">${isPendingDelete ? '🚨 ANULAR' : (isPrinted ? '🖨️ IMPRESO' : '🕒 NUEVO')}</span></td>
                                 <td style="text-align:right;">
                                     <button class="btn btn-xs btn-outline" style="border-color:#F59E0B; color:#F59E0B;" onclick="openTicketReassignModal('${t.docId}')" title="Reasignar Repartidor">🚚</button>
@@ -13626,11 +13630,11 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         }
 
                         html += '<tr style="border-bottom:1px solid #222;" onmouseover="this.style.background=\'rgba(255,255,255,0.03)\'" onmouseout="this.style.background=\'transparent\'">';
-                        html += '<td style="padding:8px; color:#FFD700; font-weight:bold;">' + displayId + '</td>';
-                        html += '<td style="padding:8px; color:#ccc;">' + (t.sender || t.clientName || '---') + '</td>';
-                        html += '<td style="padding:8px; color:#ccc;">' + (t.receiver || '---') + '</td>';
+                        html += '<td style="padding:8px; color:#FFD700; font-weight:bold;">' + escapeHtml(displayId) + '</td>';
+                        html += '<td style="padding:8px; color:#ccc;">' + escapeHtml(t.sender || t.clientName || '---') + '</td>';
+                        html += '<td style="padding:8px; color:#ccc;">' + escapeHtml(t.receiver || '---') + '</td>';
                         html += '<td style="padding:8px; color:' + tipoColor + '; font-weight:bold;">' + tipo + '</td>';
-                        html += '<td style="padding:8px; color:#aaa; font-size:0.75rem; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + motivo.replace(/"/g, '&quot;') + '">' + motivo + '</td>';
+                        html += '<td style="padding:8px; color:#aaa; font-size:0.75rem; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + escapeHtml(motivo) + '">' + escapeHtml(motivo) + '</td>';
                         html += '<td style="padding:8px; text-align:center; white-space:nowrap;">';
                         html += '<button onclick="openIncidentManagerModal(\'' + tid + '\')" style="background:#FF9800; border:none; color:#000; padding:4px 10px; font-size:0.72rem; font-weight:bold; cursor:pointer; border-radius:4px; margin:1px;">⚙️ Resolver</button>';
                         html += '</td></tr>';
@@ -13680,9 +13684,9 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                         html += `
                             <tr style="background: rgba(255, 59, 48, 0.05); border-left: 4px solid #FF3B30;">
-                                <td style="font-weight:bold; color:var(--brand-primary);">${idStr}</td>
+                                <td style="font-weight:bold; color:var(--brand-primary);">${escapeHtml(idStr)}</td>
                                 <td style="font-size:0.8rem;">${dStr}</td>
-                                <td style="font-weight:bold; font-size:0.85rem;">${senderName}</td>
+                                <td style="font-weight:bold; font-size:0.85rem;">${escapeHtml(senderName)}</td>
                                 <td style="color:#FF3B30; font-size:0.8rem; font-style:italic;">"${motivo}"</td>
                                 <td><span class="status-badge" style="background:#FF3B30; color:white;">PEND. ANULAR</span></td>
                                 <td>
@@ -13746,26 +13750,26 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
                             <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px;">
                                 <div style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase;">ID de Albarán</div>
-                                <div style="font-weight:900; color:var(--brand-primary); font-size:1.1rem;">${t.id || finalDocId}</div>
+                                <div style="font-weight:900; color:var(--brand-primary); font-size:1.1rem;">${escapeHtml(t.id || finalDocId)}</div>
                             </div>
                             <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:8px;">
                                 <div style="color:var(--text-dim); font-size:0.75rem; text-transform:uppercase;">Fecha Creación</div>
                                 <div style="font-weight:900;">${dStr}</div>
                             </div>
                         </div>
-                        
+
                         <div style="margin-bottom:15px;">
                             <strong style="color:var(--brand-primary);">REMITENTE:</strong> <br>
-                            ${t.sender || senderName} - ${t.senderAddress || ''}<br>
-                            ${t.senderPhone ? 'Telf: ' + t.senderPhone : ''}
+                            ${escapeHtml(t.sender || senderName)} - ${escapeHtml(t.senderAddress || '')}<br>
+                            ${t.senderPhone ? 'Telf: ' + escapeHtml(t.senderPhone) : ''}
                         </div>
-                        
+
                         <div style="background:rgba(0,0,0,0.3); padding:15px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); margin-bottom:15px;">
                             <strong style="color:var(--brand-primary);">DESTINATARIO:</strong> <br>
-                            <span style="font-size:1.1rem; font-weight:bold;">${t.receiver}</span><br>
-                            ${t.address || t.street || ''} ${t.number || ''}<br>
-                            ${t.localidad || ''} ${t.cp || ''} - <strong>${t.province || ''}</strong><br>
-                            ${t.phone ? '☎️ ' + t.phone : ''}
+                            <span style="font-size:1.1rem; font-weight:bold;">${escapeHtml(t.receiver)}</span><br>
+                            ${escapeHtml(t.address || t.street || '')} ${escapeHtml(t.number || '')}<br>
+                            ${escapeHtml(t.localidad || '')} ${escapeHtml(t.cp || '')} - <strong>${escapeHtml(t.province || '')}</strong><br>
+                            ${t.phone ? '☎️ ' + escapeHtml(t.phone) : ''}
                         </div>
                         
                         <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.1);">
@@ -14025,9 +14029,9 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         billingCompaniesMap[doc.id] = data;
                         tbody.innerHTML += `
                         <tr>
-                            <td style="font-weight:600; color:var(--brand-primary);">${data.name}</td>
-                            <td>${data.nif}</td>
-                            <td style="font-size:0.8rem; color:var(--text-dim);">${data.address}</td>
+                            <td style="font-weight:600; color:var(--brand-primary);">${escapeHtml(data.name)}</td>
+                            <td>${escapeHtml(data.nif)}</td>
+                            <td style="font-size:0.8rem; color:var(--text-dim);">${escapeHtml(data.address)}</td>
                             <td>
                                 <div style="display:flex; gap:5px;">
                                     <button class="btn btn-sm btn-outline" style="border-color:var(--brand-primary); color:white; padding:5px 10px;" onclick="openAddBillingCompanyModal('${doc.id}')">✏️ Editar</button>
@@ -14037,13 +14041,13 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         </tr>`;
 
                         if (clientBillingSelect) {
-                            clientBillingSelect.innerHTML += `<option value="${doc.id}">${data.name}</option>`;
+                            clientBillingSelect.innerHTML += `<option value="${escapeHtml(doc.id)}">${escapeHtml(data.name)}</option>`;
                         }
                         if (adminTicketBillingSelect) {
-                            adminTicketBillingSelect.innerHTML += `<option value="${doc.id}">${data.name}</option>`;
+                            adminTicketBillingSelect.innerHTML += `<option value="${escapeHtml(doc.id)}">${escapeHtml(data.name)}</option>`;
                         }
                         if (filterBillingSel) {
-                            filterBillingSel.innerHTML += `<option value="${doc.id}">${data.name}</option>`;
+                            filterBillingSel.innerHTML += `<option value="${escapeHtml(doc.id)}">${escapeHtml(data.name)}</option>`;
                         }
                     });
                 } catch(e) {
@@ -14824,9 +14828,9 @@ window.advPerformTicketSearch = async function() {
                 <tr style="border-bottom:1px solid #222; cursor:pointer;" onmouseover="this.style.background='rgba(255,255,255,0.03)'" onmouseout="this.style.background=''">
                     <td style="padding:10px; text-align:center;"><input type="checkbox" class="ts-row-check" data-docid="${t.docId}" style="cursor:pointer; transform:scale(1.1);"></td>
                     <td style="padding:10px; font-size:0.85rem; color:#aaa;">${date}</td>
-                    <td style="padding:10px; font-weight:bold; color:var(--brand-primary);">${idStr}</td>
-                    <td style="padding:10px; font-size:0.85rem;">${senderName}</td>
-                    <td style="padding:10px; font-size:0.85rem;">${receiver}${dir ? '<br><span style="color:#666; font-size:0.75rem;">' + dir + '</span>' : ''}</td>
+                    <td style="padding:10px; font-weight:bold; color:var(--brand-primary);">${escapeHtml(idStr)}</td>
+                    <td style="padding:10px; font-size:0.85rem;">${escapeHtml(senderName)}</td>
+                    <td style="padding:10px; font-size:0.85rem;">${escapeHtml(receiver)}${dir ? '<br><span style="color:#666; font-size:0.75rem;">' + escapeHtml(dir) + '</span>' : ''}</td>
                     <td style="padding:10px; text-align:center;">${pkgs}</td>
                     <td style="padding:10px; text-align:center;">${statusBadge}</td>
                     <td style="padding:10px; text-align:center;">
@@ -15822,7 +15826,7 @@ window.importTarifas50 = async () => {
                     matches.slice(0, 15).forEach(m => {
                         const div = document.createElement('div');
                         div.style.cssText = 'padding:8px 10px; cursor:pointer; border-bottom:1px solid #3c3c3c; font-size:0.82rem; color:#ddd;';
-                        div.innerHTML = `<strong style="color:#2196F3;">[#${m.data.idNum || '?'}]</strong> ${m.data.name || m.data.email || m.uid}`;
+                        div.innerHTML = `<strong style="color:#2196F3;">[#${escapeHtml(m.data.idNum || '?')}]</strong> ${escapeHtml(m.data.name || m.data.email || m.uid)}`;
                         div.onmouseover = () => div.style.background = 'rgba(33,150,243,0.2)';
                         div.onmouseout = () => div.style.background = 'transparent';
                         div.onclick = () => {
@@ -15895,7 +15899,7 @@ window.importTarifas50 = async () => {
             if(bSel) {
                 bSel.innerHTML = '<option value="">-- Central (por defecto) --</option>';
                 Object.entries(billingCompaniesMap).forEach(([id, d]) => {
-                    bSel.innerHTML += `<option value="${id}">${d.name}</option>`;
+                    bSel.innerHTML += `<option value="${escapeHtml(id)}">${escapeHtml(d.name)}</option>`;
                 });
             }
         }
@@ -16697,7 +16701,7 @@ window.importTarifas50 = async () => {
             const logDiv = document.getElementById('mt-log');
             const entry = document.createElement('div');
             entry.style.cssText = 'padding:5px 0; border-bottom:1px solid #333; color:#4CAF50;';
-            entry.innerHTML = '<span style="color:#888;">' + new Date().toLocaleTimeString() + '</span> ✅ <strong>' + businessId + '</strong> — ' + receiver + ' (' + packages + ' bultos) — Cliente #' + cli.idNum + (shippingType === 'Debidos' ? ' <span style="color:#f44;">DEBIDOS</span>' : '');
+            entry.innerHTML = '<span style="color:#888;">' + new Date().toLocaleTimeString() + '</span> ✅ <strong>' + escapeHtml(businessId) + '</strong> — ' + escapeHtml(receiver) + ' (' + escapeHtml(packages) + ' bultos) — Cliente #' + escapeHtml(cli.idNum) + (shippingType === 'Debidos' ? ' <span style="color:#f44;">DEBIDOS</span>' : '');
             logDiv.prepend(entry);
 
             // Success feedback
@@ -16860,7 +16864,8 @@ window.importTarifas50 = async () => {
     // This does NOT modify any existing code — it's a passive Firestore listener
     if (window.db) {
         console.log('[CONTA] Setting up invoice observer...');
-        db.collection('invoices').orderBy('date', 'desc').limit(1)
+        if (window._contaInvoiceUnsub) { window._contaInvoiceUnsub(); }
+        window._contaInvoiceUnsub = db.collection('invoices').orderBy('date', 'desc').limit(1)
             .onSnapshot(snap => {
                 snap.docChanges().forEach(change => {
                     if (change.type === 'added') {
