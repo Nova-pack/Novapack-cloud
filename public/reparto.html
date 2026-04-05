@@ -97,38 +97,80 @@
 
         // --- PWA Install Prompt ---
         var _deferredInstallPrompt = null;
+        var _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             _deferredInstallPrompt = e;
-            // Show install banner if not already installed
-            if (!window.matchMedia('(display-mode: standalone)').matches) {
-                _showInstallBanner();
-            }
+            if (!_isStandalone) _showInstallBanner('android');
         });
 
-        function _showInstallBanner() {
+        // Show banner on load for iOS (no beforeinstallprompt support)
+        window.addEventListener('load', function() {
+            if (_isStandalone) return; // Already installed
+            setTimeout(function() {
+                if (_isIOS && !window.navigator.standalone) {
+                    _showInstallBanner('ios');
+                } else if (!_deferredInstallPrompt && !_isIOS) {
+                    // Android/desktop but beforeinstallprompt didn't fire yet — show anyway after delay
+                    setTimeout(function() {
+                        if (!_deferredInstallPrompt && !_isStandalone) _showInstallBanner('android');
+                    }, 3000);
+                }
+            }, 2000);
+        });
+
+        function _showInstallBanner(platform) {
             if (document.getElementById('pwa-install-banner')) return;
-            if (localStorage.getItem('pwa-install-dismissed') === 'true') return;
+            if (localStorage.getItem('pwa-install-dismissed-v2')) {
+                var dismissed = parseInt(localStorage.getItem('pwa-install-dismissed-v2'));
+                // Show again after 3 days
+                if (Date.now() - dismissed < 3 * 24 * 60 * 60 * 1000) return;
+            }
+
             var banner = document.createElement('div');
             banner.id = 'pwa-install-banner';
-            banner.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:9999; background:linear-gradient(135deg,#FF4D00,#FF6600); color:white; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,0.5); animation:slideUp 0.3s ease;';
-            banner.innerHTML = '<span style="font-size:1.5rem;">📲</span>' +
-                '<div style="flex:1;"><div style="font-weight:800; font-size:0.9rem;">Instalar App Reparto</div><div style="font-size:0.75rem; opacity:0.85;">Funciona como app nativa, no se cierra sola</div></div>' +
-                '<button id="pwa-install-btn" style="background:white; color:#FF4D00; border:none; padding:8px 16px; border-radius:8px; font-weight:800; font-size:0.82rem; cursor:pointer; white-space:nowrap;">INSTALAR</button>' +
-                '<button id="pwa-install-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.7); font-size:1.2rem; cursor:pointer; padding:4px;">&times;</button>';
+            banner.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:9999; background:linear-gradient(135deg,#FF4D00,#FF6600); color:white; padding:16px; box-shadow:0 -4px 20px rgba(0,0,0,0.5); animation:slideUp 0.3s ease;';
+
+            if (platform === 'ios') {
+                banner.innerHTML = '<div style="display:flex; align-items:center; gap:12px;">' +
+                    '<span style="font-size:1.5rem;">📲</span>' +
+                    '<div style="flex:1;"><div style="font-weight:800; font-size:0.9rem;">Instalar App Reparto</div>' +
+                    '<div style="font-size:0.78rem; opacity:0.9; margin-top:4px;">Pulsa <span style="display:inline-block; border:1px solid white; border-radius:4px; padding:1px 6px; font-size:0.7rem;">⬆ Compartir</span> y luego <b>"Agregar a inicio"</b></div></div>' +
+                    '<button id="pwa-install-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.7); font-size:1.3rem; cursor:pointer; padding:4px; align-self:flex-start;">&times;</button>' +
+                    '</div>';
+            } else {
+                banner.innerHTML = '<div style="display:flex; align-items:center; gap:12px;">' +
+                    '<span style="font-size:1.5rem;">📲</span>' +
+                    '<div style="flex:1;"><div style="font-weight:800; font-size:0.9rem;">Instalar App Reparto</div><div style="font-size:0.75rem; opacity:0.85;">Funciona como app nativa, no se cierra sola</div></div>' +
+                    '<button id="pwa-install-btn" style="background:white; color:#FF4D00; border:none; padding:8px 16px; border-radius:8px; font-weight:800; font-size:0.82rem; cursor:pointer; white-space:nowrap;">INSTALAR</button>' +
+                    '<button id="pwa-install-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.7); font-size:1.3rem; cursor:pointer; padding:4px;">&times;</button>' +
+                    '</div>';
+            }
+
             document.body.appendChild(banner);
-            document.getElementById('pwa-install-btn').onclick = function() {
-                if (_deferredInstallPrompt) {
-                    _deferredInstallPrompt.prompt();
-                    _deferredInstallPrompt.userChoice.then(function(result) {
-                        if (result.outcome === 'accepted') { banner.remove(); }
-                        _deferredInstallPrompt = null;
-                    });
-                }
-            };
+
+            var installBtn = document.getElementById('pwa-install-btn');
+            if (installBtn) {
+                installBtn.onclick = function() {
+                    if (_deferredInstallPrompt) {
+                        _deferredInstallPrompt.prompt();
+                        _deferredInstallPrompt.userChoice.then(function(result) {
+                            if (result.outcome === 'accepted') banner.remove();
+                            _deferredInstallPrompt = null;
+                        });
+                    } else {
+                        // Fallback: show manual instructions
+                        installBtn.textContent = 'Menu ⋮ > Instalar app';
+                        installBtn.style.fontSize = '0.72rem';
+                    }
+                };
+            }
+
             document.getElementById('pwa-install-dismiss').onclick = function() {
                 banner.remove();
-                localStorage.setItem('pwa-install-dismissed', 'true');
+                localStorage.setItem('pwa-install-dismissed-v2', String(Date.now()));
             };
         }
 
