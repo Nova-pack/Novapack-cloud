@@ -2593,6 +2593,18 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     }
 
+    var _cooperOpenFolder = null; // null = show folders, 'route name' = show photos inside folder
+
+    window.cooperOpenFolder = function(route) {
+        _cooperOpenFolder = route;
+        _renderCooperGrid();
+    };
+
+    window.cooperBackToFolders = function() {
+        _cooperOpenFolder = null;
+        _renderCooperGrid();
+    };
+
     function _renderCooperGrid() {
         var grid = document.getElementById('cooper-grid');
         if (!grid) return;
@@ -2600,7 +2612,7 @@ document.addEventListener('DOMContentLoaded', () => {
         var items = _cooperCurrentTab === 'recogida' ? _cooperRecogidas : _cooperEntregas;
         var typeLabel = _cooperCurrentTab === 'recogida' ? 'Recogida' : 'Entrega';
 
-        // Apply route filter
+        // Apply route filter from pills
         if (_cooperRouteFilter !== 'todas') {
             items = items.filter(function(item) { return (item.route || 'Sin ruta') === _cooperRouteFilter; });
         }
@@ -2622,24 +2634,77 @@ document.addEventListener('DOMContentLoaded', () => {
         var routeNames = Object.keys(routeGroups).sort();
 
         var html = '';
-        // If only one route (filtered or single), render flat grid
+
+        // If a folder is open, show its photos with a back button
+        if (_cooperOpenFolder !== null) {
+            var folderItems = routeGroups[_cooperOpenFolder] || [];
+            html += '<div style="grid-column:1/-1; margin-bottom:12px; display:flex; align-items:center; gap:10px;">';
+            html += '<button onclick="cooperBackToFolders()" style="background:#2a2a2d; border:1px solid #444; color:#2196F3; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:6px;">';
+            html += '<span class="material-symbols-outlined" style="font-size:1rem;">arrow_back</span> Volver a carpetas</button>';
+            html += '<span class="material-symbols-outlined" style="color:#FF9800; font-size:1.3rem;">folder_open</span>';
+            html += '<span style="color:#FF9800; font-weight:bold; font-size:1rem;">' + _cooperOpenFolder + '</span>';
+            html += '<span style="color:#666; font-size:0.8rem;">(' + folderItems.length + ' fotos)</span>';
+            html += '</div>';
+            folderItems.forEach(function(item) {
+                html += _renderCooperCard(item);
+            });
+            grid.innerHTML = html;
+            return;
+        }
+
+        // Folder view: show route folders as cards
         if (routeNames.length === 1) {
+            // Single route — show photos directly, no folder needed
             routeGroups[routeNames[0]].forEach(function(item) {
                 html += _renderCooperCard(item);
             });
         } else {
-            // Multiple routes: render grouped sections
+            // Multiple routes — show folder cards
+            html += '<div style="grid-column:1/-1; margin-bottom:6px; display:flex; align-items:center; gap:6px;">';
+            html += '<span class="material-symbols-outlined" style="color:#FF9800; font-size:1rem;">folder_copy</span>';
+            html += '<span style="color:#aaa; font-size:0.82rem;">' + routeNames.length + ' zonas de reparto</span>';
+            html += '</div>';
             routeNames.forEach(function(r) {
                 var rItems = routeGroups[r];
-                html += '<div style="grid-column:1/-1; margin-top:10px; margin-bottom:6px; display:flex; align-items:center; gap:8px;">';
-                html += '<span class="material-symbols-outlined" style="color:#2196F3; font-size:1.1rem;">route</span>';
-                html += '<span style="color:#2196F3; font-weight:bold; font-size:0.9rem;">' + r + '</span>';
-                html += '<span style="color:#666; font-size:0.75rem;">(' + rItems.length + ' fotos)</span>';
-                html += '<div style="flex:1; height:1px; background:#333;"></div>';
-                html += '</div>';
-                rItems.forEach(function(item) {
-                    html += _renderCooperCard(item);
+                // Get preview thumbnail from first photo
+                var thumb = rItems[0] && rItems[0].photoURL ? rItems[0].photoURL : '';
+                // Get latest date
+                var latestDate = '-';
+                if (rItems[0] && rItems[0].createdAt) {
+                    var ld = typeof rItems[0].createdAt.toDate === 'function' ? rItems[0].createdAt.toDate() : new Date(rItems[0].createdAt);
+                    latestDate = ld.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+                }
+                // Count unique drivers
+                var drivers = {};
+                rItems.forEach(function(it) { drivers[it.driverName || 'Desconocido'] = true; });
+                var driverCount = Object.keys(drivers).length;
+
+                html += '<div onclick="cooperOpenFolder(\'' + r.replace(/'/g, "\\'") + '\')" style="background:#1a1a2e; border:1px solid #333; border-radius:12px; cursor:pointer; overflow:hidden; transition:transform 0.2s, border-color 0.2s;" onmouseover="this.style.transform=\'scale(1.03)\'; this.style.borderColor=\'#FF9800\'" onmouseout="this.style.transform=\'scale(1)\'; this.style.borderColor=\'#333\'">';
+                // Folder header with thumbnail strip
+                html += '<div style="position:relative; height:100px; background:#111; overflow:hidden; display:flex;">';
+                // Show up to 3 thumbnails
+                var previews = rItems.slice(0, 3);
+                previews.forEach(function(p, idx) {
+                    var pUrl = p.photoURL || '';
+                    html += '<img src="' + pUrl + '" style="flex:1; object-fit:cover; height:100%; opacity:' + (idx === 0 ? '0.8' : '0.5') + '; border-right:1px solid #222;" loading="lazy">';
                 });
+                // Folder icon overlay
+                html += '<div style="position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.4);">';
+                html += '<span class="material-symbols-outlined" style="font-size:2.5rem; color:#FF9800;">folder</span>';
+                html += '</div>';
+                html += '</div>';
+                // Folder info
+                html += '<div style="padding:12px;">';
+                html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">';
+                html += '<span class="material-symbols-outlined" style="font-size:1.1rem; color:#2196F3;">route</span>';
+                html += '<span style="color:#eee; font-weight:bold; font-size:0.95rem;">' + r + '</span>';
+                html += '</div>';
+                html += '<div style="display:flex; gap:12px; font-size:0.78rem; color:#888;">';
+                html += '<span>📷 ' + rItems.length + ' fotos</span>';
+                html += '<span>👤 ' + driverCount + ' conductor' + (driverCount > 1 ? 'es' : '') + '</span>';
+                html += '<span>📅 ' + latestDate + '</span>';
+                html += '</div>';
+                html += '</div></div>';
             });
         }
 
