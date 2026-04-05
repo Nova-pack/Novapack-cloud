@@ -711,6 +711,8 @@ function renderTicketItem(t, list) {
     let badgeText = 'NUEVO';
     if (isPendingDelete) { badgeClass = 'billed'; badgeText = '🚨 PEND. ANULAR'; }
     else if (isBilled) { badgeClass = 'billed'; badgeText = '🔒 FACTURADO'; }
+    else if (t.status === 'Incidencia') { badgeClass = 'billed'; badgeText = '⚠️ INCIDENCIA'; }
+    else if (t.status === 'Devuelto') { badgeClass = 'billed'; badgeText = '↩️ DEVUELTO'; }
     else if (isDelivered) { badgeClass = 'delivered'; badgeText = '✅ ENTREGADO'; }
     else if (t.printed) { badgeClass = 'printed'; badgeText = 'IMPRESO'; }
 
@@ -1077,6 +1079,52 @@ async function loadEditor(t) {
     if (t.lastModifiedBy === 'admin' && t.lastModifiedNote) {
         document.getElementById('editor-title').innerHTML = `<span style="color:#2196F3; font-weight:900;">ℹ️ ALBARÁN MODIFICADO POR CENTRAL</span>`;
         document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#2196F3; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">MODIFICADO</span>`;
+    }
+
+    // Show incident info banner (informative, read-only)
+    let incidentBanner = document.getElementById('incident-info-banner');
+    if (!incidentBanner) {
+        incidentBanner = document.createElement('div');
+        incidentBanner.id = 'incident-info-banner';
+        const editorTitle = document.getElementById('editor-title');
+        editorTitle.parentNode.insertBefore(incidentBanner, editorTitle.nextSibling);
+    }
+    if (t.incidentReason || t.status === 'Incidencia' || t.status === 'Devuelto') {
+        const incColor = t.status === 'Devuelto' ? '#9C27B0' : '#F44336';
+        const incIcon = t.status === 'Devuelto' ? '↩️' : '⚠️';
+        const incLabel = t.status === 'Devuelto' ? 'DEVUELTO' : 'INCIDENCIA';
+        let reportInfo = '';
+        if (t.incidentReportedBy) {
+            let dateInfo = '';
+            if (t.incidentReportedAt) {
+                const rd = t.incidentReportedAt.toDate ? t.incidentReportedAt.toDate() : new Date(t.incidentReportedAt);
+                dateInfo = ' — ' + rd.toLocaleDateString('es-ES', { day:'2-digit', month:'short', year:'numeric' }) + ' ' + rd.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            }
+            reportInfo = '<div style="font-size:0.72rem; color:' + incColor + '; margin-top:6px; opacity:0.8;">Reportado por: ' + escapeHtml(t.incidentReportedBy) + dateInfo + '</div>';
+        }
+        let photoHtml = '';
+        if (t.incidentPhotoURL) {
+            photoHtml = '<div style="margin-top:8px;"><img src="' + escapeHtml(t.incidentPhotoURL) + '" style="max-width:100%; max-height:200px; border-radius:6px; border:1px solid ' + incColor + '; cursor:pointer;" id="incident-banner-photo"></div>';
+        }
+        incidentBanner.innerHTML =
+            '<div style="background:rgba(' + (t.status === 'Devuelto' ? '156,39,176' : '244,67,54') + ',0.1); border:1px solid ' + incColor + '; border-radius:8px; padding:12px 16px; margin:10px 0;">' +
+                '<div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">' +
+                    '<span style="font-size:1.1rem;">' + incIcon + '</span>' +
+                    '<span style="color:' + incColor + '; font-weight:900; font-size:0.85rem;">' + incLabel + '</span>' +
+                '</div>' +
+                '<div style="color:#ddd; font-size:0.85rem; line-height:1.5;">' + escapeHtml(t.incidentReason || 'Sin detalle') + '</div>' +
+                reportInfo +
+                photoHtml +
+            '</div>';
+        incidentBanner.style.display = 'block';
+        // Photo click handler
+        setTimeout(function() {
+            var ph = document.getElementById('incident-banner-photo');
+            if (ph) ph.addEventListener('click', function() { window.open(this.src, '_blank'); });
+        }, 50);
+    } else {
+        incidentBanner.innerHTML = '';
+        incidentBanner.style.display = 'none';
     }
 
     // Final lock state if billed or pending delete
