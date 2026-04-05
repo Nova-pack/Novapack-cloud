@@ -1423,7 +1423,7 @@ async function addPackageRow(data = null) {
         </div>
         <div style="width: 70px;">
             <label style="font-size:0.6rem; color:var(--text-dim); font-weight:600;">PESO</label>
-            <input type="number" class="pkg-weight form-control" value="" step="0.1" placeholder="0.0" style="text-align:center; padding:4px;">
+            <input type="number" class="pkg-weight form-control" value="5" step="0.1" placeholder="5.0" style="text-align:center; padding:4px;">
         </div>
         <div style="flex:1;">
             <label style="font-size:0.65rem; color:var(--text-dim);">TAMAÑO / TIPO</label>
