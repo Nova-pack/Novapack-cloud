@@ -41,7 +41,7 @@ function requestNotificationPermission() {
     }
 }
 
-function sendNotification(title, body) {
+function sendNotification(title, body, onTapCallback) {
     // 1. In-app toast (longer duration for visibility)
     showToast('📦 ' + body, 'success', 8000);
 
@@ -102,8 +102,8 @@ function sendNotification(title, body) {
         var banner = document.createElement('div');
         banner.id = 'new-delivery-banner';
         banner.style.cssText = 'position:fixed; top:0; left:0; width:100%; z-index:9998; background:linear-gradient(135deg,#FF4D00,#FF6600); color:white; padding:14px 20px; font-weight:800; font-size:0.9rem; text-align:center; cursor:pointer; box-shadow:0 4px 20px rgba(255,77,0,0.5); animation:slideDown 0.3s ease;';
-        banner.innerHTML = '📦 <span style="text-decoration:underline;">' + title + '</span> — ' + body + ' <span style="opacity:0.7; font-size:0.75rem; margin-left:10px;">(toca para cerrar)</span>';
-        banner.onclick = function() { banner.remove(); };
+        banner.innerHTML = '\ud83d\udce6 <span style="text-decoration:underline;">' + title + '</span> \u2014 ' + body + ' <span style="opacity:0.7; font-size:0.75rem; margin-left:10px;">(toca para ver)</span>';
+        banner.onclick = function() { banner.remove(); if (typeof onTapCallback === 'function') onTapCallback(); };
         document.body.appendChild(banner);
         // Auto-remove after 20s
         setTimeout(function() { if (banner.parentNode) banner.remove(); }, 20000);
@@ -791,7 +791,20 @@ function initApp() {
                     if (!a.read && !knownAlertIds.has(a._id)) {
                         sendNotification(
                             a.title || '\ud83d\udce2 AVISO DE ADMIN',
-                            a.body || ''
+                            a.body || '',
+                            function() {
+                                // On banner tap: open alerts panel
+                                var panel = document.getElementById('alerts-panel');
+                                var arrow = document.getElementById('alerts-panel-arrow');
+                                if (panel && panel.style.display === 'none') {
+                                    panel.style.display = 'block';
+                                    if (arrow) arrow.style.transform = 'rotate(180deg)';
+                                    _renderAlertsPanel();
+                                }
+                                // Scroll to alerts button
+                                var btn = document.getElementById('btn-alerts-toggle');
+                                if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
                         );
                         // Mark as read (seen) but NOT completed
                         db.collection('driver_alerts').doc(a._id).update({ read: true })
@@ -2042,7 +2055,65 @@ function initApp() {
             }
         }
 
-        showToast('✅ Mapa completo: ' + geocoded + ' ubicadas' + (failed > 0 ? ', ' + failed + ' sin localizar' : ''), failed > 0 ? 'warning' : 'success');
+        showToast('\u2705 Mapa completo: ' + geocoded + ' ubicadas' + (failed > 0 ? ', ' + failed + ' sin localizar' : ''), failed > 0 ? 'warning' : 'success');
+
+        // --- ADD PICKUP/ALERT MARKERS ---
+        if (_driverAlerts && _driverAlerts.length > 0) {
+            var alertsWithAddr = _driverAlerts.filter(function(a) { return a.address; });
+            if (alertsWithAddr.length > 0) {
+                showToast('\ud83d\udce5 Cargando ' + alertsWithAddr.length + ' recogida(s) en mapa...', 'info');
+            }
+            for (var ai = 0; ai < alertsWithAddr.length; ai++) {
+                var alert = alertsWithAddr[ai];
+                var alertCoords = null;
+
+                // Geocode the alert address
+                var alertAddr = alert.address + ', Espa\u00f1a';
+                if (geocodeCache[alertAddr]) {
+                    alertCoords = geocodeCache[alertAddr];
+                } else {
+                    try {
+                        var ares = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(alertAddr) + '&limit=1&countrycodes=es');
+                        var adata = await ares.json();
+                        if (adata.length > 0) {
+                            alertCoords = { lat: parseFloat(adata[0].lat), lon: parseFloat(adata[0].lon) };
+                            geocodeCache[alertAddr] = alertCoords;
+                        }
+                    } catch(e) { console.warn('Alert geocode error:', e); }
+                    if (ai < alertsWithAddr.length - 1) {
+                        await new Promise(function(resolve) { setTimeout(resolve, 350); });
+                    }
+                }
+
+                if (alertCoords) {
+                    var aTypeIcon = alert.type === 'recogida' ? '\ud83d\udce5' : (alert.type === 'entrega_urgente' ? '\ud83d\udea8' : '\ud83d\udce2');
+                    var aColor = alert.type === 'recogida' ? '#FF9800' : (alert.type === 'entrega_urgente' ? '#FF3B30' : '#2196F3');
+                    var aLabel = alert.type === 'recogida' ? 'RECOGIDA' : (alert.type === 'entrega_urgente' ? 'URGENTE' : 'AVISO');
+                    var alertIcon = L.divIcon({
+                        className: '',
+                        html: '<div style="background:' + aColor + '; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.1rem; border:3px solid white; box-shadow:0 2px 10px ' + aColor + '88; animation:pulse 1.5s infinite;">' + aTypeIcon + '</div>',
+                        iconSize: [34, 34],
+                        iconAnchor: [17, 17],
+                        popupAnchor: [0, -20]
+                    });
+                    var aMarker = L.marker([alertCoords.lat, alertCoords.lon], { icon: alertIcon }).addTo(leafletMap);
+                    aMarker.bindPopup(
+                        '<div style="min-width:180px;">' +
+                        '<b style="font-size:0.9rem; color:' + aColor + ';">' + aTypeIcon + ' ' + aLabel + '</b><br>' +
+                        '<span style="color:#333;">' + alert.address + '</span><br>' +
+                        (alert.notes ? '<span style="color:#666; font-size:0.85em;">\ud83d\udcdd ' + alert.notes + '</span><br>' : '') +
+                        '<a href="https://www.google.com/maps/search/' + encodeURIComponent(alert.address) + '" target="_blank" style="color:#1a73e8; font-weight:700; font-size:0.85em;">Navegar \u2192</a>' +
+                        '</div>'
+                    );
+                    mapMarkers.push(aMarker);
+                }
+            }
+            // Re-fit bounds to include alert markers
+            if (mapMarkers.length > 0) {
+                var allGroup = L.featureGroup(mapMarkers);
+                leafletMap.fitBounds(allGroup.getBounds().pad(0.1));
+            }
+        }
     }
 
     window.addEventListener('resize', function() {
