@@ -186,6 +186,13 @@
                     </div>
                 </div>
 
+                <div style="margin-top:15px; padding:12px; background:rgba(206,147,216,0.08); border:1px solid rgba(206,147,216,0.3); border-radius:8px; position:relative;">
+                    <label style="font-size:0.75rem; color:#CE93D8; text-transform:uppercase; letter-spacing:1px; font-weight:700;">Zonas de Cobertura <span style="color:#888; font-size:0.65rem; font-weight:400; text-transform:none;">(CPs y/o localidades separados por comas)</span></label>
+                    <input id="phone-edit-zones" value="${(existing?.coverageZones || '').replace(/"/g, '&quot;')}" placeholder="Escribe provincia, localidad o CP..." autocomplete="off" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px;">
+                    <div id="phone-zones-suggestions" style="display:none; position:absolute; left:0; right:0; max-height:200px; overflow-y:auto; background:#1e1e2e; border:1px solid #CE93D8; border-top:none; border-radius:0 0 8px 8px; z-index:10; box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+                    <div style="color:#888; font-size:0.7rem; margin-top:4px;">Escribe una provincia para añadir todos sus CPs, o una localidad/CP para buscar</div>
+                </div>
+
                 <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px; border-top:1px solid #3c3c3c; padding-top:15px;">
                     <button onclick="document.getElementById('modal-edit-phone').remove()" style="background:#333; border:1px solid #555; color:#ccc; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px;">Cancelar</button>
                     <button onclick="savePhoneRoute()" style="background:#FF9800; border:none; color:#fff; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:5px;">
@@ -197,6 +204,9 @@
 
         document.body.appendChild(modal);
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+        // Initialize coverage zones autocomplete
+        _initZonesAutocomplete();
     };
 
     window.savePhoneRoute = async () => {
@@ -208,6 +218,7 @@
             driverName2: document.getElementById('phone-edit-d2').value.trim(),
             driverName3: document.getElementById('phone-edit-d3').value.trim(),
             driverName4: document.getElementById('phone-edit-d4').value.trim(),
+            coverageZones: (document.getElementById('phone-edit-zones')?.value || '').trim(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
 
@@ -290,6 +301,136 @@
         await _origLoad();
         loadMasterPins();
     };
+
+    // ============ COVERAGE ZONES AUTOCOMPLETE ============
+
+    var _czProvMap = {'01':'ALAVA','02':'ALBACETE','03':'ALICANTE','04':'ALMERIA','05':'AVILA','06':'BADAJOZ','07':'BALEARES','08':'BARCELONA','09':'BURGOS','10':'CACERES','11':'CADIZ','12':'CASTELLON','13':'CIUDAD REAL','14':'CORDOBA','15':'A CORUÑA','16':'CUENCA','17':'GIRONA','18':'GRANADA','19':'GUADALAJARA','20':'GUIPUZKOA','21':'HUELVA','22':'HUESCA','23':'JAEN','24':'LEON','25':'LLEIDA','26':'LA RIOJA','27':'LUGO','28':'MADRID','29':'MALAGA','30':'MURCIA','31':'NAVARRA','32':'OURENSE','33':'ASTURIAS','34':'PALENCIA','35':'LAS PALMAS','36':'PONTEVEDRA','37':'SALAMANCA','38':'TENERIFE','39':'CANTABRIA','40':'SEGOVIA','41':'SEVILLA','42':'SORIA','43':'TARRAGONA','44':'TERUEL','45':'TOLEDO','46':'VALENCIA','47':'VALLADOLID','48':'VIZCAYA','49':'ZAMORA','50':'ZARAGOZA'};
+    var _czNameToPrefix = {};
+    Object.keys(_czProvMap).forEach(function(k) { _czNameToPrefix[_czProvMap[k]] = k; });
+
+    function _initZonesAutocomplete() {
+        var inp = document.getElementById('phone-edit-zones');
+        var sugg = document.getElementById('phone-zones-suggestions');
+        if (!inp || !sugg) return;
+
+        var timer = null;
+        inp.addEventListener('input', function() {
+            clearTimeout(timer);
+            timer = setTimeout(function() { _czDoSearch(inp, sugg); }, 250);
+        });
+        inp.addEventListener('focus', function() { if (inp.value.trim()) _czDoSearch(inp, sugg); });
+        document.addEventListener('click', function(e) {
+            if (!sugg.contains(e.target) && e.target !== inp) sugg.style.display = 'none';
+        });
+    }
+
+    function _czGetChunk(inp) {
+        var val = inp.value;
+        var lastComma = val.lastIndexOf(',');
+        return (lastComma === -1 ? val : val.substring(lastComma + 1)).trim();
+    }
+
+    function _czAppend(inp, sugg, text) {
+        var val = inp.value;
+        var lastComma = val.lastIndexOf(',');
+        var before = lastComma === -1 ? '' : val.substring(0, lastComma + 1) + ' ';
+        inp.value = before + text + ', ';
+        sugg.style.display = 'none';
+        inp.focus();
+    }
+
+    function _czDoSearch(inp, sugg) {
+        var chunk = _czGetChunk(inp).toLowerCase();
+        if (chunk.length < 2) { sugg.style.display = 'none'; return; }
+
+        var results = [];
+
+        // 1. Province names
+        Object.keys(_czNameToPrefix).forEach(function(prov) {
+            if (prov.toLowerCase().indexOf(chunk) !== -1) {
+                results.push({ type: 'province', label: prov, prefix: _czNameToPrefix[prov], desc: 'Añadir todos los CPs ' + _czNameToPrefix[prov] + 'xxx' });
+            }
+        });
+
+        // 2. Localities from PhantomDirectory
+        if (window.isPhantomLoaded && window.PhantomDirectory && chunk.length >= 3) {
+            var seen = {};
+            window.PhantomDirectory.forEach(function(c) {
+                if (!c.localidad || !c.cp) return;
+                var loc = c.localidad.trim().toLowerCase();
+                var key = c.cp + '_' + loc;
+                if (seen[key]) return;
+                if (loc.indexOf(chunk) !== -1 || c.cp.indexOf(chunk) !== -1) {
+                    seen[key] = true;
+                    results.push({ type: 'locality', label: c.localidad.trim(), cp: c.cp, desc: 'CP ' + c.cp + ' — ' + (_czProvMap[c.cp.substring(0, 2)] || '') });
+                }
+            });
+        }
+
+        // 3. Partial CP number
+        if (/^\d{2,4}$/.test(chunk) && window.isPhantomLoaded && window.PhantomDirectory) {
+            var seenCp = {};
+            window.PhantomDirectory.forEach(function(c) {
+                if (!c.cp) return;
+                if (c.cp.startsWith(chunk) && !seenCp[c.cp]) {
+                    seenCp[c.cp] = true;
+                    results.push({ type: 'cp', label: c.cp, desc: (c.localidad || '') + ' — ' + (_czProvMap[c.cp.substring(0, 2)] || '') });
+                }
+            });
+        }
+
+        // Deduplicate and limit
+        var unique = [], keys = {};
+        results.forEach(function(r) {
+            var k = r.type + '_' + (r.cp || r.prefix || r.label);
+            if (!keys[k]) { keys[k] = true; unique.push(r); }
+        });
+        results = unique.slice(0, 15);
+
+        if (results.length === 0) { sugg.style.display = 'none'; return; }
+
+        function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+        var html = '';
+        results.forEach(function(r, i) {
+            var bg = i % 2 === 0 ? '#1e1e2e' : '#232338';
+            if (r.type === 'province') {
+                html += '<div data-cz-province="' + r.prefix + '" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
+                html += '<div style="color:#CE93D8; font-size:0.82rem; font-weight:700;">📍 ' + esc(r.label) + '</div>';
+                html += '<div style="color:#888; font-size:0.7rem;">' + esc(r.desc) + '</div></div>';
+            } else {
+                html += '<div data-cz-val="' + esc(r.cp || r.label) + '" style="padding:8px 12px; cursor:pointer; background:' + bg + '; border-bottom:1px solid #2d2d44;" onmouseover="this.style.background=\'#2d2d5a\'" onmouseout="this.style.background=\'' + bg + '\'">';
+                html += '<div style="color:#eee; font-size:0.82rem;">' + esc(r.label) + '</div>';
+                html += '<div style="color:#888; font-size:0.7rem;">' + esc(r.desc) + '</div></div>';
+            }
+        });
+        sugg.innerHTML = html;
+        sugg.style.display = 'block';
+
+        // Bind clicks
+        sugg.querySelectorAll('[data-cz-province]').forEach(function(el) {
+            el.onclick = function() {
+                var prefix = el.getAttribute('data-cz-province');
+                var cps = {};
+                if (window.isPhantomLoaded && window.PhantomDirectory) {
+                    window.PhantomDirectory.forEach(function(c) {
+                        if (c.cp && c.cp.substring(0, 2) === prefix) cps[c.cp] = true;
+                    });
+                }
+                var cpList = Object.keys(cps).sort();
+                if (cpList.length === 0) { _czAppend(inp, sugg, prefix + '000'); return; }
+                var val = inp.value;
+                var lastComma = val.lastIndexOf(',');
+                var before = lastComma === -1 ? '' : val.substring(0, lastComma + 1) + ' ';
+                inp.value = before + cpList.join(', ') + ', ';
+                sugg.style.display = 'none';
+                inp.focus();
+            };
+        });
+        sugg.querySelectorAll('[data-cz-val]').forEach(function(el) {
+            el.onclick = function() { _czAppend(inp, sugg, el.getAttribute('data-cz-val')); };
+        });
+    }
 
     console.log('[Phones Manager] ✅ Módulo cargado');
 })();
