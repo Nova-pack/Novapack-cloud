@@ -110,7 +110,19 @@ function sendNotification(title, body) {
     } catch (e) {}
 }
 
-// --- TOAST SYSTEM ---
+// --- TOAST SYSTEM (with sound & vibration) ---
+var _toastAudioCtx = null;
+function _toastBeep(freq, ms) {
+    try {
+        if (!_toastAudioCtx) _toastAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = _toastAudioCtx.createOscillator();
+        var gain = _toastAudioCtx.createGain();
+        osc.connect(gain); gain.connect(_toastAudioCtx.destination);
+        osc.frequency.value = freq;
+        gain.gain.value = 0.3;
+        osc.start(); osc.stop(_toastAudioCtx.currentTime + (ms / 1000));
+    } catch(e) {}
+}
 function showToast(message, type, duration) {
     type = type || 'info';
     duration = duration || 3000;
@@ -121,10 +133,52 @@ function showToast(message, type, duration) {
     var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     t.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + message + '</span>';
     container.appendChild(t);
+
+    // Sound + vibration by type
+    if (type === 'success') { _toastBeep(880, 150); }
+    else if (type === 'error') { _toastBeep(300, 300); }
+    else if (type === 'warning') { _toastBeep(600, 200); }
+    if (type === 'error' || type === 'warning') {
+        try { navigator.vibrate && navigator.vibrate(type === 'error' ? [200, 100, 200] : [150]); } catch(e) {}
+    }
+
     setTimeout(function() {
         t.classList.add('hide');
         setTimeout(function() { t.remove(); }, 300);
     }, duration);
+}
+
+// --- IMAGE COMPRESSION (resize + compress before upload) ---
+function compressImage(file, maxWidth, quality) {
+    maxWidth = maxWidth || 1200;
+    quality = quality || 0.65;
+    return new Promise(function(resolve) {
+        // If file is small enough (<500KB), skip compression
+        if (file.size < 500000) { resolve(file); return; }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var img = new Image();
+            img.onload = function() {
+                var w = img.width, h = img.height;
+                if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+                var canvas = document.createElement('canvas');
+                canvas.width = w; canvas.height = h;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                canvas.toBlob(function(blob) {
+                    if (blob && blob.size < file.size) {
+                        resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+                    } else {
+                        resolve(file); // Original smaller, keep it
+                    }
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = function() { resolve(file); };
+            img.src = e.target.result;
+        };
+        reader.onerror = function() { resolve(file); };
+        reader.readAsDataURL(file);
+    });
 }
 
 // --- HELPERS ---
@@ -1115,9 +1169,9 @@ function initApp() {
             // Upload photo if present
             var photoFile = document.getElementById('incident-photo-input').files[0];
             if (photoFile) {
-                var ext = photoFile.name.split('.').pop() || 'jpg';
+                photoFile = await compressImage(photoFile);
                 var docId = d._id || d.docId;
-                var photoRef = storage.ref('incidents/' + docId + '/photo.' + ext);
+                var photoRef = storage.ref('incidents/' + docId + '/photo.jpg');
                 await photoRef.put(photoFile, { contentType: photoFile.type });
                 updateData.incidentPhotoURL = await photoRef.getDownloadURL();
             }
@@ -1532,8 +1586,8 @@ function initApp() {
             try {
                 var photoFile = document.getElementById('confirm-photo').files[0];
                 if (photoFile) {
-                    var ext = photoFile.name.split('.').pop() || 'jpg';
-                    var photoRef = storage.ref('deliveries/' + docId + '/photo.' + ext);
+                    photoFile = await compressImage(photoFile);
+                    var photoRef = storage.ref('deliveries/' + docId + '/photo.jpg');
                     await withTimeout(photoRef.put(photoFile, { contentType: photoFile.type }), 20000, 'Foto');
                     deliveryData.photoURL = await withTimeout(photoRef.getDownloadURL(), 5000, 'Foto URL');
                 }
@@ -1951,12 +2005,13 @@ function initApp() {
 
         var sendBtn = document.getElementById('btn-cooper-send');
         sendBtn.disabled = true;
-        sendBtn.textContent = 'Subiendo...';
+        sendBtn.textContent = 'Comprimiendo...';
 
         try {
+            photoFile = await compressImage(photoFile);
+            sendBtn.textContent = 'Subiendo...';
             var ts = Date.now();
-            var ext = photoFile.name.split('.').pop() || 'jpg';
-            var storagePath = 'cooper/' + _cooperType + '/' + ts + '.' + ext;
+            var storagePath = 'cooper/' + _cooperType + '/' + ts + '.jpg';
             var photoRef = storage.ref(storagePath);
             await photoRef.put(photoFile, { contentType: photoFile.type });
             var photoURL = await photoRef.getDownloadURL();
