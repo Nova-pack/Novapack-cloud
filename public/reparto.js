@@ -29,6 +29,97 @@ var isFirstSnapshot = true; // Skip notifications on initial load
 var notificationSound = null;
 var _isMasterPinSession = false; // Flag to prevent onAuthStateChanged interference
 
+// --- GPS LIVE TRACKING ---
+var _gpsWatchId = null;
+var _gpsLastSent = 0;
+var _GPS_SEND_INTERVAL = 30000; // Send position every 30 seconds
+var _wakeLockSentinel = null;
+
+function startGPSTracking() {
+    if (_gpsWatchId !== null) return; // Already tracking
+    if (!navigator.geolocation) {
+        console.warn('[GPS-TRACK] Geolocation not available');
+        return;
+    }
+
+    console.log('[GPS-TRACK] Starting live GPS tracking...');
+
+    _gpsWatchId = navigator.geolocation.watchPosition(
+        function(pos) {
+            var now = Date.now();
+            if (now - _gpsLastSent < _GPS_SEND_INTERVAL) return; // Throttle
+            _gpsLastSent = now;
+
+            var locationData = {
+                phone: currentDriverPhone,
+                driverName: currentDriverName,
+                routeLabel: currentRouteLabel,
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: Math.round(pos.coords.accuracy),
+                speed: pos.coords.speed !== null ? Math.round(pos.coords.speed * 3.6) : null, // m/s → km/h
+                heading: pos.coords.heading,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                online: true
+            };
+
+            var docId = currentDriverPhone.replace(/[^a-zA-Z0-9]/g, '_');
+            db.collection('driver_locations').doc(docId).set(locationData, { merge: true })
+                .then(function() { console.log('[GPS-TRACK] Position sent:', locationData.lat.toFixed(4), locationData.lng.toFixed(4)); })
+                .catch(function(e) { console.warn('[GPS-TRACK] Error sending position:', e.message); });
+        },
+        function(err) {
+            console.warn('[GPS-TRACK] GPS error:', err.message);
+        },
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+    );
+
+    // Wake Lock to keep GPS alive while screen is on
+    requestGPSWakeLock();
+}
+
+function stopGPSTracking() {
+    if (_gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = null;
+        console.log('[GPS-TRACK] Stopped GPS tracking.');
+    }
+
+    // Mark driver as offline in Firestore
+    if (currentDriverPhone) {
+        var docId = currentDriverPhone.replace(/[^a-zA-Z0-9]/g, '_');
+        db.collection('driver_locations').doc(docId).update({
+            online: false,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(function() {});
+    }
+
+    releaseGPSWakeLock();
+}
+
+function requestGPSWakeLock() {
+    if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(function(sentinel) {
+            _wakeLockSentinel = sentinel;
+            sentinel.addEventListener('release', function() { _wakeLockSentinel = null; });
+        }).catch(function(e) { console.warn('[GPS-TRACK] Wake Lock denied:', e.message); });
+    }
+}
+
+function releaseGPSWakeLock() {
+    if (_wakeLockSentinel) {
+        _wakeLockSentinel.release().catch(function() {});
+        _wakeLockSentinel = null;
+    }
+}
+
+// Re-acquire wake lock when page becomes visible again
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && _gpsWatchId !== null) {
+        requestGPSWakeLock();
+    }
+});
+
 function escapeHtml(str) {
     if (str == null) return '';
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
@@ -583,6 +674,7 @@ function initApp() {
         startDeliveryListener();
         startPickupListener();
         startDriverAlertListener();
+        startGPSTracking();
         requestNotificationPermission();
         if (typeof requestWakeLock === 'function') requestWakeLock();
         showToast('Bienvenido, ' + currentDriverName, 'success');
@@ -591,6 +683,7 @@ function initApp() {
     // --- LOGOUT ---
     document.getElementById('btn-logout').addEventListener('click', function() {
         if (confirm('¿Cerrar sesión?')) {
+            stopGPSTracking();
             stopScanner();
             // Unsubscribe from Firestore listeners
             if (unsubscribe) { unsubscribe(); unsubscribe = null; }

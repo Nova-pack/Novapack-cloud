@@ -1178,6 +1178,9 @@ async function loadEditor(t) {
         incidentBanner.style.display = 'none';
     }
 
+    // GPS TRACKING BANNER — Show "Track my shipment" when driver is assigned and not delivered
+    _renderTrackingBanner(t);
+
     // Final lock state if billed or pending delete
     if (isLocked) {
         if (isPendingDelete) {
@@ -5185,6 +5188,124 @@ async function undoLastExcelImport() {
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(updateUndoExcelButton, 2000);
 });
+
+// ═══════════════════════════════════════════════════
+// GPS TRACKING — Client-side "Track my shipment" map
+// ═══════════════════════════════════════════════════
+let _trackingMap = null;
+let _trackingMarker = null;
+let _trackingUnsub = null;
+
+function _renderTrackingBanner(t) {
+    let banner = document.getElementById('gps-tracking-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'gps-tracking-banner';
+        const anchor = document.getElementById('incident-info-banner');
+        if (anchor) anchor.parentNode.insertBefore(banner, anchor.nextSibling);
+        else {
+            const editorEl = document.getElementById('editor-title');
+            if (editorEl) editorEl.parentNode.parentNode.appendChild(banner);
+        }
+    }
+
+    // Cleanup previous listener
+    if (_trackingUnsub) { _trackingUnsub(); _trackingUnsub = null; }
+
+    const isDelivered = t.delivered || t.status === 'Entregado';
+    const hasDriver = !!(t.driverPhone);
+
+    if (!hasDriver || isDelivered) {
+        banner.innerHTML = '';
+        banner.style.display = 'none';
+        return;
+    }
+
+    banner.style.display = 'block';
+    banner.innerHTML =
+        '<div style="background:rgba(33,150,243,0.08); border:1px solid #2196F3; border-radius:10px; padding:12px 16px; margin:10px 0;">' +
+            '<div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" id="tracking-toggle">' +
+                '<div style="display:flex; align-items:center; gap:8px;">' +
+                    '<span style="font-size:1.1rem;">📍</span>' +
+                    '<span style="color:#2196F3; font-weight:700; font-size:0.85rem;">Seguimiento en Vivo</span>' +
+                    '<span id="tracking-status-dot" style="width:8px; height:8px; border-radius:50%; background:#666; display:inline-block;"></span>' +
+                '</div>' +
+                '<span style="color:#2196F3; font-size:0.75rem; font-weight:600;" id="tracking-toggle-label">▼ Mostrar</span>' +
+            '</div>' +
+            '<div id="tracking-map-container" style="height:0; overflow:hidden; transition:height 0.3s ease; border-radius:8px; margin-top:0;"></div>' +
+            '<div id="tracking-info" style="display:none; font-size:0.72rem; color:#aaa; margin-top:6px; text-align:center;"></div>' +
+        '</div>';
+
+    document.getElementById('tracking-toggle').onclick = function() {
+        var container = document.getElementById('tracking-map-container');
+        var label = document.getElementById('tracking-toggle-label');
+        if (container.style.height === '0px' || container.style.height === '0') {
+            container.style.height = '250px';
+            container.style.marginTop = '10px';
+            label.textContent = '▲ Ocultar';
+            setTimeout(function() { _initTrackingMap(t.driverPhone); }, 350);
+        } else {
+            container.style.height = '0';
+            container.style.marginTop = '0';
+            label.textContent = '▼ Mostrar';
+            if (_trackingUnsub) { _trackingUnsub(); _trackingUnsub = null; }
+        }
+    };
+}
+
+function _initTrackingMap(driverPhone) {
+    var mapEl = document.getElementById('tracking-map-container');
+    if (!mapEl) return;
+
+    if (!_trackingMap) {
+        _trackingMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([40.4168, -3.7038], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_trackingMap);
+    } else {
+        _trackingMap.invalidateSize();
+    }
+
+    var docId = driverPhone.replace(/[^a-zA-Z0-9]/g, '_');
+
+    if (_trackingUnsub) _trackingUnsub();
+    _trackingUnsub = db.collection('driver_locations').doc(docId).onSnapshot(function(snap) {
+        var d = snap.data();
+        var dot = document.getElementById('tracking-status-dot');
+        var info = document.getElementById('tracking-info');
+
+        if (!d || !d.lat || !d.lng) {
+            if (dot) dot.style.background = '#666';
+            if (info) { info.style.display = 'block'; info.textContent = 'El repartidor aún no ha activado el GPS.'; }
+            return;
+        }
+
+        var updatedAt = d.updatedAt ? d.updatedAt.toDate() : null;
+        var minutesAgo = updatedAt ? Math.round((Date.now() - updatedAt.getTime()) / 60000) : null;
+        var isLive = d.online && minutesAgo !== null && minutesAgo < 5;
+
+        if (dot) dot.style.background = isLive ? '#4CAF50' : '#FF9800';
+
+        var speedText = d.speed !== null && d.speed > 0 ? d.speed + ' km/h' : 'Parado';
+        var timeText = minutesAgo !== null ? (minutesAgo < 1 ? 'Ahora mismo' : 'Hace ' + minutesAgo + ' min') : '';
+        if (info) {
+            info.style.display = 'block';
+            info.innerHTML = (isLive ? '🟢 ' : '🟡 ') + '<strong>' + escapeHtml(d.driverName || 'Repartidor') + '</strong> · ' + speedText + ' · ' + timeText;
+        }
+
+        var pos = [d.lat, d.lng];
+        if (_trackingMarker) {
+            _trackingMarker.setLatLng(pos);
+        } else {
+            var icon = L.divIcon({
+                className: '',
+                html: '<div style="background:#2196F3; width:36px; height:36px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; font-size:16px;">🚚</div>',
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+            });
+            _trackingMarker = L.marker(pos, { icon: icon }).addTo(_trackingMap);
+        }
+        _trackingMap.setView(pos, Math.max(_trackingMap.getZoom(), 14));
+    });
+}
 
 // --- GLOBAL EXPORTS FOR HTML BINDING ---
 window.handleFormSubmit = handleFormSubmit;

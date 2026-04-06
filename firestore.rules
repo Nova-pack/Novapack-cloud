@@ -100,6 +100,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ─── DRIVER: GPS live tracking (auth write own, auth read all) ───
+    match /driver_locations/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth();
+    }
+
     // ─── DRIVER: alerts, pickups, cooper photos (auth read/write) ───
     match /driver_alerts/{docId} {
       allow read, write: if isAuth();
