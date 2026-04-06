@@ -5258,10 +5258,16 @@ function _initTrackingMap(driverPhone) {
     if (!mapEl) return;
 
     if (!_trackingMap) {
-        _trackingMap = L.map(mapEl, { zoomControl: true, attributionControl: false }).setView([40.4168, -3.7038], 12);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_trackingMap);
+        _trackingMap = new google.maps.Map(mapEl, {
+            center: { lat: 40.4168, lng: -3.7038 },
+            zoom: 12,
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+            zoomControl: true
+        });
     } else {
-        _trackingMap.invalidateSize();
+        google.maps.event.trigger(_trackingMap, 'resize');
     }
 
     var docId = driverPhone.replace(/[^a-zA-Z0-9]/g, '_');
@@ -5291,19 +5297,26 @@ function _initTrackingMap(driverPhone) {
             info.innerHTML = (isLive ? '🟢 ' : '🟡 ') + '<strong>' + escapeHtml(d.driverName || 'Repartidor') + '</strong> · ' + speedText + ' · ' + timeText;
         }
 
-        var pos = [d.lat, d.lng];
+        var pos = { lat: d.lat, lng: d.lng };
         if (_trackingMarker) {
-            _trackingMarker.setLatLng(pos);
+            _trackingMarker.setPosition(pos);
         } else {
-            var icon = L.divIcon({
-                className: '',
-                html: '<div style="background:#2196F3; width:36px; height:36px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; font-size:16px;">🚚</div>',
-                iconSize: [36, 36],
-                iconAnchor: [18, 18]
+            var truckSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36">' +
+                '<circle cx="18" cy="18" r="16" fill="#2196F3" stroke="white" stroke-width="3"/>' +
+                '<text x="18" y="23" text-anchor="middle" fill="white" font-size="14" font-weight="bold">T</text>' +
+                '</svg>';
+            _trackingMarker = new google.maps.Marker({
+                position: pos,
+                map: _trackingMap,
+                icon: {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(truckSvg),
+                    scaledSize: new google.maps.Size(36, 36),
+                    anchor: new google.maps.Point(18, 18)
+                }
             });
-            _trackingMarker = L.marker(pos, { icon: icon }).addTo(_trackingMap);
         }
-        _trackingMap.setView(pos, Math.max(_trackingMap.getZoom(), 14));
+        _trackingMap.setCenter(pos);
+        if (_trackingMap.getZoom() < 14) _trackingMap.setZoom(14);
     });
 }
 

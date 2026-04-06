@@ -25,8 +25,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&family=Inter:wght@300;400;500&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCE39TSVCQMIyWVP2Kk8givggrq0vU-R5A&libraries=marker" async></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
@@ -8238,10 +8237,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // --- REDESIGNED ROUTE MONITOR TOWER ---
             // ═══════════════════════════════════════════════════
-            // GPS LIVE MAP — Real-time driver tracking on Leaflet
-            // ═══════════════════════════════════════════════════
+            // GPS LIVE MAP — Real-time driver tracking on Google Maps
+            // ═══════════════════════════════════════════════════════
             let _gpsMap = null;
             let _gpsMarkers = {};
+            let _gpsInfoWindow = null;
             let _gpsMapVisible = false;
             let _gpsUnsubscribe = null;
 
@@ -8256,6 +8256,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     _routeColorIdx++;
                 }
                 return _routeColorMap[routeLabel];
+            }
+
+            function _makeTruckSvg(color, size) {
+                size = size || 32;
+                var half = size / 2;
+                var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">' +
+                    '<circle cx="' + half + '" cy="' + half + '" r="' + (half - 2) + '" fill="' + color + '" stroke="white" stroke-width="3"/>' +
+                    '<text x="' + half + '" y="' + (half + 5) + '" text-anchor="middle" fill="white" font-size="' + Math.round(size * 0.42) + '" font-weight="bold">T</text>' +
+                    '</svg>';
+                return {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+                    scaledSize: new google.maps.Size(size, size),
+                    anchor: new google.maps.Point(half, half)
+                };
             }
 
             window.toggleGPSMap = function() {
@@ -8278,19 +8292,23 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             function _initGPSMap() {
-                if (_gpsMap) { _gpsMap.invalidateSize(); return; }
-                _gpsMap = L.map('gps-live-map', { zoomControl: true, attributionControl: false }).setView([40.4168, -3.7038], 7);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '© OpenStreetMap'
-                }).addTo(_gpsMap);
+                if (_gpsMap) { google.maps.event.trigger(_gpsMap, 'resize'); return; }
+                _gpsMap = new google.maps.Map(document.getElementById('gps-live-map'), {
+                    center: { lat: 40.4168, lng: -3.7038 },
+                    zoom: 7,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: true
+                });
+                _gpsInfoWindow = new google.maps.InfoWindow();
             }
 
             function _startGPSListener() {
                 if (_gpsUnsubscribe) _gpsUnsubscribe();
                 _gpsUnsubscribe = db.collection('driver_locations').onSnapshot(function(snap) {
                     var onlineCount = 0;
-                    var bounds = [];
+                    var bounds = new google.maps.LatLngBounds();
+                    var hasBounds = false;
 
                     snap.forEach(function(doc) {
                         var d = doc.data();
@@ -8317,22 +8335,27 @@ document.addEventListener('DOMContentLoaded', () => {
                             '</div>';
 
                         if (_gpsMarkers[key]) {
-                            _gpsMarkers[key].setLatLng([d.lat, d.lng]);
+                            _gpsMarkers[key].setPosition({ lat: d.lat, lng: d.lng });
                             _gpsMarkers[key].setOpacity(opacity);
-                            _gpsMarkers[key].getPopup().setContent(popupHtml);
+                            _gpsMarkers[key]._popupHtml = popupHtml;
                         } else {
-                            var icon = L.divIcon({
-                                className: '',
-                                html: '<div style="background:' + color + '; width:32px; height:32px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; font-size:14px;">🚚</div>',
-                                iconSize: [32, 32],
-                                iconAnchor: [16, 16]
+                            _gpsMarkers[key] = new google.maps.Marker({
+                                position: { lat: d.lat, lng: d.lng },
+                                map: _gpsMap,
+                                icon: _makeTruckSvg(color),
+                                opacity: opacity
                             });
-                            _gpsMarkers[key] = L.marker([d.lat, d.lng], { icon: icon, opacity: opacity })
-                                .bindPopup(popupHtml)
-                                .addTo(_gpsMap);
+                            _gpsMarkers[key]._popupHtml = popupHtml;
+                            _gpsMarkers[key].addListener('click', function() {
+                                _gpsInfoWindow.setContent(this._popupHtml);
+                                _gpsInfoWindow.open(_gpsMap, this);
+                            });
                         }
 
-                        if (isOnline && !stale) bounds.push([d.lat, d.lng]);
+                        if (isOnline && !stale) {
+                            bounds.extend({ lat: d.lat, lng: d.lng });
+                            hasBounds = true;
+                        }
                     });
 
                     // Update counter
@@ -8343,8 +8366,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     // Auto-fit map to show all online drivers
-                    if (bounds.length > 0 && _gpsMap) {
-                        _gpsMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+                    if (hasBounds && _gpsMap) {
+                        _gpsMap.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 });
                     }
                 });
             }
@@ -8357,6 +8380,22 @@ document.addEventListener('DOMContentLoaded', () => {
             let _routeMapTicketUnsub = null;
             let _routeMapRefresh = null;
             let _routeMapGeoCache = {};
+            let _routeMapInfoWindow = null;
+            let _routeMapGeocoder = null;
+
+            function _makeCircleSvg(color, label, size) {
+                size = size || 28;
+                var half = size / 2;
+                var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">' +
+                    '<circle cx="' + half + '" cy="' + half + '" r="' + (half - 2) + '" fill="' + color + '" stroke="white" stroke-width="2"/>' +
+                    '<text x="' + half + '" y="' + (half + 4) + '" text-anchor="middle" fill="white" font-size="' + Math.round(size * 0.38) + '" font-weight="bold">' + (label || '') + '</text>' +
+                    '</svg>';
+                return {
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+                    scaledSize: new google.maps.Size(size, size),
+                    anchor: new google.maps.Point(half, half)
+                };
+            }
 
             function openRouteMap(label, phone) {
                 window.erpOpenTab('route-map', { title: 'GPS: ' + label });
@@ -8370,21 +8409,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Cleanup previous
                 if (_routeMapUnsub) { _routeMapUnsub(); _routeMapUnsub = null; }
                 if (_routeMapTicketUnsub) { _routeMapTicketUnsub(); _routeMapTicketUnsub = null; }
-                _routeMapDeliveryMarkers.forEach(function(m) { m.remove(); });
+                _routeMapDeliveryMarkers.forEach(function(m) { m.setMap(null); });
                 _routeMapDeliveryMarkers = [];
 
                 // Init map
                 var container = document.getElementById('route-map-container');
-                if (_routeMap) {
-                    _routeMap.remove();
-                    _routeMap = null;
-                }
-                _routeMap = L.map(container, { zoomControl: true }).setView([39.47, -0.376], 8);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19,
-                    attribution: '© OpenStreetMap'
-                }).addTo(_routeMap);
-                setTimeout(function() { _routeMap.invalidateSize(); }, 200);
+                _routeMap = new google.maps.Map(container, {
+                    center: { lat: 39.47, lng: -0.376 },
+                    zoom: 8,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                    fullscreenControl: true
+                });
+                _routeMapInfoWindow = new google.maps.InfoWindow();
+                setTimeout(function() { google.maps.event.trigger(_routeMap, 'resize'); }, 200);
 
                 _routeMapDriverMarker = null;
 
@@ -8432,20 +8470,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             subtitle.textContent = parts.join(' · ');
 
                             // Driver marker
-                            var driverIcon = L.divIcon({
-                                className: '',
-                                html: '<div style="background:#2196F3; width:40px; height:40px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 8px rgba(33,150,243,0.5); display:flex; align-items:center; justify-content:center;"><span class="material-symbols-outlined" style="color:#fff; font-size:22px;">local_shipping</span></div>',
-                                iconSize: [40, 40],
-                                iconAnchor: [20, 20]
-                            });
+                            var driverIcon = _makeTruckSvg('#2196F3', 40);
 
                             if (_routeMapDriverMarker) {
-                                _routeMapDriverMarker.setLatLng([d.lat, d.lng]);
+                                _routeMapDriverMarker.setPosition({ lat: d.lat, lng: d.lng });
                             } else {
-                                _routeMapDriverMarker = L.marker([d.lat, d.lng], { icon: driverIcon, zIndexOffset: 1000 })
-                                    .bindPopup('<b>' + escapeHtml(d.driverName || 'Conductor') + '</b><br>Ruta: ' + escapeHtml(label))
-                                    .addTo(_routeMap);
-                                _routeMap.setView([d.lat, d.lng], 13);
+                                _routeMapDriverMarker = new google.maps.Marker({
+                                    position: { lat: d.lat, lng: d.lng },
+                                    map: _routeMap,
+                                    icon: driverIcon,
+                                    zIndex: 1000
+                                });
+                                _routeMapDriverMarker.addListener('click', function() {
+                                    _routeMapInfoWindow.setContent('<b>' + escapeHtml(d.driverName || 'Conductor') + '</b><br>Ruta: ' + escapeHtml(label));
+                                    _routeMapInfoWindow.open(_routeMap, _routeMapDriverMarker);
+                                });
+                                _routeMap.setCenter({ lat: d.lat, lng: d.lng });
+                                _routeMap.setZoom(13);
                             }
                     });
 
@@ -8454,7 +8495,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     .where('driverPhone', '==', normalPhone)
                     .onSnapshot(async function(snap) {
                         // Clear old markers
-                        _routeMapDeliveryMarkers.forEach(function(m) { m.remove(); });
+                        _routeMapDeliveryMarkers.forEach(function(m) { m.setMap(null); });
                         _routeMapDeliveryMarkers = [];
 
                         var tickets = [];
@@ -8464,9 +8505,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             tickets.push(t);
                         });
 
-                        var bounds = [];
+                        var bounds = new google.maps.LatLngBounds();
+                        var hasBounds = false;
                         if (_routeMapDriverMarker) {
-                            bounds.push(_routeMapDriverMarker.getLatLng());
+                            bounds.extend(_routeMapDriverMarker.getPosition());
+                            hasBounds = true;
                         }
 
                         var pendingIdx = 0;
@@ -8481,18 +8524,13 @@ document.addEventListener('DOMContentLoaded', () => {
                             var isDelivered = t.status === 'Entregado' || t.delivered;
                             var isIncident = t.status === 'Incidencia';
                             var color = isIncident ? '#FF3B30' : (isDelivered ? '#4CAF50' : '#FF6600');
-                            var labelNum = isDelivered ? '✓' : String(++pendingIdx);
+                            var labelNum = isDelivered ? '\u2713' : String(++pendingIdx);
                             var statusText = isIncident ? 'INCIDENCIA' : (isDelivered ? 'ENTREGADO' : 'PENDIENTE #' + pendingIdx);
 
-                            var icon = L.divIcon({
-                                className: '',
-                                html: '<div style="background:' + color + '; color:#fff; width:28px; height:28px; border-radius:50%; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800;">' + labelNum + '</div>',
-                                iconSize: [28, 28],
-                                iconAnchor: [14, 14]
-                            });
+                            var icon = _makeCircleSvg(color, labelNum);
 
                             var pkgs = t.packagesList ? t.packagesList.reduce(function(s, p) { return s + (parseInt(p.qty) || 1); }, 0) : (parseInt(t.packages) || 1);
-                            var popup = '<div style="min-width:180px;">' +
+                            var popupContent = '<div style="min-width:180px;">' +
                                 '<b>' + escapeHtml(t.receiver || '---') + '</b><br>' +
                                 '<span style="color:#666; font-size:0.85em;">' + escapeHtml(addr) + '</span><br>' +
                                 '<span style="font-size:0.85em;">' + pkgs + ' bultos</span><br>' +
@@ -8500,15 +8538,25 @@ document.addEventListener('DOMContentLoaded', () => {
                                 (t.deliveredTo ? '<br><span style="font-size:0.8em;">Receptor: ' + escapeHtml(t.deliveredTo) + '</span>' : '') +
                                 '</div>';
 
-                            var marker = L.marker([coords.lat, coords.lng], { icon: icon }).bindPopup(popup).addTo(_routeMap);
+                            var marker = new google.maps.Marker({
+                                position: { lat: coords.lat, lng: coords.lng },
+                                map: _routeMap,
+                                icon: icon
+                            });
+                            (function(mk, content) {
+                                mk.addListener('click', function() {
+                                    _routeMapInfoWindow.setContent(content);
+                                    _routeMapInfoWindow.open(_routeMap, mk);
+                                });
+                            })(marker, popupContent);
                             _routeMapDeliveryMarkers.push(marker);
-                            bounds.push([coords.lat, coords.lng]);
-
+                            bounds.extend({ lat: coords.lat, lng: coords.lng });
+                            hasBounds = true;
                         }
 
                         // Fit map to show all
-                        if (bounds.length > 1) {
-                            _routeMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+                        if (hasBounds) {
+                            _routeMap.fitBounds(bounds, { top: 50, bottom: 50, left: 50, right: 50 });
                         }
                     });
 
@@ -8518,33 +8566,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
             }
 
-            // Geocode with cache + fallback + rate limit
-            var _geoLastCall = 0;
+            // Geocode with cache + fallback (Google Maps Geocoder)
             async function _routeMapGeocode(addr) {
                 if (_routeMapGeoCache[addr]) return _routeMapGeoCache[addr];
-                // Rate limit: 350ms between Nominatim API calls
-                var elapsed = Date.now() - _geoLastCall;
-                if (elapsed < 350) await new Promise(function(r) { setTimeout(r, 350 - elapsed); });
-                _geoLastCall = Date.now();
+                if (!_routeMapGeocoder) _routeMapGeocoder = new google.maps.Geocoder();
                 try {
-                    var res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=es&q=' + encodeURIComponent(addr));
-                    var data = await res.json();
-                    if (data && data[0]) {
-                        var result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                    var res = await _routeMapGeocoder.geocode({ address: addr, region: 'es' });
+                    if (res.results && res.results[0]) {
+                        var loc = res.results[0].geometry.location;
+                        var result = { lat: loc.lat(), lng: loc.lng() };
                         _routeMapGeoCache[addr] = result;
                         return result;
                     }
-                    // Fallback: try without province
+                    // Fallback: try without last part (province)
                     var parts = addr.split(',');
                     if (parts.length > 2) {
                         var short = parts.slice(0, -1).join(',').trim();
-                        elapsed = Date.now() - _geoLastCall;
-                        if (elapsed < 350) await new Promise(function(r) { setTimeout(r, 350 - elapsed); });
-                        _geoLastCall = Date.now();
-                        var res2 = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=es&q=' + encodeURIComponent(short));
-                        var data2 = await res2.json();
-                        if (data2 && data2[0]) {
-                            var result2 = { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) };
+                        var res2 = await _routeMapGeocoder.geocode({ address: short, region: 'es' });
+                        if (res2.results && res2.results[0]) {
+                            var loc2 = res2.results[0].geometry.location;
+                            var result2 = { lat: loc2.lat(), lng: loc2.lng() };
                             _routeMapGeoCache[addr] = result2;
                             return result2;
                         }

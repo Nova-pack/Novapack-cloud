@@ -8,6 +8,9 @@ const firebaseConfig = {
     appId: "1:139474143296:web:92e8bf80a50adba0cd77a5",
 };
 
+// Google Maps API Key
+var GOOGLE_MAPS_API_KEY = 'AIzaSyCE39TSVCQMIyWVP2Kk8givggrq0vU-R5A';
+
 // Initialize Firebase (Global Variables)
 var firebaseApp = firebase.initializeApp(firebaseConfig);
 var auth = firebase.auth();

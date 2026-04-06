@@ -15,7 +15,7 @@ var manualOrder = null; // array of docIds if user has manually reordered
 var currentFilter = 'pending';
 var confirmationResult = null;
 var qrScanner = null;
-var leafletMap = null;
+var googleMap = null;
 var mapMarkers = [];
 var currentScanDoc = null;
 var unsubscribe = null;
@@ -333,8 +333,9 @@ function sortByGPSProximity(items, startLat, startLon) {
     return sorted.concat(withoutCoords);
 }
 
-// --- GEOCODE ADDRESS (Nominatim, cached) ---
+// --- GEOCODE ADDRESS (Google Maps, cached) ---
 var geocodeCache = {};
+var _geocoder = null;
 async function geocodeAddress(d) {
     if (d._lat && d._lon) return; // already geocoded
     var addr = [d.address, d.localidad, d.cp, d.province, 'España'].filter(Boolean).join(', ');
@@ -347,11 +348,12 @@ async function geocodeAddress(d) {
     }
 
     try {
-        var res = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(addr) + '&limit=1');
-        var data = await res.json();
-        if (data.length > 0) {
-            d._lat = parseFloat(data[0].lat);
-            d._lon = parseFloat(data[0].lon);
+        if (!_geocoder) _geocoder = new google.maps.Geocoder();
+        var result = await _geocoder.geocode({ address: addr, region: 'es' });
+        if (result.results && result.results[0]) {
+            var loc = result.results[0].geometry.location;
+            d._lat = loc.lat();
+            d._lon = loc.lng();
             geocodeCache[addr] = { lat: d._lat, lon: d._lon };
         }
     } catch (e) { console.warn('Geocode error:', addr, e); }
@@ -2230,21 +2232,27 @@ function initApp() {
         }
     });
 
-    // --- MAP (LEAFLET) ---
+    // --- MAP (GOOGLE MAPS) ---
+    var _infoWindow = null;
     async function initMap() {
         var container = document.getElementById('route-map');
         if (!container) return;
 
-        if (!leafletMap) {
-            leafletMap = L.map('route-map').setView([36.72, -4.42], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap'
-            }).addTo(leafletMap);
+        if (!googleMap) {
+            googleMap = new google.maps.Map(container, {
+                center: { lat: 36.72, lng: -4.42 },
+                zoom: 12,
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: true
+            });
+            _infoWindow = new google.maps.InfoWindow();
         }
 
-        mapMarkers.forEach(function(m) { leafletMap.removeLayer(m); });
+        // Clear existing markers
+        mapMarkers.forEach(function(m) { m.setMap(null); });
         mapMarkers = [];
-        if (window._routeLine) { leafletMap.removeLayer(window._routeLine); window._routeLine = null; }
+        if (window._routeLine) { window._routeLine.setMap(null); window._routeLine = null; }
 
         if (deliveries.length === 0) {
             showToast('No hay entregas para mostrar en el mapa.', 'info');
@@ -2256,33 +2264,35 @@ function initApp() {
         var routeCoords = [];
         var allDeliveries = [].concat(pending, delivered);
 
-        function makeIcon(color, label) {
-            return L.divIcon({
-                className: '',
-                html: '<div style="background:' + color + '; color:white; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:0.75rem; border:2px solid white; box-shadow:0 2px 6px rgba(0,0,0,0.4);">' + (label || '') + '</div>',
-                iconSize: [28, 28],
-                iconAnchor: [14, 14],
-                popupAnchor: [0, -16]
-            });
+        function makeIcon(color, label, size) {
+            size = size || 28;
+            var half = size / 2;
+            var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">' +
+                '<circle cx="' + half + '" cy="' + half + '" r="' + (half - 2) + '" fill="' + color + '" stroke="white" stroke-width="2"/>' +
+                '<text x="' + half + '" y="' + (half + 4) + '" text-anchor="middle" fill="white" font-size="' + Math.round(size * 0.38) + '" font-weight="bold">' + (label || '') + '</text>' +
+                '</svg>';
+            return {
+                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+                scaledSize: new google.maps.Size(size, size),
+                anchor: new google.maps.Point(half, half)
+            };
         }
 
         // Helper: geocode with fallback (full addr → locality+cp → province)
+        if (!_geocoder) _geocoder = new google.maps.Geocoder();
         async function geocodeWithFallback(d) {
             if (d._lat && d._lon) return true;
 
-            // Attempt 1: full address
             var parts1 = [d.address, d.localidad, d.cp, d.province, 'España'].filter(Boolean);
             if (parts1.length > 1) {
                 await tryGeocode(d, parts1.join(', '));
                 if (d._lat) return true;
             }
-            // Attempt 2: locality + cp + province
             var parts2 = [d.localidad, d.cp, d.province, 'España'].filter(Boolean);
             if (parts2.length > 1 && parts2.join(',') !== parts1.join(',')) {
                 await tryGeocode(d, parts2.join(', '));
                 if (d._lat) return true;
             }
-            // Attempt 3: just address field as-is
             if (d.address && d.address.length > 5) {
                 await tryGeocode(d, d.address + ', España');
                 if (d._lat) return true;
@@ -2298,48 +2308,57 @@ function initApp() {
                 return;
             }
             try {
-                var res = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(addr) + '&limit=1&countrycodes=es');
-                var data = await res.json();
-                if (data.length > 0) {
-                    d._lat = parseFloat(data[0].lat);
-                    d._lon = parseFloat(data[0].lon);
+                var result = await _geocoder.geocode({ address: addr, region: 'es' });
+                if (result.results && result.results[0]) {
+                    var loc = result.results[0].geometry.location;
+                    d._lat = loc.lat();
+                    d._lon = loc.lng();
                     geocodeCache[addr] = { lat: d._lat, lon: d._lon };
                 }
             } catch (e) { console.warn('Geocode error:', addr, e); }
         }
 
-        // Show loading feedback
         showToast('Cargando mapa: 0/' + allDeliveries.length + ' direcciones...', 'info');
 
-        // Process SEQUENTIALLY with delay to respect Nominatim rate limit
         var geocoded = 0;
         var failed = 0;
         for (var i = 0; i < allDeliveries.length; i++) {
             var d = allDeliveries[i];
             var success = await geocodeWithFallback(d);
-            
+
             if (success && d._lat && d._lon) {
                 var isDelivered = d.status === 'Entregado' || d.delivered;
                 var pkgCount = getPackageCount(d);
                 var pendingIdx = pending.indexOf(d);
                 var icon = isDelivered
-                    ? makeIcon('#4CD964', '✓')
+                    ? makeIcon('#4CD964', '\u2713')
                     : makeIcon('#FF6600', String(pendingIdx + 1));
 
-                var marker = L.marker([d._lat, d._lon], { icon: icon }).addTo(leafletMap);
-                marker.bindPopup(
-                    '<div style="min-width:160px;">' +
-                    '<b style="font-size:0.9rem;">' + (d.receiver || '') + '</b><br>' +
-                    '<span style="color:#666;">' + [d.address, d.localidad, d.cp].filter(Boolean).join(', ') + '</span><br>' +
-                    '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">inventory_2</span> ' + pkgCount + ' bultos<br>' +
-                    '<span style="font-weight:700; color:' + (isDelivered ? '#4CD964' : '#FF6600') + ';">' +
-                    (isDelivered ? '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle;">check_circle</span> ENTREGADO' : '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">schedule</span> PENDIENTE (#' + (pendingIdx + 1) + ')') +
-                    '</span></div>'
-                );
+                var marker = new google.maps.Marker({
+                    position: { lat: d._lat, lng: d._lon },
+                    map: googleMap,
+                    icon: icon
+                });
+
+                (function(mk, dd, isDel, pkgC, pIdx) {
+                    mk.addListener('click', function() {
+                        _infoWindow.setContent(
+                            '<div style="min-width:160px;">' +
+                            '<b style="font-size:0.9rem;">' + (dd.receiver || '') + '</b><br>' +
+                            '<span style="color:#666;">' + [dd.address, dd.localidad, dd.cp].filter(Boolean).join(', ') + '</span><br>' +
+                            '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">inventory_2</span> ' + pkgC + ' bultos<br>' +
+                            '<span style="font-weight:700; color:' + (isDel ? '#4CD964' : '#FF6600') + ';">' +
+                            (isDel ? '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle;">check_circle</span> ENTREGADO' : '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">schedule</span> PENDIENTE (#' + (pIdx + 1) + ')') +
+                            '</span></div>'
+                        );
+                        _infoWindow.open(googleMap, mk);
+                    });
+                })(marker, d, isDelivered, pkgCount, pendingIdx);
+
                 mapMarkers.push(marker);
 
                 if (!isDelivered) {
-                    routeCoords[pendingIdx] = [d._lat, d._lon];
+                    routeCoords[pendingIdx] = { lat: d._lat, lng: d._lon };
                 }
                 geocoded++;
             } else {
@@ -2347,93 +2366,96 @@ function initApp() {
                 console.warn('Geocode failed for:', d.receiver, [d.address, d.localidad, d.cp, d.province].filter(Boolean).join(', '));
             }
 
-            // Update progress every 3 items
             if ((i + 1) % 3 === 0 || i === allDeliveries.length - 1) {
                 showToast('Mapa: ' + (i + 1) + '/' + allDeliveries.length + ' (' + geocoded + ' ok, ' + failed + ' sin ubicar)', 'info');
-            }
-
-            // Rate limit: wait 350ms between geocode API calls (Nominatim allows ~1/sec)
-            if (i < allDeliveries.length - 1 && !allDeliveries[i + 1]._lat) {
-                await new Promise(function(resolve) { setTimeout(resolve, 350); });
             }
         }
 
         // Final: fit bounds and draw route
         if (mapMarkers.length > 0) {
-            var group = L.featureGroup(mapMarkers);
-            leafletMap.fitBounds(group.getBounds().pad(0.1));
+            var bounds = new google.maps.LatLngBounds();
+            mapMarkers.forEach(function(m) { bounds.extend(m.getPosition()); });
+            googleMap.fitBounds(bounds);
 
             var orderedCoords = routeCoords.filter(Boolean);
             if (orderedCoords.length > 1) {
-                window._routeLine = L.polyline(orderedCoords, {
-                    color: '#FF6600', weight: 3, opacity: 0.6, dashArray: '8, 6'
-                }).addTo(leafletMap);
+                window._routeLine = new google.maps.Polyline({
+                    path: orderedCoords,
+                    strokeColor: '#FF6600',
+                    strokeWeight: 3,
+                    strokeOpacity: 0.6,
+                    geodesic: true,
+                    map: googleMap
+                });
             }
         }
 
-        showToast('\u2705 Mapa completo: ' + geocoded + ' ubicadas' + (failed > 0 ? ', ' + failed + ' sin localizar' : ''), failed > 0 ? 'warning' : 'success');
+        showToast('Mapa completo: ' + geocoded + ' ubicadas' + (failed > 0 ? ', ' + failed + ' sin localizar' : ''), failed > 0 ? 'warning' : 'success');
 
         // --- ADD PICKUP/ALERT MARKERS ---
         if (_driverAlerts && _driverAlerts.length > 0) {
             var alertsWithAddr = _driverAlerts.filter(function(a) { return a.address; });
             if (alertsWithAddr.length > 0) {
-                showToast('\ud83d\udce5 Cargando ' + alertsWithAddr.length + ' recogida(s) en mapa...', 'info');
+                showToast('Cargando ' + alertsWithAddr.length + ' recogida(s) en mapa...', 'info');
             }
             for (var ai = 0; ai < alertsWithAddr.length; ai++) {
                 var alert = alertsWithAddr[ai];
                 var alertCoords = null;
 
-                // Geocode the alert address
                 var alertAddr = alert.address + ', Espa\u00f1a';
                 if (geocodeCache[alertAddr]) {
                     alertCoords = geocodeCache[alertAddr];
                 } else {
                     try {
-                        var ares = await fetch('https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(alertAddr) + '&limit=1&countrycodes=es');
-                        var adata = await ares.json();
-                        if (adata.length > 0) {
-                            alertCoords = { lat: parseFloat(adata[0].lat), lon: parseFloat(adata[0].lon) };
+                        var gResult = await _geocoder.geocode({ address: alertAddr, region: 'es' });
+                        if (gResult.results && gResult.results[0]) {
+                            var gLoc = gResult.results[0].geometry.location;
+                            alertCoords = { lat: gLoc.lat(), lon: gLoc.lng() };
                             geocodeCache[alertAddr] = alertCoords;
                         }
                     } catch(e) { console.warn('Alert geocode error:', e); }
-                    if (ai < alertsWithAddr.length - 1) {
-                        await new Promise(function(resolve) { setTimeout(resolve, 350); });
-                    }
                 }
 
                 if (alertCoords) {
-                    var aTypeIcon = alert.type === 'recogida' ? '\ud83d\udce5' : (alert.type === 'entrega_urgente' ? '\ud83d\udea8' : '\ud83d\udce2');
                     var aColor = alert.type === 'recogida' ? '#FF9800' : (alert.type === 'entrega_urgente' ? '#FF3B30' : '#2196F3');
-                    var aLabel = alert.type === 'recogida' ? 'RECOGIDA' : (alert.type === 'entrega_urgente' ? 'URGENTE' : 'AVISO');
-                    var alertIcon = L.divIcon({
-                        className: '',
-                        html: '<div style="background:' + aColor + '; color:white; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.1rem; border:3px solid white; box-shadow:0 2px 10px ' + aColor + '88; animation:pulse 1.5s infinite;">' + aTypeIcon + '</div>',
-                        iconSize: [34, 34],
-                        iconAnchor: [17, 17],
-                        popupAnchor: [0, -20]
+                    var aShort = alert.type === 'recogida' ? 'R' : (alert.type === 'entrega_urgente' ? '!' : 'A');
+                    var aLabelFull = alert.type === 'recogida' ? 'RECOGIDA' : (alert.type === 'entrega_urgente' ? 'URGENTE' : 'AVISO');
+
+                    var alertMk = new google.maps.Marker({
+                        position: { lat: alertCoords.lat, lng: alertCoords.lon || alertCoords.lng },
+                        map: googleMap,
+                        icon: makeIcon(aColor, aShort, 34),
+                        zIndex: 999
                     });
-                    var aMarker = L.marker([alertCoords.lat, alertCoords.lon], { icon: alertIcon }).addTo(leafletMap);
-                    aMarker.bindPopup(
-                        '<div style="min-width:180px;">' +
-                        '<b style="font-size:0.9rem; color:' + aColor + ';">' + aTypeIcon + ' ' + aLabel + '</b><br>' +
-                        '<span style="color:#333;">' + alert.address + '</span><br>' +
-                        (alert.notes ? '<span style="color:#666; font-size:0.85em;">\ud83d\udcdd ' + alert.notes + '</span><br>' : '') +
-                        '<a href="https://www.google.com/maps/search/' + encodeURIComponent(alert.address) + '" target="_blank" style="color:#1a73e8; font-weight:700; font-size:0.85em;">Navegar \u2192</a>' +
-                        '</div>'
-                    );
-                    mapMarkers.push(aMarker);
+
+                    (function(mk, al, col, lbl) {
+                        mk.addListener('click', function() {
+                            _infoWindow.setContent(
+                                '<div style="min-width:180px;">' +
+                                '<b style="font-size:0.9rem; color:' + col + ';">' + lbl + '</b><br>' +
+                                '<span style="color:#333;">' + al.address + '</span><br>' +
+                                (al.notes ? '<span style="color:#666; font-size:0.85em;">' + al.notes + '</span><br>' : '') +
+                                '<a href="https://www.google.com/maps/search/' + encodeURIComponent(al.address) + '" target="_blank" style="color:#1a73e8; font-weight:700; font-size:0.85em;">Navegar \u2192</a>' +
+                                '</div>'
+                            );
+                            _infoWindow.open(googleMap, mk);
+                        });
+                    })(alertMk, alert, aColor, aLabelFull);
+
+                    mapMarkers.push(alertMk);
                 }
             }
             // Re-fit bounds to include alert markers
             if (mapMarkers.length > 0) {
-                var allGroup = L.featureGroup(mapMarkers);
-                leafletMap.fitBounds(allGroup.getBounds().pad(0.1));
+                var allBounds = new google.maps.LatLngBounds();
+                mapMarkers.forEach(function(m) { allBounds.extend(m.getPosition()); });
+                googleMap.fitBounds(allBounds);
             }
         }
     }
 
     window.addEventListener('resize', function() {
-        if (leafletMap) leafletMap.invalidateSize();
+        if (googleMap) google.maps.event.trigger(googleMap, 'resize');
     });
 
     // --- LIMPIAR JORNADA: Eliminar entregados de la ruta del repartidor ---
