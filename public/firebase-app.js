@@ -532,10 +532,9 @@ async function initTicketListener(retryCount = 0) {
         const finalVariants = finalVariantsRaw.map(v => String(v).trim()).slice(0, 10);
 
         console.log(`[SYNC-LINEA] Escuchando Albaranes por UID/Alias:`, finalVariants);
-        console.log(`[SYNC-LINEA] Escuchando Albaranes por UID/Alias:`, finalVariants);
         
         let mergedTickets = new Map();
-        let fireCount = 0;
+        let q1Fired = false, q2Fired = false;
 
         const processMapAndRender = () => {
             let raw = Array.from(mergedTickets.values());
@@ -548,10 +547,10 @@ async function initTicketListener(retryCount = 0) {
                 });
             }
             updateTicketsList(filtered);
-            if (isFirstLoad && fireCount >= 2) { isFirstLoad = false; resolve(); }
+            if (isFirstLoad && q1Fired && q2Fired) { isFirstLoad = false; resolve(); }
         };
 
-        // EXTREMELY CRITICAL: We cannot use .orderBy('createdAt', 'desc') here because combined with 'in' 
+        // EXTREMELY CRITICAL: We cannot use .orderBy('createdAt', 'desc') here because combined with 'in'
         // it requires a pre-built Firestore Composite Index, which will crash the entire app if missing.
         // Instead, we fetch a large limit of tickets and sort them descending locally in updateTicketsList.
         const q1 = db.collection('tickets').where('uid', 'in', finalVariants).limit(3000);
@@ -559,22 +558,22 @@ async function initTicketListener(retryCount = 0) {
 
         const unsub1 = q1.onSnapshot(snap => {
             snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
-            fireCount++;
+            q1Fired = true;
             processMapAndRender();
-        }, err => { 
+        }, err => {
             alert("Error GRAVE Q1 en Escucha de Albaranes: " + err.message);
-            console.warn("Error Q1", err); 
-            fireCount++; processMapAndRender(); 
+            console.warn("Error Q1", err);
+            q1Fired = true; processMapAndRender();
         });
 
         const unsub2 = q2.onSnapshot(snap => {
             snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
-            fireCount++;
+            q2Fired = true;
             processMapAndRender();
-        }, err => { 
+        }, err => {
             alert("Error GRAVE Q2 en Escucha de Albaranes: " + err.message);
-            console.warn("Error Q2", err); 
-            fireCount++; processMapAndRender(); 
+            console.warn("Error Q2", err);
+            q2Fired = true; processMapAndRender();
         });
 
         // Backup safety resolve
@@ -5190,6 +5189,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- GLOBAL EXPORTS FOR HTML BINDING ---
 window.handleFormSubmit = handleFormSubmit;
 window.handleCompanyFormSubmit = handleCompanyFormSubmit;
+window.exportClientAgenda = exportClientAgenda;
+window.importClientAgenda = importClientAgenda;
+window.importClientAgendaFromExcel = importClientAgendaFromExcel;
 
 // --- MIXED BACKGROUND SYNCHRONIZATION (CLIENT) ---
 setInterval(() => {
@@ -5258,7 +5260,7 @@ window.submitPickupRequest = async function() {
         });
 
         document.getElementById('modal-pickup').style.display = 'none';
-        alert('\u2705 Solicitud de recogida enviada correctamente.\\nEl repartidor recibir\u00e1 una notificaci\u00f3n.');
+        alert('✅ Solicitud de recogida enviada correctamente.\nEl repartidor recibirá una notificación.');
     } catch (e) {
         console.error('Error enviando solicitud de recogida:', e);
         alert('Error al enviar la solicitud: ' + e.message);

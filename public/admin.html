@@ -2887,7 +2887,7 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '<button onclick="cooperSwitchRoute(\'todas\')" style="background:' + (isAll ? '#FF9800' : '#2a2a2d') + '; color:' + (isAll ? '#000' : '#aaa') + '; border:1px solid ' + (isAll ? '#FF9800' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (isAll ? 'bold' : 'normal') + '; cursor:pointer;">Todas (' + (_cooperRecogidas.length + _cooperEntregas.length) + ')</button>';
         routes.forEach(function(r) {
             var active = _cooperRouteFilter === r;
-            html += '<button onclick="cooperSwitchRoute(\'' + r.replace(/'/g, "\\'") + '\')" style="background:' + (active ? '#2196F3' : '#2a2a2d') + '; color:' + (active ? '#fff' : '#aaa') + '; border:1px solid ' + (active ? '#2196F3' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (active ? 'bold' : 'normal') + '; cursor:pointer; display:flex; align-items:center; gap:4px;">';
+            html += '<button onclick="cooperSwitchRoute(\'' + r.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')" style="background:' + (active ? '#2196F3' : '#2a2a2d') + '; color:' + (active ? '#fff' : '#aaa') + '; border:1px solid ' + (active ? '#2196F3' : '#444') + '; padding:6px 16px; border-radius:20px; font-size:0.8rem; font-weight:' + (active ? 'bold' : 'normal') + '; cursor:pointer; display:flex; align-items:center; gap:4px;">';
             html += '<span class="material-symbols-outlined" style="font-size:0.85rem;">route</span>' + escapeHtml(r) + ' (' + routeSet[r] + ')</button>';
         });
         el.innerHTML = html;
