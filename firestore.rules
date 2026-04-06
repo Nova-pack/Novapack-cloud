@@ -106,6 +106,13 @@ service cloud.firestore {
       allow write: if isAuth();
     }
 
+    // ─── DRIVER: route reassignments log (auth create, admin read/delete) ───
+    match /driver_reassignments/{docId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow delete: if isAdmin();
+    }
+
     // ─── DRIVER: alerts, pickups, cooper photos (auth read/write) ───
     match /driver_alerts/{docId} {
       allow read, write: if isAuth();

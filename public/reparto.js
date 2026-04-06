@@ -1386,7 +1386,8 @@ function initApp() {
                 (!isDelivered ?
                     '<button class="btn btn-success" id="modal-btn-deliver"><span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> ENTREGAR (MANUAL)</button>' +
                     '<button class="btn btn-outline" id="modal-btn-modify"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">edit_note</span> SOLICITAR MODIFICACIÓN</button>' +
-                    '<button class="btn btn-danger" id="modal-btn-incident"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">warning</span> INCIDENCIA</button>'
+                    '<button class="btn btn-danger" id="modal-btn-incident"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">warning</span> INCIDENCIA</button>' +
+                    '<button class="btn btn-outline" id="modal-btn-reassign" style="color:#FF9800; border-color:rgba(255,152,0,0.3);"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">swap_horiz</span> REASIGNAR RUTA</button>'
                 : '') +
                 '<button class="btn btn-outline" id="modal-btn-close" style="color:var(--text-dim);">CERRAR</button>' +
             '</div>';
@@ -1420,12 +1421,148 @@ function initApp() {
                 reportIncident(d);
             };
         }
+
+        // Reassign button
+        var btnReassign = document.getElementById('modal-btn-reassign');
+        if (btnReassign) {
+            btnReassign.onclick = function() {
+                closeModal();
+                openReassignModal(d);
+            };
+        }
     }
 
     function closeModal() {
         document.getElementById('detail-modal').classList.remove('active');
     }
     window.closeModal = closeModal;
+
+    // --- REASSIGN ROUTE ---
+    var REASSIGN_DAILY_LIMIT = 5;
+    var _reassignDelivery = null;
+
+    function _getReassignCountToday() {
+        var key = 'reassign_' + currentDriverPhone + '_' + new Date().toISOString().split('T')[0];
+        return parseInt(localStorage.getItem(key) || '0', 10);
+    }
+
+    function _incrementReassignCount() {
+        var key = 'reassign_' + currentDriverPhone + '_' + new Date().toISOString().split('T')[0];
+        var count = parseInt(localStorage.getItem(key) || '0', 10) + 1;
+        localStorage.setItem(key, String(count));
+        return count;
+    }
+
+    async function openReassignModal(d) {
+        var used = _getReassignCountToday();
+        if (used >= REASSIGN_DAILY_LIMIT) {
+            showToast('Límite de reasignaciones alcanzado (' + REASSIGN_DAILY_LIMIT + '/día). Contacta con administración.', 'error', 6000);
+            return;
+        }
+
+        _reassignDelivery = d;
+        var modal = document.getElementById('reassign-modal');
+        var ticketLabel = document.getElementById('reassign-modal-ticket');
+        var countLabel = document.getElementById('reassign-daily-count');
+        var list = document.getElementById('reassign-routes-list');
+
+        ticketLabel.textContent = 'Albarán: ' + (d.id || d._id) + ' — ' + escapeHtml(d.receiver || '');
+        countLabel.textContent = 'Reasignaciones hoy: ' + used + '/' + REASSIGN_DAILY_LIMIT;
+        list.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:20px;">Cargando rutas...</div>';
+        modal.classList.add('active');
+
+        // Load routes from admin config
+        try {
+            var snap = await db.collection('config').doc('phones').collection('list').get();
+            if (snap.empty) {
+                list.innerHTML = '<div style="text-align:center; color:var(--danger); padding:20px;">No hay rutas configuradas.</div>';
+                return;
+            }
+
+            list.innerHTML = '';
+            snap.forEach(function(doc) {
+                var route = doc.data();
+                var routePhone = (route.number || '').replace(/\D/g, '').replace(/^34/, '');
+                // Skip current driver's route
+                if (routePhone === currentDriverPhone) return;
+
+                var driverNames = [];
+                for (var i = 1; i <= 4; i++) {
+                    if (route['driver' + i]) driverNames.push(route['driver' + i]);
+                }
+
+                var btn = document.createElement('button');
+                btn.style.cssText = 'display:flex; align-items:center; gap:10px; width:100%; padding:12px; background:rgba(255,152,0,0.06); border:1px solid rgba(255,152,0,0.2); border-radius:8px; color:var(--text-main); cursor:pointer; text-align:left; font-size:0.85rem;';
+                btn.innerHTML =
+                    '<span class="material-symbols-outlined" style="color:#FF9800; font-size:1.3rem;">local_shipping</span>' +
+                    '<div style="flex:1; min-width:0;">' +
+                        '<div style="font-weight:700; color:#FF9800;">' + escapeHtml(route.label || doc.id).toUpperCase() + '</div>' +
+                        '<div style="font-size:0.72rem; color:var(--text-dim); margin-top:2px;">' + escapeHtml(driverNames.join(', ') || 'Sin conductor') + '</div>' +
+                    '</div>' +
+                    '<span class="material-symbols-outlined" style="color:var(--text-dim);">chevron_right</span>';
+
+                btn.addEventListener('click', function() {
+                    confirmReassign(d, route.label || doc.id, routePhone);
+                });
+                list.appendChild(btn);
+            });
+
+            if (list.children.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:20px;">No hay otras rutas disponibles.</div>';
+            }
+        } catch (e) {
+            console.error('Error loading routes:', e);
+            list.innerHTML = '<div style="text-align:center; color:var(--danger); padding:20px;">Error al cargar rutas: ' + e.message + '</div>';
+        }
+    }
+
+    async function confirmReassign(d, targetLabel, targetPhone) {
+        var ticketId = d.id || d._id;
+        if (!confirm('¿Reasignar albarán ' + ticketId + ' a la ruta ' + targetLabel + '?')) return;
+
+        var modal = document.getElementById('reassign-modal');
+        try {
+            showLoading();
+
+            // Update ticket's driverPhone to new route
+            await d._ref.update({
+                driverPhone: targetPhone,
+                reassignedFrom: currentRouteLabel || currentDriverPhone,
+                reassignedBy: currentDriverName || 'Conductor',
+                reassignedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            // Log reassignment for admin visibility
+            await db.collection('driver_reassignments').add({
+                ticketId: ticketId,
+                ticketRef: d._ref.path,
+                receiver: d.receiver || '',
+                fromRoute: currentRouteLabel || '',
+                fromPhone: currentDriverPhone,
+                fromDriver: currentDriverName || '',
+                toRoute: targetLabel,
+                toPhone: targetPhone,
+                reason: 'Reasignación desde app conductor',
+                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                date: new Date().toISOString().split('T')[0]
+            });
+
+            _incrementReassignCount();
+            modal.classList.remove('active');
+            showToast('Albarán reasignado a ' + targetLabel, 'success', 5000);
+        } catch (e) {
+            console.error('Reassign error:', e);
+            showToast('Error al reasignar: ' + e.message, 'error', 6000);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Cancel button
+    document.getElementById('btn-reassign-cancel').addEventListener('click', function() {
+        document.getElementById('reassign-modal').classList.remove('active');
+        _reassignDelivery = null;
+    });
 
     // --- REPORT INCIDENT (with optional photo) ---
     var _incidentDelivery = null;
