@@ -227,7 +227,7 @@
 <!-- ===== ELEGANT REPARTO SPLASH ===== -->
 <div id="reparto-intro">
     <div class="intro-logo-rpt">NOVAPACK<span>➤</span></div>
-    <div class="intro-sub-rpt">🚚 RUTAS & ENTREGAS</div>
+    <div class="intro-sub-rpt">RUTAS & ENTREGAS</div>
     <div class="intro-bar-rpt"><div class="intro-bar-fill-rpt"></div></div>
     <div class="intro-status-rpt">CONECTANDO CON BASE...</div>
 </div>
@@ -306,41 +306,39 @@
     <div class="login-card">
         <div class="login-logo">NOVAPACK<span>➤</span></div>
         <div class="login-sub">Cloud Management</div>
-        <div class="login-mode"><span>🚚 REPARTO</span></div>
+        <div class="login-mode"><span><span class="material-symbols-outlined" style="font-size:0.9rem;">local_shipping</span> REPARTO</span></div>
 
         <!-- Step 1: Phone number -->
         <div id="login-step-phone">
             <div class="form-group">
-                <label class="form-label">📱 Tu número de teléfono</label>
+                <label class="form-label"><span class="material-symbols-outlined">smartphone</span> Tu número de teléfono</label>
                 <div style="display:flex; gap:8px;">
                     <input type="text" value="+34" readonly class="form-control" style="width:60px; text-align:center; font-weight:800;">
                     <input type="tel" id="phone-input" class="form-control" placeholder="600 123 456" style="flex:1;" autocomplete="tel">
                 </div>
             </div>
             <div id="recaptcha-container"></div>
-            <button class="btn btn-primary" id="btn-send-sms" style="margin-top:10px;">📲 ENVIAR CÓDIGO SMS</button>
+            <button class="btn btn-primary" id="btn-send-sms" style="margin-top:10px;"><span class="material-symbols-outlined">send</span> ENVIAR CÓDIGO SMS</button>
 
-            <div style="display:flex; align-items:center; gap:10px; margin:18px 0 10px;">
-                <div style="flex:1; height:1px; background:rgba(255,255,255,0.1);"></div>
-                <span style="font-size:0.7rem; color:#555; letter-spacing:2px; font-weight:700;">O ACCESO ADMIN</span>
-                <div style="flex:1; height:1px; background:rgba(255,255,255,0.1);"></div>
+            <div class="login-divider">
+                <span>O ACCESO ADMIN</span>
             </div>
             <div class="form-group" style="margin-bottom:0;">
-                <label class="form-label" style="color:#AB47BC;">🔐 PIN Maestro</label>
+                <label class="form-label" style="color:#AB47BC;"><span class="material-symbols-outlined">lock</span> PIN Maestro</label>
                 <input type="password" id="master-pin-input" class="form-control" placeholder="Introduce PIN maestro" style="text-align:center; font-size:1.2rem; font-weight:900; letter-spacing:5px;">
             </div>
-            <button class="btn btn-primary" id="btn-master-pin" style="margin-top:10px; background:linear-gradient(135deg,#AB47BC,#7B1FA2);">🔑 ACCEDER COMO ADMIN</button>
+            <button class="btn btn-primary" id="btn-master-pin" style="margin-top:10px; background:linear-gradient(135deg,#AB47BC,#7B1FA2);"><span class="material-symbols-outlined">key</span> ACCEDER COMO ADMIN</button>
         </div>
 
         <!-- Step 2: Verify code -->
         <div id="login-step-code" style="display:none;">
             <div class="form-group">
-                <label class="form-label">🔑 Código de verificación</label>
+                <label class="form-label"><span class="material-symbols-outlined">pin</span> Código de verificación</label>
                 <input type="number" id="sms-code-input" class="form-control" placeholder="123456"
                     style="text-align:center; font-size:1.5rem; font-weight:900; letter-spacing:10px;">
             </div>
-            <button class="btn btn-primary" id="btn-verify-code">✅ VERIFICAR</button>
-            <button class="btn btn-outline" id="btn-back-phone" style="margin-top:8px;">← Cambiar número</button>
+            <button class="btn btn-success" id="btn-verify-code"><span class="material-symbols-outlined">check_circle</span> VERIFICAR</button>
+            <button class="btn btn-outline" id="btn-back-phone" style="margin-top:8px;"><span class="material-symbols-outlined">arrow_back</span> Cambiar número</button>
         </div>
 
         <div id="login-error" style="color:#FF3B30; text-align:center; margin-top:12px; font-size:0.85rem; min-height:1.2rem;"></div>
@@ -351,7 +349,7 @@
 <div id="driver-selector-view" style="display:none;">
     <div class="login-card" style="max-width:380px; text-align:center;">
         <div class="login-logo">NOVAPACK<span>➤</span></div>
-        <div class="login-sub" style="margin-bottom:6px;">🚚 REPARTO</div>
+        <div class="login-sub" style="margin-bottom:6px;">REPARTO</div>
         <div id="driver-route-label" style="font-size:0.7rem; color:var(--brand); font-weight:800; letter-spacing:3px; margin-bottom:20px; text-transform:uppercase;"></div>
 
         <div style="font-size:0.75rem; color:#888; letter-spacing:2px; font-weight:700; margin-bottom:14px;">¿QUIÉN CONDUCE HOY?</div>
@@ -364,7 +362,7 @@
 <div id="admin-route-selector" style="display:none;">
     <div class="login-card" style="max-width:420px; text-align:center;">
         <div class="login-logo">NOVAPACK<span>➤</span></div>
-        <div class="login-sub" style="margin-bottom:6px;">🚚 REPARTO</div>
+        <div class="login-sub" style="margin-bottom:6px;">REPARTO</div>
         <div style="font-size:0.7rem; color:#AB47BC; font-weight:800; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase;">MODO ADMINISTRADOR</div>
 
         <div style="font-size:0.75rem; color:#888; letter-spacing:2px; font-weight:700; margin-bottom:14px;">SELECCIONA UNA RUTA</div>
@@ -402,13 +400,15 @@
 
     <!-- HEADER -->
     <header class="app-header">
-        <div style="display:flex; align-items:center; gap:6px;">
+        <div class="header-left">
             <span id="connection-dot" class="conn-dot online" title="Conectado"></span>
             <span id="driver-name" class="driver-badge">REPARTIDOR</span>
-            <button class="header-btn" id="btn-clean-route" title="Limpiar entregas completadas">🧹</button>
-            <button class="header-btn" id="btn-sort-route" title="Ordenar ruta por GPS">🧭</button>
-            <button class="header-btn" id="btn-refresh" title="Refrescar entregas">🔄</button>
-            <button class="header-btn danger" id="btn-logout" title="Cerrar sesión">⏻</button>
+        </div>
+        <div class="header-actions">
+            <button class="header-btn" id="btn-clean-route" title="Limpiar entregas completadas"><span class="material-symbols-outlined">cleaning_services</span></button>
+            <button class="header-btn" id="btn-sort-route" title="Ordenar ruta por GPS"><span class="material-symbols-outlined">route</span></button>
+            <button class="header-btn" id="btn-refresh" title="Refrescar entregas"><span class="material-symbols-outlined">refresh</span></button>
+            <button class="header-btn danger" id="btn-logout" title="Cerrar sesión"><span class="material-symbols-outlined">power_settings_new</span></button>
         </div>
     </header>
 
@@ -418,52 +418,59 @@
         <div class="delivery-stats">
             <div class="stat-box stat-filter active" data-filter="pending">
                 <div class="num" id="stat-pending" style="color:var(--warning);">0</div>
-                <div class="lbl">⏱️ Pendientes</div>
+                <div class="lbl"><span class="material-symbols-outlined">schedule</span> Pendientes</div>
             </div>
             <div class="stat-box stat-filter" data-filter="delivered">
                 <div class="num" id="stat-delivered" style="color:var(--success);">0</div>
-                <div class="lbl">✅ Entregados</div>
+                <div class="lbl"><span class="material-symbols-outlined">check_circle</span> Entregados</div>
             </div>
             <div class="stat-box stat-filter" data-filter="morning">
-                <div class="num" id="stat-morning" style="color:#FFD700;">0</div>
-                <div class="lbl">☀️ Mañana</div>
+                <div class="num" id="stat-morning" style="color:var(--morning);">0</div>
+                <div class="lbl"><span class="material-symbols-outlined">light_mode</span> Mañana</div>
             </div>
             <div class="stat-box stat-filter" data-filter="afternoon">
-                <div class="num" id="stat-afternoon" style="color:#7B68EE;">0</div>
-                <div class="lbl">🌙 Tarde</div>
+                <div class="num" id="stat-afternoon" style="color:var(--afternoon);">0</div>
+                <div class="lbl"><span class="material-symbols-outlined">dark_mode</span> Tarde</div>
             </div>
         </div>
 
         <!-- Cooper Buttons -->
-        <div style="display:flex; gap:10px; padding:0 12px 10px; flex-wrap:wrap;">
-            <button onclick="openCooperPhoto('recogida')" style="flex:1; min-width:140px; background:linear-gradient(135deg,#FF9800,#E65100); border:none; color:white; padding:12px 16px; border-radius:10px; font-size:0.85rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 3px 12px rgba(255,152,0,0.4);">
-                <span style="font-size:1.2rem;">📥</span> RECOGIDA <span id="cooper-count-recogida" style="background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:10px; font-size:0.75rem; min-width:20px; text-align:center;">0</span>
+        <div class="section-row">
+            <button class="btn-cooper btn-cooper--recogida" onclick="openCooperPhoto('recogida')">
+                <span class="material-symbols-outlined">download</span> RECOGIDA <span class="badge badge--count" id="cooper-count-recogida">0</span>
             </button>
-            <button onclick="openCooperPhoto('entrega')" style="flex:1; min-width:140px; background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:white; padding:12px 16px; border-radius:10px; font-size:0.85rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; box-shadow:0 3px 12px rgba(76,175,80,0.4);">
-                <span style="font-size:1.2rem;">📤</span> ENTREGA <span id="cooper-count-entrega" style="background:rgba(0,0,0,0.3); padding:2px 8px; border-radius:10px; font-size:0.75rem; min-width:20px; text-align:center;">0</span>
+            <button class="btn-cooper btn-cooper--entrega" onclick="openCooperPhoto('entrega')">
+                <span class="material-symbols-outlined">upload</span> ENTREGA <span class="badge badge--count" id="cooper-count-entrega">0</span>
             </button>
         </div>
 
         <!-- Cooper Log Toggle -->
-        <div style="padding:0 12px 8px;">
-            <button id="btn-cooper-log" onclick="toggleCooperLog()" style="width:100%; background:linear-gradient(135deg,#1a1a2e,#16213e); border:1px solid #333; color:#FF9800; padding:10px 16px; border-radius:10px; font-size:0.82rem; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
-                📋 REGISTRO COOPER <span id="cooper-log-arrow" style="transition:transform 0.3s;">▼</span>
+        <div class="section-toggle">
+            <button class="btn-section-toggle btn-section-toggle--cooper" id="btn-cooper-log" onclick="toggleCooperLog()">
+                <span class="material-symbols-outlined">receipt_long</span> REGISTRO COOPER <span class="material-symbols-outlined toggle-arrow" id="cooper-log-arrow">expand_more</span>
             </button>
         </div>
-        <div id="cooper-log-panel" style="display:none; padding:0 12px 10px; max-height:400px; overflow-y:auto;"></div>
+        <div class="section-panel" id="cooper-log-panel"></div>
 
         <!-- Recogidas/Avisos Toggle -->
-        <div style="padding:0 12px 8px;">
-            <button id="btn-alerts-toggle" onclick="toggleAlertsPanel()" style="width:100%; background:linear-gradient(135deg,#1b3d1b,#2E7D32); border:1px solid #4CAF50; color:#4CAF50; padding:12px 16px; border-radius:10px; font-size:0.88rem; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; position:relative;">
-                <span class="material-symbols-outlined" style="font-size:1.3rem;">campaign</span> RECOGIDAS / AVISOS <span id="alerts-count-badge" style="background:#FF3B30; color:white; padding:2px 10px; border-radius:10px; font-size:0.75rem; min-width:20px; text-align:center; display:none;">0</span> <span id="alerts-panel-arrow" style="transition:transform 0.3s;">▼</span>
+        <div class="section-toggle">
+            <button class="btn-section-toggle btn-section-toggle--alerts" id="btn-alerts-toggle" onclick="toggleAlertsPanel()">
+                <span class="material-symbols-outlined">campaign</span> RECOGIDAS / AVISOS <span class="badge badge--alert" id="alerts-count-badge" style="display:none;">0</span> <span class="material-symbols-outlined toggle-arrow" id="alerts-panel-arrow">expand_more</span>
             </button>
         </div>
-        <div id="alerts-panel" style="display:none; padding:0 12px 10px;"></div>
+        <div class="section-panel" id="alerts-panel"></div>
+
+        <!-- Skeleton Loader (shown while loading) -->
+        <div class="delivery-list" id="skeleton-loader" style="display:none;">
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+        </div>
 
         <!-- Delivery List -->
         <div class="delivery-list" id="delivery-list">
             <div class="empty-state">
-                <div class="icon">📦</div>
+                <span class="material-symbols-outlined">inventory_2</span>
                 <p>No hay entregas asignadas</p>
             </div>
         </div>
@@ -478,7 +485,7 @@
             <div style="width:100%; max-width:400px; margin-top:16px;">
                 <div style="display:flex; gap:8px;">
                     <input type="text" id="manual-id-input" class="form-control" placeholder="ID albarán o nombre...">
-                    <button class="btn btn-primary btn-sm" id="btn-manual-search" style="white-space:nowrap;">🔍</button>
+                    <button class="btn btn-primary btn-sm" id="btn-manual-search" style="white-space:nowrap;"><span class="material-symbols-outlined" style="font-size:1rem;">search</span></button>
                 </div>
             </div>
 
@@ -492,30 +499,30 @@
 
                 <!-- Confirm Panel -->
                 <div class="confirm-panel" id="confirm-panel">
-                    <h3>📋 CONFIRMACIÓN DE ENTREGA</h3>
+                    <h3><span class="material-symbols-outlined">task_alt</span> CONFIRMACIÓN DE ENTREGA</h3>
                     <div class="form-group">
-                        <label class="form-label">👤 Nombre del receptor</label>
+                        <label class="form-label"><span class="material-symbols-outlined">person</span> Nombre del receptor</label>
                         <input type="text" id="confirm-receiver" class="form-control" placeholder="Quién recibe...">
                     </div>
                     <div class="signature-wrap">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                            <label class="form-label" style="margin:0;">✍️ Firma del receptor</label>
+                            <label class="form-label" style="margin:0;"><span class="material-symbols-outlined">draw</span> Firma del receptor</label>
                             <button class="btn btn-sm btn-outline" id="btn-clear-sig" style="padding:2px 10px; font-size:0.65rem; color:var(--danger);">Borrar</button>
                         </div>
                         <canvas id="sig-canvas"></canvas>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">📸 Foto <span style="color:var(--text-dim); text-transform:none;">(opcional)</span></label>
+                        <label class="form-label"><span class="material-symbols-outlined">photo_camera</span> Foto <span class="form-label-optional">(opcional)</span></label>
                         <input type="file" id="confirm-photo" accept="image/*" capture="environment" style="display:none;">
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <button class="btn btn-sm btn-outline" id="btn-take-photo" style="flex:1;">📷 Tomar Foto</button>
+                            <button class="btn btn-sm btn-outline" id="btn-take-photo" style="flex:1;"><span class="material-symbols-outlined" style="font-size:1rem;">camera_alt</span> Tomar Foto</button>
                             <span id="photo-status" style="font-size:0.75rem; color:var(--text-dim);">Sin foto</span>
                         </div>
                         <img id="photo-preview" class="photo-preview">
                     </div>
                 </div>
 
-                <button class="btn btn-success" id="btn-confirm-delivery" style="margin-top:12px;">✅ REGISTRAR ENTREGA</button>
+                <button class="btn btn-success" id="btn-confirm-delivery" style="margin-top:12px;"><span class="material-symbols-outlined">check_circle</span> REGISTRAR ENTREGA</button>
             </div>
         </div>
     </div>
@@ -526,20 +533,20 @@
     </div>
 
     <!-- ===== SCAN FAB ===== -->
-    <button class="scan-fab" id="btn-scan-fab">📷</button>
+    <button class="scan-fab" id="btn-scan-fab"><span class="material-symbols-outlined">qr_code_scanner</span></button>
 
     <!-- ===== BOTTOM NAV ===== -->
     <nav class="bottom-nav">
         <button class="nav-btn active" data-view="view-deliveries">
-            <span class="icon">📋</span>
+            <span class="material-symbols-outlined">list_alt</span>
             Entregas
         </button>
         <button class="nav-btn" data-view="view-scanner">
-            <span class="icon">📷</span>
+            <span class="material-symbols-outlined">qr_code_scanner</span>
             Escáner
         </button>
         <button class="nav-btn" data-view="view-map">
-            <span class="icon">🗺️</span>
+            <span class="material-symbols-outlined">map</span>
             Mapa
         </button>
     </nav>
@@ -558,23 +565,23 @@
     <div class="modal-overlay" id="mod-modal">
         <div class="modal-sheet">
             <div class="modal-handle"></div>
-            <h3 style="color:var(--brand); font-size:1rem; font-weight:800; margin-bottom:16px;">✏️ SOLICITAR MODIFICACIÓN</h3>
-            <div id="mod-ticket-info" style="font-size:0.85rem; color:var(--text-dim); margin-bottom:14px; line-height:1.6;"></div>
+            <h3 class="modal-title" style="color:var(--brand);"><span class="material-symbols-outlined">edit_note</span> SOLICITAR MODIFICACIÓN</h3>
+            <div id="mod-ticket-info" class="modal-subtitle" style="line-height:1.6;"></div>
             <div class="form-group">
-                <label class="form-label">📍 Nueva dirección</label>
+                <label class="form-label"><span class="material-symbols-outlined">location_on</span> Nueva dirección</label>
                 <input type="text" id="mod-address" class="form-control" placeholder="Dejar vacío si no cambia">
             </div>
             <div class="form-group">
-                <label class="form-label">📦 Nuevos bultos</label>
+                <label class="form-label"><span class="material-symbols-outlined">inventory_2</span> Nuevos bultos</label>
                 <input type="number" id="mod-packages" class="form-control" placeholder="Dejar vacío si no cambia" min="1">
             </div>
             <div class="form-group">
-                <label class="form-label">📝 Observaciones para admin</label>
+                <label class="form-label"><span class="material-symbols-outlined">notes</span> Observaciones para admin</label>
                 <textarea id="mod-notes" class="form-control" placeholder="Explica el motivo de la modificación..." rows="3" style="resize:none;"></textarea>
             </div>
-            <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
-                <button class="btn btn-primary" id="btn-mod-send">📤 ENVIAR SOLICITUD</button>
-                <button class="btn btn-outline" id="btn-mod-cancel" style="color:var(--text-dim);">CANCELAR</button>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="btn-mod-send"><span class="material-symbols-outlined">send</span> ENVIAR SOLICITUD</button>
+                <button class="btn btn-ghost" id="btn-mod-cancel">CANCELAR</button>
             </div>
         </div>
     </div>
@@ -583,13 +590,11 @@
     <div class="modal-overlay" id="incident-modal">
         <div class="modal-sheet" style="max-width:420px;">
             <div class="modal-handle"></div>
-            <h3 style="color:#FF3B30; font-size:1rem; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:8px;">
-                <span style="font-size:1.3rem;">⚠️</span> REPORTAR INCIDENCIA
-            </h3>
-            <p id="incident-modal-ticket" style="color:var(--text-dim); font-size:0.8rem; margin:0 0 16px;"></p>
+            <h3 class="modal-title" style="color:var(--danger);"><span class="material-symbols-outlined">warning</span> REPORTAR INCIDENCIA</h3>
+            <p id="incident-modal-ticket" class="modal-subtitle"></p>
             <div style="display:flex; flex-direction:column; gap:12px;">
                 <div class="form-group" style="margin:0;">
-                    <label class="form-label" style="font-size:0.85rem;">📝 Motivo de la incidencia</label>
+                    <label class="form-label"><span class="material-symbols-outlined">description</span> Motivo de la incidencia</label>
                     <select id="incident-reason-select" class="form-control" style="font-size:0.9rem;">
                         <option value="">Seleccionar motivo...</option>
                         <option value="Direccion incorrecta">Direccion incorrecta</option>
@@ -602,19 +607,19 @@
                     </select>
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label class="form-label" style="font-size:0.85rem;">💬 Detalle <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <label class="form-label"><span class="material-symbols-outlined">chat</span> Detalle <span class="form-label-optional">(opcional)</span></label>
                     <input type="text" id="incident-detail" class="form-control" placeholder="Ej: paquete abierto, cristal roto..." maxlength="300" style="font-size:0.9rem;">
                 </div>
                 <div class="form-group" style="margin:0;">
-                    <label class="form-label" style="font-size:0.85rem;">📸 Foto evidencia <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <label class="form-label"><span class="material-symbols-outlined">photo_camera</span> Foto evidencia <span class="form-label-optional">(opcional)</span></label>
                     <input type="file" id="incident-photo-input" accept="image/*" capture="environment" style="display:none;">
-                    <button class="btn btn-sm btn-outline" id="btn-incident-camera" style="width:100%; padding:10px;">📷 Tomar Foto</button>
+                    <button class="btn btn-outline" id="btn-incident-camera" style="width:100%;"><span class="material-symbols-outlined">camera_alt</span> Tomar Foto</button>
                     <img id="incident-photo-preview" style="display:none; width:100%; border-radius:8px; border:2px solid var(--border); max-height:200px; object-fit:contain; margin-top:8px;">
                 </div>
-                <button class="btn" id="btn-incident-send" style="background:#FF3B30; color:white; border:none; font-size:1rem; padding:14px;">
-                    ⚠️ ENVIAR INCIDENCIA
+                <button class="btn btn-danger btn-lg" id="btn-incident-send">
+                    <span class="material-symbols-outlined">warning</span> ENVIAR INCIDENCIA
                 </button>
-                <button class="btn btn-outline" id="btn-incident-cancel" style="color:var(--text-dim);">CANCELAR</button>
+                <button class="btn btn-ghost" id="btn-incident-cancel">CANCELAR</button>
             </div>
         </div>
     </div>
@@ -623,23 +628,23 @@
     <div class="modal-overlay" id="cooper-modal">
         <div class="modal-sheet" style="max-width:420px;">
             <div class="modal-handle"></div>
-            <h3 id="cooper-modal-title" style="color:#FF9800; font-size:1rem; font-weight:800; margin-bottom:6px; display:flex; align-items:center; gap:8px;"></h3>
-            <p style="color:var(--text-dim); font-size:0.8rem; margin:0 0 16px;">Haz una foto al albaran de Cooper</p>
+            <h3 id="cooper-modal-title" class="modal-title" style="color:#FF9800;"></h3>
+            <p class="modal-subtitle">Haz una foto al albaran de Cooper</p>
             <input type="file" id="cooper-photo-input" accept="image/*" capture="environment" style="display:none;">
             <div style="display:flex; flex-direction:column; gap:12px;">
-                <button class="btn btn-primary" id="btn-cooper-camera" style="font-size:1rem; padding:14px;">
-                    📷 ABRIR CAMARA
+                <button class="btn btn-primary btn-lg" id="btn-cooper-camera">
+                    <span class="material-symbols-outlined">camera_alt</span> ABRIR CAMARA
                 </button>
                 <img id="cooper-photo-preview" style="display:none; width:100%; border-radius:8px; border:2px solid var(--border); max-height:300px; object-fit:contain;">
                 <span id="cooper-photo-status" style="font-size:0.8rem; color:var(--text-dim); text-align:center;">Sin foto</span>
                 <div class="form-group" style="margin:0;">
-                    <label class="form-label" style="font-size:0.8rem;">📝 Nota <span style="color:var(--text-dim);">(opcional)</span></label>
+                    <label class="form-label"><span class="material-symbols-outlined">edit_note</span> Nota <span class="form-label-optional">(opcional)</span></label>
                     <input type="text" id="cooper-note" class="form-control" placeholder="Ej: 2 bultos, P-4521..." maxlength="200" style="font-size:0.9rem;">
                 </div>
-                <button class="btn btn-success" id="btn-cooper-send" style="display:none; font-size:1rem; padding:14px;">
-                    📤 ENVIAR FOTO
+                <button class="btn btn-success btn-lg" id="btn-cooper-send" style="display:none;">
+                    <span class="material-symbols-outlined">upload</span> ENVIAR FOTO
                 </button>
-                <button class="btn btn-outline" id="btn-cooper-cancel" style="color:var(--text-dim);">CANCELAR</button>
+                <button class="btn btn-ghost" id="btn-cooper-cancel">CANCELAR</button>
             </div>
         </div>
     </div>

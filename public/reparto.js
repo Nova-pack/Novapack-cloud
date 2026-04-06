@@ -139,7 +139,7 @@ function requestNotificationPermission() {
 
 function sendNotification(title, body, onTapCallback) {
     // 1. In-app toast (longer duration for visibility)
-    showToast('📦 ' + body, 'success', 8000);
+    showToast(body, 'success', 8000);
 
     // 2. Play alert sound EVERY TIME (fresh oscillator)
     try {
@@ -226,8 +226,8 @@ function showToast(message, type, duration) {
     if (!container) return;
     var t = document.createElement('div');
     t.className = 'toast ' + type;
-    var icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
-    t.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + escapeHtml(message) + '</span>';
+    var icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+    t.innerHTML = '<span class="material-symbols-outlined icon-filled">' + (icons[type] || 'info') + '</span><span>' + escapeHtml(message) + '</span>';
     container.appendChild(t);
 
     // Sound + vibration by type
@@ -526,7 +526,7 @@ function initApp() {
             btn.className = 'driver-option-btn';
             btn.style.borderColor = 'rgba(171,71,188,0.3)';
             btn.style.background = 'rgba(171,71,188,0.06)';
-            btn.innerHTML = '<span class="driver-icon">📍</span><div style="text-align:left;"><div>' + escapeHtml(route.label).toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + escapeHtml(driversText) + '</div></div>';
+            btn.innerHTML = '<span class="driver-icon"><span class="material-symbols-outlined">location_on</span></span><div style="text-align:left;"><div>' + escapeHtml(route.label).toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + escapeHtml(driversText) + '</div></div>';
             btn.addEventListener('click', function() {
                 currentDriverPhone = normalizePhone(route.number);
                 currentRouteLabel = route.label;
@@ -636,19 +636,19 @@ function initApp() {
 
         var labelEl = document.getElementById('driver-route-label');
         if (routeLabel) {
-            labelEl.textContent = '📍 ' + routeLabel;
+            labelEl.innerHTML = '<span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">location_on</span> ' + escapeHtml(routeLabel);
         } else {
             labelEl.textContent = '';
         }
 
         var container = document.getElementById('driver-options');
-        var driverIcons = ['🚛', '🚚', '🏍️', '🚐'];
+        var driverIcons = ['local_shipping', 'local_shipping', 'two_wheeler', 'airport_shuttle'];
         container.innerHTML = '';
 
         names.forEach(function(name, idx) {
             var btn = document.createElement('button');
             btn.className = 'driver-option-btn';
-            btn.innerHTML = '<span class="driver-icon">' + (driverIcons[idx] || '🚛') + '</span><span>' + escapeHtml(name).toUpperCase() + '</span>';
+            btn.innerHTML = '<span class="driver-icon"><span class="material-symbols-outlined">' + (driverIcons[idx] || 'local_shipping') + '</span></span><span>' + escapeHtml(name).toUpperCase() + '</span>';
             btn.addEventListener('click', function() {
                 currentDriverName = name;
                 document.getElementById('driver-selector-view').style.display = 'none';
@@ -785,6 +785,10 @@ function initApp() {
     function startDeliveryListener() {
         if (unsubscribe) unsubscribe();
 
+        // Show skeleton while loading
+        var skeleton = document.getElementById('skeleton-loader');
+        if (skeleton) skeleton.style.display = '';
+
         unsubscribe = db.collection('tickets')
             .where('driverPhone', '==', currentDriverPhone)
             .onSnapshot(function(snap) {
@@ -801,7 +805,7 @@ function initApp() {
                     deliveries.forEach(function(d) {
                         if (!knownDeliveryIds.has(d._id) && d.status !== 'Entregado' && !d.delivered) {
                             sendNotification(
-                                '📦 Nueva entrega asignada',
+                                'Nueva entrega asignada',
                                 (d.receiver || 'Sin nombre') + ' — ' + [d.localidad, d.cp].filter(Boolean).join(', ')
                             );
                         }
@@ -830,6 +834,10 @@ function initApp() {
                         return (a.cp || '').localeCompare(b.cp || '');
                     });
                 }
+
+                // Hide skeleton loader
+                var skel = document.getElementById('skeleton-loader');
+                if (skel) skel.style.display = 'none';
 
                 // Skip re-render if confirmation is in progress to avoid UI disruption
                 if (!confirmInProgress) {
@@ -968,11 +976,11 @@ function initApp() {
         if (!panel) return;
         if (panel.style.display === 'none') {
             panel.style.display = 'block';
-            if (arrow) arrow.style.transform = 'rotate(180deg)';
+            if (arrow) arrow.classList.add('open');
             _renderAlertsPanel();
         } else {
             panel.style.display = 'none';
-            if (arrow) arrow.style.transform = 'rotate(0deg)';
+            if (arrow) arrow.classList.remove('open');
         }
     };
 
@@ -1140,7 +1148,7 @@ function initApp() {
 
         if (filtered.length === 0) {
             container.innerHTML = '<div class="empty-state">' +
-                '<div class="icon">📦</div>' +
+                '<span class="material-symbols-outlined">inventory_2</span>' +
                 '<p>No hay entregas' + (currentFilter !== 'all' ? ' con este filtro' : ' asignadas') + '</p>' +
                 '</div>';
             return;
@@ -1149,13 +1157,13 @@ function initApp() {
         container.innerHTML = filtered.map(function(d, idx) {
             var isDelivered = d.status === 'Entregado' || d.delivered;
             var statusClass = isDelivered ? 'delivered' : 'pending';
-            var statusText = isDelivered ? 'ENTREGADO' : (d.status === 'pending_confirmation' ? '⏳ MOD.' : 'PENDIENTE');
+            var statusText = isDelivered ? 'ENTREGADO' : (d.status === 'pending_confirmation' ? 'MOD.' : 'PENDIENTE');
             var addr = [d.address, d.localidad, d.cp, d.province].filter(Boolean).join(', ');
             var pkgCount = getPackageCount(d);
             var orderNum = isDelivered ? '' : '<span class="route-order">' + (idx + 1) + '</span>';
 
             return '<div class="delivery-card ' + statusClass + '" data-id="' + escapeHtml(d._id) + '" data-idx="' + idx + '" draggable="true">' +
-                '<span class="drag-handle">⠿</span>' +
+                '<span class="drag-handle"><span class="material-symbols-outlined" style="font-size:0.9rem;">drag_indicator</span></span>' +
                 '<div class="dc-header">' +
                     '<span class="dc-id">' + orderNum + escapeHtml(d.id || d._id.substring(0,12)) + '</span>' +
                     '<span class="dc-status ' + statusClass + '">' + statusText + '</span>' +
@@ -1163,8 +1171,8 @@ function initApp() {
                 '<div class="dc-name">' + escapeHtml(d.receiver || d.clientName || 'Sin nombre') + '</div>' +
                 '<div class="dc-addr">' + escapeHtml(addr || 'Sin dirección') + '</div>' +
                 '<div class="dc-footer">' +
-                    '<span class="dc-packages">📦 ' + pkgCount + ' bultos ' + (d.timeSlot ? (d.timeSlot === 'MAÑANA' ? '☀️' : '🌙') : '') + '</span>' +
-                    '<button class="dc-gps" data-addr="' + escapeHtml(addr || '') + '">📍 GPS</button>' +
+                    '<span class="dc-packages"><span class="material-symbols-outlined">inventory_2</span> ' + pkgCount + ' bultos ' + (d.timeSlot ? (d.timeSlot === 'MAÑANA' ? '<span class="material-symbols-outlined" style="color:var(--morning);font-size:0.85rem;">light_mode</span>' : '<span class="material-symbols-outlined" style="color:var(--afternoon);font-size:0.85rem;">dark_mode</span>') : '') + '</span>' +
+                    '<button class="dc-gps" data-addr="' + escapeHtml(addr || '') + '"><span class="material-symbols-outlined">near_me</span> GPS</button>' +
                 '</div>' +
             '</div>';
         }).join('');
@@ -1367,18 +1375,18 @@ function initApp() {
                 '<b>Destinatario:</b> ' + escapeHtml(d.receiver || '---') + '<br>' +
                 '<b>Dirección:</b> ' + escapeHtml(addr || '---') + '<br>' +
                 '<b>Bultos:</b> ' + pkgCount + '<br>' +
-                '<b>Turno:</b> ' + (d.timeSlot === 'MAÑANA' ? '☀️ Mañana' : '🌙 Tarde') + '<br>' +
+                '<b>Turno:</b> ' + (d.timeSlot === 'MAÑANA' ? '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle; color:#FF9800;">light_mode</span> Mañana' : '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle; color:#5C6BC0;">dark_mode</span> Tarde') + '<br>' +
                 '<b>Remitente:</b> ' + escapeHtml(d.sender || '---') + '<br>' +
                 (d.notes ? '<b>Observaciones:</b> ' + escapeHtml(d.notes) + '<br>' : '') +
                 (d.cod ? '<b>Reembolso:</b> ' + escapeHtml(d.cod) + '€<br>' : '') +
                 (d.deliveryReceiverName ? '<b>Recibido por:</b> ' + escapeHtml(d.deliveryReceiverName) + '<br>' : '') +
             '</div>' +
             '<div style="display:flex; flex-direction:column; gap:8px;">' +
-                '<button class="btn btn-primary" id="modal-btn-gps">📍 ABRIR EN GPS</button>' +
+                '<button class="btn btn-primary" id="modal-btn-gps"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">near_me</span> ABRIR EN GPS</button>' +
                 (!isDelivered ?
-                    '<button class="btn btn-success" id="modal-btn-deliver">✅ ENTREGAR (MANUAL)</button>' +
-                    '<button class="btn btn-outline" id="modal-btn-modify">✏️ SOLICITAR MODIFICACIÓN</button>' +
-                    '<button class="btn" id="modal-btn-incident" style="background:#FF3B30; color:white; border:none;">⚠️ INCIDENCIA</button>'
+                    '<button class="btn btn-success" id="modal-btn-deliver"><span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> ENTREGAR (MANUAL)</button>' +
+                    '<button class="btn btn-outline" id="modal-btn-modify"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">edit_note</span> SOLICITAR MODIFICACIÓN</button>' +
+                    '<button class="btn btn-danger" id="modal-btn-incident"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">warning</span> INCIDENCIA</button>'
                 : '') +
                 '<button class="btn btn-outline" id="modal-btn-close" style="color:var(--text-dim);">CERRAR</button>' +
             '</div>';
@@ -1699,7 +1707,7 @@ function initApp() {
                     var snap2 = await db.collection('tickets').where('id', '==', searchId.replace(/^0+/, '')).get();
                     if (snap2.empty) {
                         // Ticket not found — could be deleted by admin
-                        showToast('⚠️ ALBARÁN NO ENCONTRADO: ' + searchId + '. Puede haber sido eliminado por administración.', 'error', 6000);
+                        showToast('ALBARÁN NO ENCONTRADO: ' + searchId + '. Puede haber sido eliminado por administración.', 'error', 6000);
                         hideLoading();
                         return;
                     }
@@ -1721,14 +1729,14 @@ function initApp() {
                 if (d.deliveredAt) {
                     try { deliveredDate = ' el ' + (d.deliveredAt.toDate ? d.deliveredAt.toDate() : new Date(d.deliveredAt)).toLocaleString('es-ES'); } catch(e) {}
                 }
-                showToast('⚠️ ALBARÁN YA ENTREGADO' + deliveredDate + '. Receptor: ' + (d.deliveredTo || d.receiverName || '---'), 'warning', 8000);
+                showToast('ALBARÁN YA ENTREGADO' + deliveredDate + '. Receptor: ' + (d.deliveredTo || d.receiverName || '---'), 'warning', 8000);
             }
 
             // --- DETECT INCIDENCIA / DEVUELTO ---
             if (d.status === 'Incidencia') {
-                showToast('⚠️ ALBARÁN CON INCIDENCIA registrada. Consulta con administración.', 'warning', 6000);
+                showToast('ALBARÁN CON INCIDENCIA registrada. Consulta con administración.', 'warning', 6000);
             } else if (d.status === 'Devuelto') {
-                showToast('⚠️ ALBARÁN MARCADO COMO DEVUELTO. No se debe entregar.', 'error', 6000);
+                showToast('ALBARÁN MARCADO COMO DEVUELTO. No se debe entregar.', 'error', 6000);
             }
 
             // Calculate total packages from ticket data
@@ -1744,16 +1752,16 @@ function initApp() {
 
             // --- DETECT DUPLICATE SCAN (same ticket, old format, already fully scanned) ---
             if (pkgNum === 0 && scannedPackages[ticketKey].size >= totalPkgs && scannedPackages[ticketKey].size > 0 && !isAlreadyDelivered) {
-                showToast('ℹ️ Este albarán ya fue escaneado en esta sesión.', 'info', 5000);
+                showToast('Este albarán ya fue escaneado en esta sesión.', 'info', 5000);
             }
 
             // Register scanned package
             if (pkgNum > 0) {
                 if (scannedPackages[ticketKey].has(pkgNum)) {
-                    showToast('📦 Bulto ' + pkgNum + '/' + totalPkgs + ' ya escaneado (duplicado).', 'warning');
+                    showToast('Bulto ' + pkgNum + '/' + totalPkgs + ' ya escaneado (duplicado).', 'warning');
                 } else {
                     scannedPackages[ticketKey].add(pkgNum);
-                    showToast('📦 Bulto ' + pkgNum + '/' + totalPkgs + ' escaneado ✅', 'success');
+                    showToast('Bulto ' + pkgNum + '/' + totalPkgs + ' escaneado', 'success');
                 }
             } else {
                 // Old QR format without PKG — mark ALL as scanned
@@ -1806,11 +1814,11 @@ function initApp() {
                     (isScanned
                         ? 'background:rgba(76,217,100,0.2); color:#4CD964; border:1px solid rgba(76,217,100,0.4);'
                         : 'background:rgba(255,255,255,0.05); color:var(--text-dim); border:1px solid var(--border);') +
-                    '">' + (isScanned ? '✅' : '⬜') + ' Bulto ' + i + '</div>';
+                    '">' + (isScanned ? '<span class="material-symbols-outlined icon-filled" style="font-size:.85rem; vertical-align:middle;">check_circle</span>' : '<span class="material-symbols-outlined" style="font-size:.85rem; vertical-align:middle;">check_box_outline_blank</span>') + ' Bulto ' + i + '</div>';
             }
             pkgProgressHtml += '</div>';
             if (!allScanned && !isDelivered) {
-                pkgProgressHtml += '<div style="margin-top:8px; text-align:center;"><button id="btn-scan-next-pkg" style="background:var(--brand); color:white; border:none; padding:8px 20px; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;">📷 ESCANEAR SIGUIENTE BULTO</button></div>';
+                pkgProgressHtml += '<div style="margin-top:8px; text-align:center;"><button id="btn-scan-next-pkg" style="background:var(--brand); color:white; border:none; padding:8px 20px; border-radius:8px; font-weight:700; font-size:0.8rem; cursor:pointer;"><span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">qr_code_scanner</span> ESCANEAR SIGUIENTE BULTO</button></div>';
             }
             pkgProgressHtml += '</div>';
         }
@@ -1821,9 +1829,9 @@ function initApp() {
             '<b>Bultos:</b> ' + escapeHtml(totalPkgs) + '<br>' +
             '<b>Remitente:</b> ' + escapeHtml(d.sender || '---') + '<br>' +
             (d.notes ? '<b>Obs:</b> ' + escapeHtml(d.notes) + '<br>' : '') +
-            (isDelivered ? '<div style="margin:8px 0; padding:10px; background:rgba(76,217,100,0.15); border:1px solid rgba(76,217,100,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#4CD964;">✅ YA ENTREGADO' + (d.deliveredTo ? ' — Receptor: ' + escapeHtml(d.deliveredTo) : '') + '</div>' : '') +
-            (d.status === 'Devuelto' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,59,48,0.15); border:1px solid rgba(255,59,48,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF3B30;">🚫 DEVUELTO — No entregar</div>' : '') +
-            (d.status === 'Incidencia' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF9800;">⚠️ INCIDENCIA — Consultar con administración</div>' : '') +
+            (isDelivered ? '<div style="margin:8px 0; padding:10px; background:rgba(76,217,100,0.15); border:1px solid rgba(76,217,100,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#4CD964;"><span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> YA ENTREGADO' + (d.deliveredTo ? ' — Receptor: ' + escapeHtml(d.deliveredTo) : '') + '</div>' : '') +
+            (d.status === 'Devuelto' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,59,48,0.15); border:1px solid rgba(255,59,48,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF3B30;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">block</span> DEVUELTO — No entregar</div>' : '') +
+            (d.status === 'Incidencia' ? '<div style="margin:8px 0; padding:10px; background:rgba(255,152,0,0.15); border:1px solid rgba(255,152,0,0.4); border-radius:8px; text-align:center; font-weight:700; font-size:0.85rem; color:#FF9800;"><span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">warning</span> INCIDENCIA — Consultar con administración</div>' : '') +
             pkgProgressHtml;
 
         // Bind "scan next" button
@@ -1844,10 +1852,10 @@ function initApp() {
             // Show confirm button only if all packages scanned
             if (allScanned) {
                 btnConfirm.style.display = 'flex';
-                btnConfirm.textContent = '✅ REGISTRAR ENTREGA';
+                btnConfirm.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
             } else {
                 btnConfirm.style.display = 'flex';
-                btnConfirm.textContent = '⏳ FALTAN ' + (totalPkgs - scannedCount) + ' BULTOS';
+                btnConfirm.innerHTML = '<span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">schedule</span> FALTAN ' + (totalPkgs - scannedCount) + ' BULTOS';
             }
             document.getElementById('confirm-receiver').value = '';
             clearSignature();
@@ -1888,7 +1896,7 @@ function initApp() {
 
         var btn = document.getElementById('btn-confirm-delivery');
         btn.disabled = true;
-        btn.textContent = '⏳ Procesando...';
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">hourglass_top</span> Procesando...';
         showLoading();
         confirmInProgress = true; // Block snapshot re-renders
 
@@ -1971,7 +1979,7 @@ function initApp() {
 
             document.getElementById('scan-ticket-details').innerHTML =
                 '<div style="text-align:center; padding:20px;">' +
-                    '<div style="font-size:3rem;">✅</div>' +
+                    '<div style="font-size:3rem;"><span class="material-symbols-outlined icon-filled" style="font-size:3rem; color:var(--success);">check_circle</span></div>' +
                     '<div style="font-size:1.1rem; font-weight:900; color:var(--success); margin:8px 0;">¡ENTREGA REGISTRADA!</div>' +
                     '<div style="color:var(--text-dim); font-size:0.85rem;">Receptor: <b>' + escapeHtml(receiverName) + '</b></div>' +
                 '</div>';
@@ -1990,7 +1998,7 @@ function initApp() {
                 switchView('view-deliveries');
                 renderDeliveries(); // Force refresh now
                 btn.disabled = false;
-                btn.textContent = '✅ REGISTRAR ENTREGA';
+                btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
                 btn.style.display = 'flex';
             }, 2000);
 
@@ -1998,7 +2006,7 @@ function initApp() {
             console.error('Delivery confirmation error:', e);
             showToast('Error: ' + e.message, 'error');
             btn.disabled = false;
-            btn.textContent = '✅ REGISTRAR ENTREGA';
+            btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
             confirmInProgress = false; // Re-enable snapshot renders
         } finally {
             hideLoading();
@@ -2079,7 +2087,7 @@ function initApp() {
             reader.onload = function(ev) {
                 document.getElementById('photo-preview').src = ev.target.result;
                 document.getElementById('photo-preview').style.display = 'block';
-                document.getElementById('photo-status').textContent = '✅ Foto lista';
+                document.getElementById('photo-status').innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle; color:var(--success);">check_circle</span> Foto lista';
             };
             reader.readAsDataURL(f);
         }
@@ -2164,7 +2172,7 @@ function initApp() {
         }
 
         // Show loading feedback
-        showToast('🗺️ Cargando mapa: 0/' + allDeliveries.length + ' direcciones...', 'info');
+        showToast('Cargando mapa: 0/' + allDeliveries.length + ' direcciones...', 'info');
 
         // Process SEQUENTIALLY with delay to respect Nominatim rate limit
         var geocoded = 0;
@@ -2186,9 +2194,9 @@ function initApp() {
                     '<div style="min-width:160px;">' +
                     '<b style="font-size:0.9rem;">' + (d.receiver || '') + '</b><br>' +
                     '<span style="color:#666;">' + [d.address, d.localidad, d.cp].filter(Boolean).join(', ') + '</span><br>' +
-                    '📦 ' + pkgCount + ' bultos<br>' +
+                    '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">inventory_2</span> ' + pkgCount + ' bultos<br>' +
                     '<span style="font-weight:700; color:' + (isDelivered ? '#4CD964' : '#FF6600') + ';">' +
-                    (isDelivered ? '✅ ENTREGADO' : '⏳ PENDIENTE (#' + (pendingIdx + 1) + ')') +
+                    (isDelivered ? '<span class="material-symbols-outlined icon-filled" style="font-size:.9rem; vertical-align:middle;">check_circle</span> ENTREGADO' : '<span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">schedule</span> PENDIENTE (#' + (pendingIdx + 1) + ')') +
                     '</span></div>'
                 );
                 mapMarkers.push(marker);
@@ -2204,7 +2212,7 @@ function initApp() {
 
             // Update progress every 3 items
             if ((i + 1) % 3 === 0 || i === allDeliveries.length - 1) {
-                showToast('🗺️ Mapa: ' + (i + 1) + '/' + allDeliveries.length + ' (' + geocoded + ' ok, ' + failed + ' sin ubicar)', 'info');
+                showToast('Mapa: ' + (i + 1) + '/' + allDeliveries.length + ' (' + geocoded + ' ok, ' + failed + ' sin ubicar)', 'info');
             }
 
             // Rate limit: wait 350ms between geocode API calls (Nominatim allows ~1/sec)
@@ -2363,10 +2371,10 @@ function initApp() {
         var title = document.getElementById('cooper-modal-title');
         if (!modal) return;
         if (type === 'recogida') {
-            title.innerHTML = '<span style="font-size:1.3rem;">📥</span> RECOGIDA COOPER';
+            title.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.3rem;">download</span> RECOGIDA COOPER';
             title.style.color = '#FF9800';
         } else {
-            title.innerHTML = '<span style="font-size:1.3rem;">📤</span> ENTREGA COOPER';
+            title.innerHTML = '<span class="material-symbols-outlined" style="font-size:1.3rem;">upload</span> ENTREGA COOPER';
             title.style.color = '#4CAF50';
         }
         // Reset
@@ -2499,12 +2507,12 @@ function initApp() {
         _cooperLogOpen = !_cooperLogOpen;
         if (_cooperLogOpen) {
             panel.style.display = 'block';
-            arrow.style.transform = 'rotate(180deg)';
+            if (arrow) arrow.classList.add('open');
             _cooperOpenDay = null;
             loadCooperLog();
         } else {
             panel.style.display = 'none';
-            arrow.style.transform = 'rotate(0deg)';
+            if (arrow) arrow.classList.remove('open');
         }
     };
 
@@ -2552,16 +2560,16 @@ function initApp() {
             html += '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">';
             html += '<button onclick="cooperBackToFolders()" style="background:#2a2a2d; border:1px solid #444; color:#2196F3; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:0.78rem; display:flex; align-items:center; gap:4px;">';
             html += '<span style="font-size:0.9rem;">←</span> Volver</button>';
-            html += '<span style="color:#FF9800; font-weight:700; font-size:0.82rem; text-transform:capitalize;">📂 ' + escapeHtml(folder.label) + '</span>';
+            html += '<span style="color:#FF9800; font-weight:700; font-size:0.82rem; text-transform:capitalize;"><span class="material-symbols-outlined" style="font-size:.9rem; vertical-align:middle;">folder_open</span> ' + escapeHtml(folder.label) + '</span>';
             html += '<span style="color:#666; font-size:0.72rem;">(' + folder.items.length + ')</span>';
             html += '</div>';
 
             folder.items.forEach(function(entry) {
                 var d = entry.date;
                 var time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-                var typeIcon = entry.data.type === 'recogida' ? '📥' : '📤';
+                var typeIcon = entry.data.type === 'recogida' ? '<span class="material-symbols-outlined" style="font-size:.85rem; vertical-align:middle;">download</span>' : '<span class="material-symbols-outlined" style="font-size:.85rem; vertical-align:middle;">upload</span>';
                 var typeLabel = entry.data.type === 'recogida' ? 'Recogida' : 'Entrega';
-                var shift = d.getHours() < 14 ? '☀️' : '🌙';
+                var shift = d.getHours() < 14 ? '<span class="material-symbols-outlined icon-filled" style="font-size:.85rem; vertical-align:middle; color:#FF9800;">light_mode</span>' : '<span class="material-symbols-outlined icon-filled" style="font-size:.85rem; vertical-align:middle; color:#5C6BC0;">dark_mode</span>';
 
                 html += '<div style="display:flex; align-items:center; gap:8px; padding:8px; background:rgba(255,255,255,0.03); border-radius:8px; margin-bottom:6px; border:1px solid #222;">';
                 html += '<a href="' + escapeHtml(entry.data.photoURL || '#') + '" target="_blank" style="flex-shrink:0;">';
@@ -2570,12 +2578,12 @@ function initApp() {
                 html += '<div style="flex:1; min-width:0;">';
                 html += '<div style="font-size:0.8rem; color:#ddd;">' + typeIcon + ' ' + escapeHtml(typeLabel) + ' <span style="color:#888;">' + shift + ' ' + escapeHtml(time) + '</span></div>';
                 if (entry.data.note) {
-                    html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📝 ' + escapeHtml(entry.data.note) + '</div>';
+                    html += '<div style="font-size:0.72rem; color:#999; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"><span class="material-symbols-outlined" style="font-size:.75rem; vertical-align:middle;">edit_note</span> ' + escapeHtml(entry.data.note) + '</div>';
                 }
                 html += '</div>';
                 // WhatsApp button
                 var waMsg = '📦 Cooper ' + typeLabel + '\n📅 ' + folder.label + ' ' + time + '\n🚛 ' + (entry.data.route || 'Sin ruta') + '\n👤 ' + (entry.data.driverName || '') + (entry.data.note ? '\n📝 ' + entry.data.note : '') + '\n\n' + (entry.data.photoURL || '');
-                html += '<a href="https://wa.me/?text=' + encodeURIComponent(waMsg) + '" target="_blank" style="flex-shrink:0; background:#25D366; color:#fff; padding:4px 8px; border-radius:6px; font-size:0.7rem; text-decoration:none; display:flex; align-items:center; gap:3px;">📲</a>';
+                html += '<a href="https://wa.me/?text=' + encodeURIComponent(waMsg) + '" target="_blank" style="flex-shrink:0; background:#25D366; color:#fff; padding:4px 8px; border-radius:6px; font-size:0.7rem; text-decoration:none; display:flex; align-items:center; gap:3px;"><span class="material-symbols-outlined" style="font-size:.9rem;">share</span></a>';
                 html += '</div>';
             });
 
@@ -2594,13 +2602,13 @@ function initApp() {
             var isToday = dayKey === new Date().toISOString().split('T')[0];
 
             html += '<div onclick="cooperOpenDay(\'' + dayKey + '\')" style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '; border:1px solid ' + (isToday ? 'rgba(255,152,0,0.3)' : '#222') + '; border-radius:8px; margin-bottom:6px; cursor:pointer;" ontouchstart="this.style.background=\'rgba(255,152,0,0.15)\'" ontouchend="this.style.background=\'' + (isToday ? 'rgba(255,152,0,0.08)' : 'rgba(255,255,255,0.02)') + '\'">';
-            html += '<span style="font-size:1.4rem;">📁</span>';
+            html += '<span style="font-size:1.4rem;"><span class="material-symbols-outlined" style="font-size:1.4rem; color:#FF9800;">folder</span></span>';
             html += '<div style="flex:1; min-width:0;">';
             html += '<div style="font-size:0.82rem; color:#ddd; font-weight:600; text-transform:capitalize;">' + escapeHtml(folder.label) + (isToday ? ' <span style="color:#FF9800; font-size:0.7rem;">(HOY)</span>' : '') + '</div>';
             html += '<div style="font-size:0.72rem; color:#888; display:flex; gap:10px; margin-top:2px;">';
-            html += '<span>📥 ' + recCount + ' recogidas</span>';
-            html += '<span>📤 ' + entCount + ' entregas</span>';
-            html += '<span>📷 ' + folder.items.length + ' total</span>';
+            html += '<span><span class="material-symbols-outlined" style="font-size:.75rem; vertical-align:middle;">download</span> ' + recCount + ' recogidas</span>';
+            html += '<span><span class="material-symbols-outlined" style="font-size:.75rem; vertical-align:middle;">upload</span> ' + entCount + ' entregas</span>';
+            html += '<span><span class="material-symbols-outlined" style="font-size:.75rem; vertical-align:middle;">photo_camera</span> ' + folder.items.length + ' total</span>';
             html += '</div></div>';
             html += '<span style="color:#555; font-size:1rem;">›</span>';
             html += '</div>';
