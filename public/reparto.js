@@ -526,7 +526,7 @@ function initApp() {
             btn.className = 'driver-option-btn';
             btn.style.borderColor = 'rgba(171,71,188,0.3)';
             btn.style.background = 'rgba(171,71,188,0.06)';
-            btn.innerHTML = '<span class="driver-icon"><span class="material-symbols-outlined">location_on</span></span><div style="text-align:left;"><div>' + escapeHtml(route.label).toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px;">' + escapeHtml(driversText) + '</div></div>';
+            btn.innerHTML = '<span class="driver-icon"><span class="material-symbols-outlined">location_on</span></span><div style="text-align:left; min-width:0; flex:1; overflow:hidden;"><div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(route.label).toUpperCase() + '</div><div style="font-size:0.65rem; color:#888; font-weight:400; letter-spacing:0; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(driversText) + '</div></div>';
             btn.addEventListener('click', function() {
                 currentDriverPhone = normalizePhone(route.number);
                 currentRouteLabel = route.label;

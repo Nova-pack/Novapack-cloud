@@ -380,18 +380,22 @@
         display:flex; align-items:center; justify-content:center;
     }
     .driver-option-btn {
-        width:100%; padding:16px 20px; border:2px solid rgba(255,77,0,0.3);
+        width:100%; padding:14px 16px; border:2px solid rgba(255,77,0,0.3);
         background:rgba(255,77,0,0.06); color:#fff; border-radius:12px;
-        font-size:0.95rem; font-weight:800; letter-spacing:2px; text-transform:uppercase;
+        font-size:0.85rem; font-weight:800; letter-spacing:1px; text-transform:uppercase;
         cursor:pointer; transition:all 0.2s ease;
-        display:flex; align-items:center; gap:12px;
+        display:flex; align-items:center; gap:10px;
+        overflow:hidden; min-width:0;
     }
     .driver-option-btn:hover, .driver-option-btn:active {
         background:rgba(255,77,0,0.2); border-color:#FF4D00;
         transform:scale(1.02); box-shadow:0 4px 20px rgba(255,77,0,0.3);
     }
     .driver-option-btn .driver-icon {
-        font-size:1.4rem; width:36px; text-align:center;
+        font-size:1.2rem; width:32px; text-align:center; flex-shrink:0;
+    }
+    .driver-option-btn > div, .driver-option-btn > span:last-child {
+        min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     }
 </style>
 
