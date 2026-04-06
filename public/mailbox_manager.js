@@ -1,11 +1,13 @@
 /**
- * MAILBOX MANAGER V3.0
+ * MAILBOX MANAGER V4.0
  * Motor del Buzón Inteligente (Gestión de incidencias y correos)
- * Mejoras: preview en tabla, tooltip subject, notas persistentes, toast, respuesta mejorada, categorías centralizadas
+ * V4: Separación entrante/saliente, badge de nuevos, historial de estados,
+ *     toggle de dirección, filtrado mejorado, UX pulida
  */
 
 let _mailboxCache = [];
 let _mailboxUnsubscribe = null;
+let _mailboxDirection = 'incoming'; // 'incoming', 'outgoing', 'all'
 
 // ============ CATEGORÍAS CENTRALIZADAS ============
 const MAILBOX_CATEGORIES = {
@@ -22,6 +24,10 @@ const MAILBOX_CATEGORIES = {
 function getCategoryText(cat) {
     const c = MAILBOX_CATEGORIES[cat] || MAILBOX_CATEGORIES.otro;
     return `${c.emoji} ${c.label}`;
+}
+
+function _isOutgoing(item) {
+    return item.type === 'outgoing_campaign' || item.status === 'outgoing';
 }
 // ==================================================
 
@@ -49,6 +55,17 @@ function showMailboxToast(message, type) {
 }
 // ======================================
 
+// ============ BADGE COUNTER ============
+window.updateMailboxBadge = function() {
+    const newCount = _mailboxCache.filter(i => !_isOutgoing(i) && (i.status || 'nueva') === 'nueva').length;
+    const badgeEl = document.getElementById('mailbox-badge');
+    if (badgeEl) {
+        badgeEl.textContent = newCount;
+        badgeEl.style.display = newCount > 0 ? 'inline-flex' : 'none';
+    }
+};
+// =======================================
+
 window.loadMailbox = function() {
     if (!window.db) {
         console.error("[MAILBOX] Firestore db not available");
@@ -59,7 +76,7 @@ window.loadMailbox = function() {
     if (!currentUser) {
         console.warn("[MAILBOX] No authenticated user, waiting for auth state...");
         const tbody = document.getElementById('mailbox-list-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#FF9800;">Esperando autenticación... Si persiste, recarga la página.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#FF9800;">Esperando autenticación... Si persiste, recarga la página.</td></tr>';
 
         const authInstance = window.auth || (window.firebase && window.firebase.auth ? window.firebase.auth() : null);
         if (authInstance) {
@@ -69,7 +86,7 @@ window.loadMailbox = function() {
                     console.log("[MAILBOX] Auth resolved, retrying loadMailbox...");
                     window.loadMailbox();
                 } else {
-                    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#ff4444;">No hay sesión activa. Inicia sesión para ver el buzón.</td></tr>';
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#ff4444;">No hay sesión activa. Inicia sesión para ver el buzón.</td></tr>';
                 }
             });
         }
@@ -78,13 +95,13 @@ window.loadMailbox = function() {
 
     console.log("[MAILBOX] Inicializando escucha de correos... (user: " + currentUser.uid + ")");
     const tbody = document.getElementById('mailbox-list-body');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#aaa;">Rastreando buzón de entrada... <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">sync</span></td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#aaa;">Rastreando buzón de entrada... <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">sync</span></td></tr>';
 
     if (_mailboxUnsubscribe) _mailboxUnsubscribe();
 
     _mailboxUnsubscribe = window.db.collection('mailbox')
         .orderBy('createdAt', 'desc')
-        .limit(100)
+        .limit(200)
         .onSnapshot((snapshot) => {
             _mailboxCache = [];
             snapshot.forEach(doc => {
@@ -93,12 +110,13 @@ window.loadMailbox = function() {
                 _mailboxCache.push(data);
             });
             renderMailbox();
+            updateMailboxBadge();
         }, (error) => {
             console.error("[MAILBOX] Error leyendo correos:", error);
             if (error.code === 'permission-denied' || error.code === 'failed-precondition' || error.message.includes('permissions') || error.message.includes('index')) {
                 console.log("[MAILBOX] Retrying without orderBy...");
                 _mailboxUnsubscribe = window.db.collection('mailbox')
-                    .limit(100)
+                    .limit(200)
                     .onSnapshot((snapshot) => {
                         _mailboxCache = [];
                         snapshot.forEach(doc => {
@@ -112,15 +130,30 @@ window.loadMailbox = function() {
                             return tb - ta;
                         });
                         renderMailbox();
+                        updateMailboxBadge();
                     }, (error2) => {
                         console.error("[MAILBOX] Fallback also failed:", error2);
-                        if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#ff4444;">Error de permisos: ' + error2.message + '<br>Verifica que la colección "mailbox" existe en Firestore y las reglas permiten lectura.</td></tr>';
+                        if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#ff4444;">Error de permisos: ' + error2.message + '<br>Verifica que la colección "mailbox" existe en Firestore y las reglas permiten lectura.</td></tr>';
                     });
             } else {
-                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:#ff4444;">Error: ' + error.message + '</td></tr>';
+                if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#ff4444;">Error: ' + error.message + '</td></tr>';
             }
         });
 };
+
+
+// ============ DIRECTION TOGGLE ============
+window.setMailboxDirection = function(dir) {
+    _mailboxDirection = dir;
+    document.querySelectorAll('.mailbox-dir-btn').forEach(b => {
+        b.style.background = b.getAttribute('data-dir') === dir
+            ? 'linear-gradient(135deg,#FF9800,#F57C00)' : 'transparent';
+        b.style.color = b.getAttribute('data-dir') === dir ? '#fff' : '#aaa';
+        b.style.borderColor = b.getAttribute('data-dir') === dir ? '#FF9800' : '#444';
+    });
+    renderMailbox();
+};
+// ==========================================
 
 
 var _renderMailboxTimer;
@@ -137,9 +170,16 @@ function _doRenderMailbox() {
     const searchText = (document.getElementById('mailbox-search')?.value || '').toLowerCase();
 
     const filtered = _mailboxCache.filter(item => {
+        // Direction filter
+        const outgoing = _isOutgoing(item);
+        if (_mailboxDirection === 'incoming' && outgoing) return false;
+        if (_mailboxDirection === 'outgoing' && !outgoing) return false;
+
         const itemStatus = item.status || 'nueva';
         if (statusFilter === 'todas') {
             if (itemStatus === 'archivada') return false;
+        } else if (statusFilter === 'outgoing') {
+            if (itemStatus !== 'outgoing') return false;
         } else {
             if (itemStatus !== statusFilter) return false;
         }
@@ -148,38 +188,56 @@ function _doRenderMailbox() {
             if (itemCat !== categoryFilter) return false;
         }
         if (searchText) {
-            const textToSearch = `${item.from || ''} ${item.subject || ''} ${item.body || ''} ${item.ticketRef || ''}`.toLowerCase();
+            const textToSearch = `${item.from || ''} ${item.to || ''} ${item.toName || ''} ${item.subject || ''} ${item.body || ''} ${item.ticketRef || ''}`.toLowerCase();
             if (!textToSearch.includes(searchText)) return false;
         }
         return true;
     });
 
+    // Counters
+    const incomingItems = _mailboxCache.filter(i => !_isOutgoing(i));
+    const outgoingItems = _mailboxCache.filter(i => _isOutgoing(i));
+    const newCount = incomingItems.filter(i => (i.status || 'nueva') === 'nueva').length;
+
     const counterEl = document.getElementById('mailbox-counter');
-    const newCount = _mailboxCache.filter(i => (i.status || 'nueva') === 'nueva').length;
     if (counterEl) {
-        counterEl.innerHTML = `Total: <b>${_mailboxCache.length}</b> · Nuevas: <b style="color:#FF9800;">${newCount}</b> · Mostrando: <b>${filtered.length}</b>`;
+        counterEl.innerHTML = `Entrantes: <b>${incomingItems.length}</b> · Salientes: <b style="color:#2196F3;">${outgoingItems.length}</b> · Nuevas: <b style="color:#FF9800;">${newCount}</b> · Mostrando: <b>${filtered.length}</b>`;
     }
 
     if (filtered.length === 0) {
+        const dirLabel = _mailboxDirection === 'outgoing' ? 'salientes' : _mailboxDirection === 'incoming' ? 'entrantes' : '';
         if (_mailboxCache.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:#FF9800; font-style:italic;">El buzón está vacío. No se han recibido correos aún.<br><span style="font-size:0.8rem; color:#888;">Si esperabas correos, verifica que el servicio de importación sigue activo.</span></td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:40px; color:#FF9800; font-style:italic;">
+                <span class="material-symbols-outlined" style="font-size:3rem; display:block; margin-bottom:10px; opacity:0.5;">inbox</span>
+                El buzón está vacío. No se han recibido correos aún.<br>
+                <span style="font-size:0.8rem; color:#888;">Si esperabas correos, verifica que el servicio de importación sigue activo en Cloud Functions.</span>
+            </td></tr>`;
         } else {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-dim); font-style:italic;">No hay correos que coincidan con el filtro actual. Prueba a cambiar a "Todas".</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--text-dim); font-style:italic;">No hay correos ${dirLabel} que coincidan con el filtro actual.</td></tr>`;
         }
         return;
     }
 
     let html = '';
     filtered.forEach((item, idx) => {
+        const outgoing = _isOutgoing(item);
         const est = item.status || 'nueva';
         let estIcon = '🔴';
-        if (est === 'en_curso') estIcon = '🟡';
+        if (est === 'outgoing') estIcon = '📤';
+        else if (est === 'en_curso') estIcon = '🟡';
         else if (est === 'resuelta') estIcon = '🟢';
         else if (est === 'archivada') estIcon = '⚫';
         else if (est === 'pod_lista') estIcon = '📄';
         else if (est === 'pod_autorizada') estIcon = '🚀';
 
-        const catText = getCategoryText(item.category || 'otro');
+        const catText = outgoing
+            ? '<span style="color:#2196F3; font-size:0.8rem;">Campaña</span>'
+            : getCategoryText(item.category || 'otro');
+
+        // Direction indicator
+        const dirIcon = outgoing
+            ? '<span style="color:#2196F3; font-size:1rem;" title="Saliente">arrow_upward</span>'
+            : '<span style="color:#4CAF50; font-size:1rem;" title="Entrante">arrow_downward</span>';
 
         let dateStr = 'Sin fecha';
         if (item.createdAt && typeof item.createdAt.toDate === 'function') {
@@ -188,22 +246,31 @@ function _doRenderMailbox() {
             dateStr = item.date;
         }
 
+        // For outgoing: show recipient. For incoming: show sender
+        const contactDisplay = outgoing
+            ? `<span style="color:#2196F3;">→</span> ${item.toName || item.to || 'Desconocido'}`
+            : (item.from || 'Desconocido');
+
         const ticketStr = item.ticketRef ? `<span style="background:rgba(255,152,0,0.2); color:#FF9800; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8rem;">${item.ticketRef}</span>` : `<span style="color:#666;">-</span>`;
 
         // Preview: primeras 80 chars del body
         const bodyPreview = item.body ? item.body.replace(/[\r\n]+/g, ' ').substring(0, 80) + (item.body.length > 80 ? '...' : '') : '';
 
-        // Subject con title tooltip para ver completo al pasar raton
+        // Subject con title tooltip
         const subjectFull = (item.subject || '(Sin Asunto)').replace(/"/g, '&quot;');
 
+        // Row highlight for new incoming
+        const rowBg = (!outgoing && est === 'nueva') ? 'background:rgba(255,152,0,0.04);' : '';
+
         html += `
-        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer;" class="mailbox-row hover-highlight" data-mail-idx="${idx}" data-mail-id="${item.id}">
+        <tr style="border-bottom:1px solid #3c3c3c; cursor:pointer; ${rowBg}" class="mailbox-row hover-highlight" data-mail-idx="${idx}" data-mail-id="${item.id}">
             <td style="padding:12px; text-align:center;" onclick="event.stopPropagation()">
                 <input type="checkbox" class="mailbox-chk" data-mail-id="${item.id}" onchange="mailboxUpdateBulkBar()" style="width:18px; height:18px; cursor:pointer; accent-color:#FF9800;">
             </td>
+            <td style="padding:12px; text-align:center;"><span class="material-symbols-outlined" style="font-size:1.1rem; color:${outgoing ? '#2196F3' : '#4CAF50'};">${outgoing ? 'arrow_upward' : 'arrow_downward'}</span></td>
             <td style="padding:12px; text-align:center; font-size: 1.2rem;">${estIcon}</td>
             <td style="padding:12px; font-size:0.85rem; color:#aaa; font-weight: bold;">${catText}</td>
-            <td style="padding:12px; font-weight:bold; color:#ddd;">${item.from || 'Desconocido'}</td>
+            <td style="padding:12px; font-weight:bold; color:#ddd;">${contactDisplay}</td>
             <td style="padding:12px; color:#fff; max-width:300px;" title="${subjectFull}">
                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600;">${item.subject || '(Sin Asunto)'}</div>
                 <div style="font-size:0.75rem; color:#888; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${bodyPreview}</div>
@@ -212,7 +279,7 @@ function _doRenderMailbox() {
             <td style="padding:12px; font-size:0.8rem; color:#888; text-align:center;">${dateStr}</td>
             <td style="padding:12px; text-align:center; white-space:nowrap;">
                 <button class="mailbox-open-btn" data-mail-idx="${idx}" style="background:linear-gradient(135deg,#2196F3,#1565C0); border:none; color:#fff; padding:4px 10px; font-size:0.8rem; border-radius:4px; cursor:pointer; font-weight:bold; margin-right:4px;" title="Ver Correo">👁 Ver</button>
-                <button class="mailbox-resolve-btn" data-mail-idx="${idx}" style="background:#4CAF50; border:none; color:#fff; padding:4px 8px; font-size:0.8rem; border-radius:4px; cursor:pointer; font-weight:bold;" title="Marcar Resuelta">✓</button>
+                ${!outgoing ? `<button class="mailbox-resolve-btn" data-mail-idx="${idx}" style="background:#4CAF50; border:none; color:#fff; padding:4px 8px; font-size:0.8rem; border-radius:4px; cursor:pointer; font-weight:bold;" title="Marcar Resuelta">✓</button>` : ''}
             </td>
         </tr>`;
     });
@@ -263,11 +330,27 @@ window.openMailboxModal = function(id) {
     const modalEl = document.getElementById('mailbox-modal');
     if (!modalEl) return;
 
-    // Subject and Sender
+    const outgoing = _isOutgoing(item);
+
+    // Subject and Sender/Recipient
     const subjectEl = document.getElementById('mailbox-modal-subject');
     if (subjectEl) subjectEl.innerText = item.subject || '(Sin Asunto)';
     const fromEl = document.getElementById('mailbox-modal-from');
-    if (fromEl) fromEl.innerText = item.from || 'Desconocido';
+    if (fromEl) {
+        if (outgoing) {
+            fromEl.innerHTML = `<span style="color:#2196F3;">→ Enviado a:</span> ${item.toName || item.to || 'Desconocido'}`;
+        } else {
+            fromEl.innerText = item.from || 'Desconocido';
+        }
+    }
+
+    // Direction label
+    const dirLabelEl = document.getElementById('mailbox-modal-direction');
+    if (dirLabelEl) {
+        dirLabelEl.innerHTML = outgoing
+            ? '<span style="background:rgba(33,150,243,0.2); color:#2196F3; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:bold;">📤 SALIENTE</span>'
+            : '<span style="background:rgba(76,175,80,0.2); color:#4CAF50; padding:3px 10px; border-radius:12px; font-size:0.75rem; font-weight:bold;">📥 ENTRANTE</span>';
+    }
 
     // Date
     let dateStr = 'Sin fecha';
@@ -283,7 +366,6 @@ window.openMailboxModal = function(id) {
     const bodyEl = document.getElementById('mailbox-modal-body');
     if (bodyEl) {
         if (item.htmlBody) {
-            // Render HTML email in a sandboxed iframe
             bodyEl.innerHTML = '';
             const iframe = document.createElement('iframe');
             iframe.style.cssText = 'width:100%; border:none; background:#fff; border-radius:6px; min-height:200px;';
@@ -295,13 +377,11 @@ window.openMailboxModal = function(id) {
                     doc.open();
                     doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#222;padding:10px;margin:0;word-break:break-word;}img{max-width:100%;height:auto;}</style></head><body>' + item.htmlBody + '</body></html>');
                     doc.close();
-                    // Auto-resize iframe to content height
                     setTimeout(function() {
                         try { iframe.style.height = (doc.body.scrollHeight + 20) + 'px'; } catch(e) {}
                     }, 200);
                 } catch(e) { iframe.srcdoc = item.htmlBody; }
             });
-            // Trigger load for srcdoc-capable browsers
             iframe.srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#222;padding:10px;margin:0;word-break:break-word;}img{max-width:100%;height:auto;}</style></head><body>' + item.htmlBody + '</body></html>';
         } else {
             bodyEl.innerText = item.body || '(Sin cuerpo de mensaje visible. Revisa el correo original.)';
@@ -310,7 +390,10 @@ window.openMailboxModal = function(id) {
 
     // Category dropdown
     const catSelect = document.getElementById('mailbox-modal-category-select');
-    if (catSelect) catSelect.value = item.category || 'otro';
+    if (catSelect) {
+        catSelect.value = item.category || 'otro';
+        catSelect.style.display = outgoing ? 'none' : '';
+    }
 
     // Ticket ref
     const tRef = document.getElementById('mailbox-modal-ticketref');
@@ -346,8 +429,7 @@ window.openMailboxModal = function(id) {
     // ============ POD PANEL ============
     const podPanel = document.getElementById('mailbox-pod-panel');
     if (podPanel) {
-        if (item.podInfo && item.podInfo.ready) {
-            // POD available — show authorize panel
+        if (!outgoing && item.podInfo && item.podInfo.ready) {
             const reasonMap = { pod_disponible: 'POD disponible' };
             let deliveredAt = 'N/A';
             if (item.podInfo.deliveredAt) {
@@ -381,8 +463,7 @@ window.openMailboxModal = function(id) {
                     }
                 </div>`;
             podPanel.style.display = 'block';
-        } else if (item.podInfo && !item.podInfo.ready) {
-            // POD not available — show reason
+        } else if (!outgoing && item.podInfo && !item.podInfo.ready) {
             const reasons = {
                 albaran_no_encontrado: 'Albarán no encontrado en el sistema',
                 pendiente_entrega: 'Albarán pendiente de entrega',
@@ -399,11 +480,11 @@ window.openMailboxModal = function(id) {
                     <div style="font-size:0.8rem; color:#aaa;">${reason}</div>
                 </div>`;
             podPanel.style.display = 'block';
+        } else if (!outgoing && item.category === 'pod') {
+            podPanel.innerHTML = '<div style="font-size:0.8rem; color:#888; font-style:italic; text-align:center; padding:10px;">Categoría POD detectada. El motor aún no ha consultado el estado del albarán.</div>';
+            podPanel.style.display = 'block';
         } else {
-            podPanel.style.display = item.category === 'pod' ? 'block' : 'none';
-            if (item.category === 'pod') {
-                podPanel.innerHTML = '<div style="font-size:0.8rem; color:#888; font-style:italic; text-align:center; padding:10px;">Categoría POD detectada. El motor aún no ha consultado el estado del albarán.</div>';
-            }
+            podPanel.style.display = 'none';
         }
     }
 
@@ -416,19 +497,16 @@ window.openMailboxModal = function(id) {
                 const sizeKB = att.size ? (att.size / 1024).toFixed(1) + ' KB' : '';
                 const isImage = (att.contentType || '').startsWith('image/');
                 if (att.dataUrl) {
-                    // Downloadable attachment
                     attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:5px 0; font-size:0.8rem; color:#ccc; border-bottom:1px solid #222;">
                         <span class="material-symbols-outlined" style="font-size:1rem; color:#4CAF50;">attach_file</span>
                         <a href="${att.dataUrl}" download="${att.filename}" style="flex:1; color:#4FC3F7; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Descargar">${att.filename}</a>
                         <span style="color:#666; font-size:0.7rem;">${sizeKB}</span>
                         <a href="${att.dataUrl}" download="${att.filename}" style="color:#4CAF50; font-size:0.7rem; text-decoration:none; font-weight:bold; padding:2px 8px; border:1px solid #4CAF50; border-radius:4px;">⬇ Descargar</a>
                     </div>`;
-                    // Preview for images
                     if (isImage) {
                         attHtml += `<div style="padding:4px 0 8px;"><img src="${att.dataUrl}" style="max-width:100%; max-height:200px; border-radius:6px; border:1px solid #333;"></div>`;
                     }
                 } else {
-                    // Metadata only (file too large or not stored)
                     attHtml += `<div style="display:flex; align-items:center; gap:6px; padding:5px 0; font-size:0.8rem; color:#ccc; border-bottom:1px solid #222;">
                         <span class="material-symbols-outlined" style="font-size:1rem; color:#FF9800;">attach_file</span>
                         <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${att.filename}</span>
@@ -443,11 +521,37 @@ window.openMailboxModal = function(id) {
         }
     }
 
-    // Load saved notes from Firestore
+    // Load saved notes
     const notesEl = document.getElementById('mailbox-modal-notes');
     if (notesEl) {
         notesEl.value = item.notes || '';
     }
+
+    // Status history panel
+    const historyPanel = document.getElementById('mailbox-modal-history');
+    if (historyPanel) {
+        if (item.statusHistory && item.statusHistory.length > 0) {
+            let hHtml = '';
+            item.statusHistory.slice(-8).forEach(h => {
+                let hDate = '';
+                if (h.at && h.at.toDate) hDate = h.at.toDate().toLocaleString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+                else if (h.at && h.at._seconds) hDate = new Date(h.at._seconds * 1000).toLocaleString('es-ES', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+                hHtml += `<div style="font-size:0.75rem; color:#888; padding:2px 0; border-left:2px solid #333; padding-left:8px; margin-left:4px;">${hDate} → <span style="color:#ccc;">${h.status}</span></div>`;
+            });
+            historyPanel.innerHTML = '<strong style="color:var(--text-dim); font-size:0.7rem; text-transform:uppercase; letter-spacing:1px; display:block; margin-bottom:6px;">Historial</strong>' + hHtml;
+            historyPanel.style.display = 'block';
+        } else {
+            historyPanel.style.display = 'none';
+        }
+    }
+
+    // Reply button — only for incoming
+    const replySection = document.getElementById('mailbox-modal-reply-section');
+    if (replySection) replySection.style.display = outgoing ? 'none' : '';
+
+    // Action buttons — hide for outgoing
+    const actionSection = document.getElementById('mailbox-modal-actions');
+    if (actionSection) actionSection.style.display = outgoing ? 'none' : '';
 
     // Setup reply
     window.replyMailboxEmail = function() {
@@ -456,7 +560,6 @@ window.openMailboxModal = function(id) {
         const match = emailAddress.match(/<([^>]+)>/);
         if (match) emailAddress = match[1];
 
-        // Body completo citado (max 2000 chars para mailto)
         const quotedBody = item.body ? item.body.substring(0, 2000).split('\n').map(l => '> ' + l).join('\n') : '';
         const sub = encodeURIComponent(`Re: ${item.subject || 'Tu consulta en Novapack'}`);
         const body = encodeURIComponent(
@@ -470,9 +573,22 @@ window.openMailboxModal = function(id) {
         window.open(`mailto:${emailAddress}?subject=${sub}&body=${body}`, '_blank');
     };
 
-    // Store active ID
+    // Store active ID and mark as read
     modalEl.setAttribute('data-active-id', id);
     modalEl.style.display = 'flex';
+
+    // Auto-mark incoming 'nueva' as 'en_curso' when opened
+    if (!outgoing && (item.status || 'nueva') === 'nueva') {
+        window.db.collection('mailbox').doc(id).update({
+            status: 'en_curso',
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            statusHistory: window.firebase.firestore.FieldValue.arrayUnion({
+                status: 'en_curso',
+                at: new Date(),
+                reason: 'auto_opened'
+            })
+        }).catch(() => {});
+    }
 };
 
 /**
@@ -491,7 +607,6 @@ window.saveMailboxNotes = async function() {
             notes: notes,
             updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
         });
-        // Update local cache
         const item = _mailboxCache.find(i => i.id === id);
         if (item) item.notes = notes;
         showMailboxToast('Notas guardadas', 'success');
@@ -503,7 +618,6 @@ window.saveMailboxNotes = async function() {
 
 /**
  * Authorize POD email send
- * Marks the mailbox doc as 'pod_autorizada' so pod_responder.js picks it up
  */
 window.authorizePODSend = async function() {
     const modalEl = document.getElementById('mailbox-modal');
@@ -520,13 +634,17 @@ window.authorizePODSend = async function() {
         await window.db.collection('mailbox').doc(id).update({
             status: 'pod_autorizada',
             podAuthorizedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+            updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            statusHistory: window.firebase.firestore.FieldValue.arrayUnion({
+                status: 'pod_autorizada',
+                at: new Date(),
+                reason: 'manual_authorize'
+            })
         });
 
         item.status = 'pod_autorizada';
         showMailboxToast('Envío POD autorizado. Se procesará en breve.', 'success');
 
-        // Update the button in the panel
         const btn = document.getElementById('mailbox-btn-authorize-pod');
         if (btn) {
             btn.outerHTML = '<div style="background:rgba(255,152,0,0.15); padding:8px; border-radius:6px; text-align:center; color:#FF9800; font-weight:bold; font-size:0.8rem;">⏳ Envío autorizado — pendiente de procesamiento</div>';
@@ -538,7 +656,7 @@ window.authorizePODSend = async function() {
 };
 
 /**
- * Update Mailbox Status
+ * Update Mailbox Status — with history tracking
  */
 window.updateMailboxStatus = async function(id, newStatus) {
     if (!id) {
@@ -546,16 +664,19 @@ window.updateMailboxStatus = async function(id, newStatus) {
     }
     if (!id) return;
 
-    // Also save notes if modal is open
     const notesEl = document.getElementById('mailbox-modal-notes');
     const notes = notesEl ? notesEl.value : undefined;
 
-    // Auto-archivar al resolver: guardar en su categoría como archivado
     const finalStatus = (newStatus === 'resuelta') ? 'archivada' : newStatus;
 
     const updateData = {
         status: finalStatus,
-        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        statusHistory: window.firebase.firestore.FieldValue.arrayUnion({
+            status: finalStatus,
+            at: new Date(),
+            reason: 'manual'
+        })
     };
     if (newStatus === 'resuelta') {
         updateData.resolvedAt = window.firebase.firestore.FieldValue.serverTimestamp();
@@ -583,8 +704,8 @@ window.updateMailboxStatus = async function(id, newStatus) {
         showMailboxToast(toastMsg, 'success');
 
         renderMailbox();
+        updateMailboxBadge();
 
-        // Close modal after brief delay so user sees the toast
         setTimeout(() => {
             const modalEl = document.getElementById('mailbox-modal');
             if (modalEl && modalEl.style.display === 'flex') {
@@ -606,7 +727,7 @@ window.updateMailboxStatus = async function(id, newStatus) {
 };
 
 /**
- * Update Mailbox Category (admin recategorization)
+ * Update Mailbox Category
  */
 window.updateMailboxCategory = async function(newCategory) {
     const id = document.getElementById('mailbox-modal')?.getAttribute('data-active-id');
@@ -664,7 +785,6 @@ window.mailboxBulkArchive = async function() {
     const ids = Array.from(document.querySelectorAll('.mailbox-chk:checked')).map(c => c.getAttribute('data-mail-id'));
     if (ids.length === 0) return;
 
-    const bar = document.getElementById('mailbox-bulk-bar');
     const countEl = document.getElementById('mailbox-bulk-count');
     if (countEl) countEl.textContent = `Archivando ${ids.length}...`;
 
@@ -673,7 +793,10 @@ window.mailboxBulkArchive = async function() {
         try {
             await window.db.collection('mailbox').doc(id).update({
                 status: 'archivada',
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                statusHistory: window.firebase.firestore.FieldValue.arrayUnion({
+                    status: 'archivada', at: new Date(), reason: 'bulk_archive'
+                })
             });
             const item = _mailboxCache.find(i => i.id === id);
             if (item) item.status = 'archivada';
@@ -687,6 +810,7 @@ window.mailboxBulkArchive = async function() {
     showMailboxToast(`${ok} correo${ok > 1 ? 's' : ''} archivado${ok > 1 ? 's' : ''}` + (fail ? ` (${fail} error${fail > 1 ? 'es' : ''})` : ''), 'success');
     mailboxBulkClearSelection();
     renderMailbox();
+    updateMailboxBadge();
 };
 
 window.mailboxBulkResolve = async function() {
@@ -702,7 +826,10 @@ window.mailboxBulkResolve = async function() {
             await window.db.collection('mailbox').doc(id).update({
                 status: 'archivada',
                 resolvedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+                updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+                statusHistory: window.firebase.firestore.FieldValue.arrayUnion({
+                    status: 'archivada', at: new Date(), reason: 'bulk_resolve'
+                })
             });
             const item = _mailboxCache.find(i => i.id === id);
             if (item) {
@@ -719,11 +846,12 @@ window.mailboxBulkResolve = async function() {
     showMailboxToast(`${ok} correo${ok > 1 ? 's' : ''} resuelto${ok > 1 ? 's' : ''} y archivado${ok > 1 ? 's' : ''}` + (fail ? ` (${fail} error${fail > 1 ? 'es' : ''})` : ''), 'success');
     mailboxBulkClearSelection();
     renderMailbox();
+    updateMailboxBadge();
 };
 
 // =================================================
 
-// Auto-trigger loadMailbox when the tab opens
+// Auto-trigger styles
 document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.innerHTML = `
@@ -731,6 +859,8 @@ document.addEventListener('DOMContentLoaded', () => {
     .mailbox-row:hover { background: rgba(0, 206, 209, 0.1) !important; cursor: pointer; }
     .mailbox-chk:checked ~ td { background: rgba(255,152,0,0.05); }
     tr:has(.mailbox-chk:checked) { background: rgba(255,152,0,0.08) !important; }
+    .mailbox-dir-btn { transition: all 0.2s; cursor: pointer; }
+    .mailbox-dir-btn:hover { opacity: 0.85; }
     `;
     document.head.appendChild(style);
 });
