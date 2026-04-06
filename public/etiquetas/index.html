@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOVAPACK — Etiquetas</title>
+    <link rel="icon" href="../image.ico">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;200;300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js" defer></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js" defer></script>
+    <script src="../firebase-config.js" defer></script>
+
+    <!-- QR Library -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" defer></script>
+
+    <style>
+        /* ===== DESIGN TOKENS ===== */
+        :root {
+            --bg-main: #0F1113;
+            --bg-surface: rgba(255,255,255,0.04);
+            --bg-surface-hover: rgba(255,255,255,0.07);
+            --bg-glass: rgba(20,22,26,0.85);
+            --primary: #FF6600;
+            --primary-glow: rgba(255,102,0,0.35);
+            --accent: #FF8533;
+            --green: #4CD964;
+            --red: #FF3B30;
+            --blue: #2196F3;
+            --yellow: #FF9800;
+            --text-main: #FFFFFF;
+            --text-dim: #A0A5AD;
+            --text-muted: #6C727A;
+            --border-glass: rgba(255,255,255,0.08);
+            --border-focus: rgba(255,102,0,0.5);
+            --radius-sm: 4px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --radius-xl: 16px;
+            --shadow-card: 0 4px 24px rgba(0,0,0,0.3);
+            --toolbar-h: 56px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            font-weight: 400;
+            background: var(--bg-main);
+            color: var(--text-main);
+            font-size: 0.88rem;
+            overflow: hidden;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .icon-filled { font-variation-settings: 'FILL' 1; }
+
+        /* ===== TOOLBAR ===== */
+        .toolbar {
+            position: sticky; top: 0; z-index: 100;
+            height: var(--toolbar-h);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px;
+            background: var(--bg-glass);
+            backdrop-filter: blur(15px);
+            border-bottom: 1px solid var(--border-glass);
+        }
+        .toolbar-left { display: flex; align-items: center; gap: 16px; }
+        .toolbar-right { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 200;
+            font-size: 1.3rem;
+            letter-spacing: 3px;
+            color: var(--primary);
+            text-shadow: 0 0 20px var(--primary-glow);
+        }
+        .logo-arrow { color: var(--red); margin-left: 2px; }
+        .logo-sub {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 300;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .toolbar-btn {
+            display: flex; align-items: center; gap: 5px;
+            padding: 6px 14px;
+            background: transparent;
+            border: 1px solid var(--border-glass);
+            color: var(--text-dim);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+        .toolbar-btn:hover { background: var(--bg-surface-hover); color: var(--text-main); }
+        .toolbar-btn .material-symbols-outlined { font-size: 16px; }
+        .user-name {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            font-weight: 500;
+        }
+        .company-badge {
+            padding: 4px 10px;
+            background: rgba(255,102,0,0.12);
+            border: 1px solid rgba(255,102,0,0.25);
+            border-radius: var(--radius-sm);
+            color: var(--primary);
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== MAIN LAYOUT ===== */
+        .main-container {
+            display: flex;
+            height: calc(100vh - var(--toolbar-h));
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 320px;
+            min-width: 320px;
+            border-right: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            background: rgba(0,0,0,0.15);
+        }
+        .sidebar-header {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+        .sidebar-header h2 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 300;
+            font-size: 0.85rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+        .search-box {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 7px 10px;
+        }
+        .search-box .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+        .search-box input {
+            flex: 1; background: none; border: none; outline: none;
+            color: var(--text-main); font-size: 0.82rem;
+        }
+        .search-box input::placeholder { color: var(--text-muted); }
+
+        .sidebar-actions {
+            padding: 10px 16px;
+            display: flex; flex-direction: column; gap: 6px;
+            border-bottom: 1px solid var(--border-glass);
+        }
+        .btn-print-batch {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 9px 12px;
+            border-radius: var(--radius-sm);
+            border: none;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+        .btn-print-batch.morning {
+            background: linear-gradient(135deg, #FF6600 0%, #FF8533 100%);
+            color: #fff;
+        }
+        .btn-print-batch.afternoon {
+            background: linear-gradient(135deg, #2196F3 0%, #42A5F5 100%);
+            color: #fff;
+        }
+        .btn-print-batch .material-symbols-outlined { font-size: 16px; }
+        .btn-print-batch:hover { transform: translateY(-1px); filter: brightness(1.1); }
+
+        .sidebar-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .sidebar-list::-webkit-scrollbar { width: 4px; }
+        .sidebar-list::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
+
+        .ticket-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+            margin-bottom: 2px;
+        }
+        .ticket-item:hover { background: var(--bg-surface-hover); }
+        .ticket-item.active {
+            background: rgba(255,102,0,0.08);
+            border-left-color: var(--primary);
+        }
+        .ticket-item.printed .ti-status { background: var(--green); }
+        .ticket-item .ti-info { flex: 1; min-width: 0; }
+        .ticket-item .ti-name {
+            font-weight: 600; font-size: 0.82rem;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .ticket-item .ti-addr {
+            font-size: 0.72rem; color: var(--text-dim);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .ticket-item .ti-meta {
+            font-size: 0.65rem; color: var(--text-muted); margin-top: 2px;
+            display: flex; gap: 8px;
+        }
+        .ti-status {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--red); flex-shrink: 0; margin-top: 6px;
+        }
+        .ti-pkgs {
+            font-size: 0.7rem; color: var(--text-muted);
+            flex-shrink: 0; text-align: right;
+        }
+
+        /* --- EDITOR AREA --- */
+        .editor {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .editor-form {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 24px;
+        }
+        .editor-form::-webkit-scrollbar { width: 5px; }
+        .editor-form::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
+
+        .form-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 300;
+            font-size: 1rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .form-title .material-symbols-outlined { color: var(--primary); font-size: 20px; }
+
+        .form-row {
+            display: flex; gap: 12px;
+            margin-bottom: 12px;
+        }
+        .form-group {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group.w50 { flex: 0 0 calc(50% - 6px); }
+        .form-group.w33 { flex: 0 0 calc(33.33% - 8px); }
+        .form-group.w25 { flex: 0 0 calc(25% - 9px); }
+        .form-label {
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .form-control {
+            padding: 8px 10px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            color: var(--text-main);
+            font-size: 0.85rem;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-control:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 2px rgba(255,102,0,0.1);
+        }
+        .form-control::placeholder { color: var(--text-muted); }
+        select.form-control { cursor: pointer; }
+        textarea.form-control { resize: vertical; min-height: 60px; }
+        .form-control.big {
+            font-size: 1.1rem;
+            font-weight: 700;
+            padding: 10px 12px;
+            text-transform: uppercase;
+        }
+
+        .form-section {
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-glass);
+        }
+        .section-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 400;
+            font-size: 0.78rem;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .section-title .material-symbols-outlined { font-size: 16px; color: var(--primary); }
+
+        /* Packages list */
+        .pkg-list { display: flex; flex-direction: column; gap: 6px; }
+        .pkg-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 8px;
+            background: var(--bg-surface);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-glass);
+        }
+        .pkg-row select, .pkg-row input {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--border-glass);
+            border-radius: 3px;
+            color: var(--text-main);
+            padding: 5px 8px;
+            font-size: 0.8rem;
+            font-family: 'Inter', sans-serif;
+            outline: none;
+        }
+        .pkg-row select { flex: 2; }
+        .pkg-row input[type="number"] { flex: 1; width: 60px; }
+        .pkg-row .btn-del-pkg {
+            background: none; border: none; cursor: pointer;
+            color: var(--text-muted); padding: 2px;
+        }
+        .pkg-row .btn-del-pkg:hover { color: var(--red); }
+        .btn-add-pkg {
+            display: flex; align-items: center; gap: 4px;
+            padding: 6px 12px; margin-top: 6px;
+            background: rgba(255,102,0,0.08);
+            border: 1px dashed rgba(255,102,0,0.3);
+            border-radius: var(--radius-sm);
+            color: var(--primary);
+            font-size: 0.75rem; font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-add-pkg:hover { background: rgba(255,102,0,0.15); }
+        .btn-add-pkg .material-symbols-outlined { font-size: 16px; }
+
+        /* Action buttons */
+        .form-actions {
+            display: flex; gap: 10px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-glass);
+        }
+        .btn {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            padding: 10px 20px;
+            border: none; border-radius: var(--radius-sm);
+            font-size: 0.78rem; font-weight: 700;
+            letter-spacing: 0.5px; text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn .material-symbols-outlined { font-size: 18px; }
+        .btn-primary {
+            background: linear-gradient(135deg, #FF6600, #FF8533);
+            color: #fff;
+            box-shadow: 0 4px 16px var(--primary-glow);
+        }
+        .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.1); }
+        .btn-secondary {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            color: var(--text-dim);
+        }
+        .btn-secondary:hover { background: var(--bg-surface-hover); color: var(--text-main); }
+        .btn-green {
+            background: linear-gradient(135deg, #4CD964, #34C759);
+            color: #fff;
+        }
+        .btn-green:hover { transform: translateY(-1px); filter: brightness(1.1); }
+
+        /* --- LABEL PREVIEW PANEL --- */
+        .preview-panel {
+            width: 380px;
+            min-width: 380px;
+            border-left: 1px solid var(--border-glass);
+            display: flex;
+            flex-direction: column;
+            background: rgba(0,0,0,0.1);
+        }
+        .preview-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-glass);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .preview-header h3 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 300;
+            font-size: 0.82rem;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .preview-header h3 .material-symbols-outlined { color: var(--primary); font-size: 18px; }
+        .preview-actions { display: flex; gap: 6px; }
+        .preview-actions button {
+            padding: 5px 10px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            color: var(--text-dim);
+            font-size: 0.7rem; font-weight: 600;
+            cursor: pointer;
+            display: flex; align-items: center; gap: 4px;
+            transition: all 0.2s;
+        }
+        .preview-actions button:hover { background: var(--bg-surface-hover); color: var(--text-main); }
+        .preview-actions button .material-symbols-outlined { font-size: 14px; }
+        .preview-body {
+            flex: 1; overflow-y: auto;
+            display: flex; align-items: flex-start; justify-content: center;
+            padding: 20px 16px;
+        }
+
+        /* Label visual (6x4 inches = 152x102mm scaled preview) */
+        .label-preview {
+            width: 340px;
+            height: 228px; /* 340 * (102/152) ≈ 228 */
+            background: #fff;
+            border-radius: 4px;
+            color: #000;
+            font-family: 'Inter', Arial, sans-serif;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        .lbl-header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            padding: 8px 12px 6px;
+            border-bottom: 2px solid #FF6600;
+        }
+        .lbl-brand {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            color: #FF6600;
+        }
+        .lbl-date {
+            font-size: 0.55rem;
+            color: #666;
+            text-align: right;
+            line-height: 1.3;
+        }
+        .lbl-sender {
+            padding: 4px 12px;
+            font-size: 0.55rem;
+            color: #555;
+            background: #f8f8f8;
+            border-bottom: 1px solid #ddd;
+        }
+        .lbl-sender strong { color: #333; }
+        .lbl-body {
+            flex: 1;
+            padding: 6px 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+        }
+        .lbl-dest-label {
+            font-size: 0.5rem;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+        .lbl-dest-name {
+            font-size: 1rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #000;
+            line-height: 1.1;
+        }
+        .lbl-dest-addr {
+            font-size: 0.65rem;
+            color: #333;
+            margin-top: 2px;
+            line-height: 1.3;
+        }
+        .lbl-dest-province {
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #FF6600;
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+        .lbl-qr {
+            position: absolute;
+            right: 10px;
+            bottom: 4px;
+            width: 52px; height: 52px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            background: #fff;
+        }
+        .lbl-qr img { width: 48px; height: 48px; }
+        .lbl-footer {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 5px 12px;
+            border-top: 2px solid #222;
+            background: #111;
+            color: #fff;
+            font-size: 0.6rem;
+            font-weight: 700;
+        }
+        .lbl-footer-id {
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+        .lbl-footer-slot {
+            font-size: 0.5rem;
+            color: #aaa;
+        }
+        .lbl-cod-banner {
+            position: absolute;
+            top: 50%; right: -20px;
+            transform: rotate(-15deg) translateY(-50%);
+            background: var(--red);
+            color: #fff;
+            padding: 2px 30px;
+            font-size: 0.5rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            display: none;
+        }
+        .lbl-cod-banner.visible { display: block; }
+
+        /* Paper selector modal */
+        .paper-modal {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            align-items: center; justify-content: center;
+        }
+        .paper-modal.open { display: flex; }
+        .paper-modal-box {
+            background: #1a1d21;
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            width: 360px;
+            text-align: center;
+        }
+        .paper-modal-box h3 {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 300;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            color: var(--text-dim);
+            margin-bottom: 16px;
+        }
+        .paper-option {
+            display: flex; align-items: center; gap: 12px;
+            padding: 14px 16px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: all 0.2s;
+        }
+        .paper-option:hover {
+            background: rgba(255,102,0,0.08);
+            border-color: rgba(255,102,0,0.3);
+        }
+        .paper-option .material-symbols-outlined { font-size: 28px; color: var(--primary); }
+        .paper-option-info { text-align: left; }
+        .paper-option-title { font-weight: 700; font-size: 0.85rem; }
+        .paper-option-desc { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; }
+
+        /* Toast */
+        .toast-container {
+            position: fixed; bottom: 20px; right: 20px; z-index: 300;
+            display: flex; flex-direction: column; gap: 8px;
+        }
+        .toast {
+            padding: 10px 16px;
+            border-radius: var(--radius-md);
+            font-size: 0.8rem; font-weight: 500;
+            display: flex; align-items: center; gap: 8px;
+            animation: toastIn 0.3s ease;
+            box-shadow: var(--shadow-card);
+        }
+        .toast.success { background: rgba(76,217,100,0.15); border: 1px solid rgba(76,217,100,0.3); color: var(--green); }
+        .toast.error { background: rgba(255,59,48,0.15); border: 1px solid rgba(255,59,48,0.3); color: var(--red); }
+        .toast.info { background: rgba(33,150,243,0.15); border: 1px solid rgba(33,150,243,0.3); color: var(--blue); }
+        @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        /* ===== PRINT STYLES ===== */
+        @media print {
+            body { background: #fff !important; }
+            .toolbar, .sidebar, .editor-form, .preview-panel, .toast-container { display: none !important; }
+            .print-area { display: block !important; }
+        }
+        .print-area { display: none; }
+
+        /* Print: thermal label — size set dynamically via CSS vars */
+        @media print {
+            @page { size: var(--label-w, 152mm) var(--label-h, 102mm); margin: 0; }
+            .print-label {
+                width: var(--label-w, 152mm); height: var(--label-h, 102mm);
+                page-break-after: always;
+                position: relative;
+                font-family: 'Inter', Arial, sans-serif;
+                color: #000;
+                overflow: hidden;
+            }
+        }
+        /* A4 mode override */
+        .print-area.a4-mode .print-label {
+            width: calc(var(--label-w, 152mm) - 4mm);
+            height: calc(var(--label-h, 102mm) - 3mm);
+            border: 0.5px dashed #ccc;
+        }
+        @media print {
+            .print-area.a4-mode { padding: 5mm; }
+            .print-area.a4-mode @page { size: A4; margin: 5mm; }
+            .print-area.a4-mode .print-label { page-break-after: auto; }
+        }
+
+        /* Format selector styles */
+        .format-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 14px;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .format-item:hover {
+            background: rgba(255,102,0,0.08);
+            border-color: rgba(255,102,0,0.3);
+        }
+        .format-item.active {
+            background: rgba(255,102,0,0.12);
+            border-color: var(--primary);
+        }
+        .format-item.active .format-check { color: var(--primary); }
+        .format-item .format-icon {
+            width: 40px; height: 28px;
+            border: 2px solid var(--text-muted);
+            border-radius: 3px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.55rem; color: var(--text-muted); font-weight: 700;
+            flex-shrink: 0;
+        }
+        .format-item.active .format-icon { border-color: var(--primary); color: var(--primary); }
+        .format-info { flex: 1; text-align: left; }
+        .format-name { font-weight: 700; font-size: 0.82rem; }
+        .format-dims { font-size: 0.68rem; color: var(--text-muted); margin-top: 1px; }
+        .format-check { font-size: 18px; color: transparent; }
+        .format-lock {
+            display: inline-flex; align-items: center; gap: 3px;
+            font-size: 0.6rem; color: var(--yellow);
+            font-weight: 600; margin-left: 6px;
+        }
+
+        /* ===== EMPTY STATE ===== */
+        .empty-state {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 100%; color: var(--text-muted);
+            text-align: center; padding: 40px;
+        }
+        .empty-state .material-symbols-outlined { font-size: 48px; margin-bottom: 12px; color: var(--text-muted); opacity: 0.4; }
+        .empty-state p { font-size: 0.85rem; }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 1100px) {
+            .preview-panel { width: 320px; min-width: 320px; }
+            .label-preview { width: 290px; height: 195px; }
+        }
+        @media (max-width: 900px) {
+            .sidebar { width: 260px; min-width: 260px; }
+            .preview-panel { display: none; }
+        }
+        @media (max-width: 700px) {
+            .sidebar { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== TOOLBAR ===== -->
+<div class="toolbar">
+    <div class="toolbar-left">
+        <div>
+            <div class="logo">NOVAPACK<span class="logo-arrow">&#10148;</span></div>
+            <div class="logo-sub">Etiquetas</div>
+        </div>
+        <span class="company-badge" id="company-name">---</span>
+    </div>
+    <div class="toolbar-right">
+        <span class="user-name" id="user-display-name">---</span>
+        <button class="toolbar-btn" id="btn-label-format" title="Formato de etiqueta">
+            <span class="material-symbols-outlined">straighten</span>
+            <span id="format-badge">6&times;4&Prime;</span>
+        </button>
+        <button class="toolbar-btn" id="btn-new-ticket" title="Nuevo env&iacute;o">
+            <span class="material-symbols-outlined">add</span> NUEVO
+        </button>
+        <button class="toolbar-btn" onclick="auth.signOut()" title="Cerrar sesi&oacute;n">
+            <span class="material-symbols-outlined">logout</span>
+        </button>
+    </div>
+</div>
+
+<!-- ===== MAIN LAYOUT ===== -->
+<div class="main-container">
+
+    <!-- SIDEBAR: Shipment list -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>
+                <span class="material-symbols-outlined" style="font-size:16px;">list_alt</span>
+                Env&iacute;os de hoy
+            </h2>
+            <div class="search-box">
+                <span class="material-symbols-outlined">search</span>
+                <input type="text" id="search-input" placeholder="Buscar destinatario, direcci&oacute;n...">
+            </div>
+        </div>
+        <div class="sidebar-actions">
+            <button class="btn-print-batch morning" id="btn-print-morning">
+                <span class="material-symbols-outlined icon-filled">print</span>
+                Imprimir Ma&ntilde;ana
+            </button>
+            <button class="btn-print-batch afternoon" id="btn-print-afternoon">
+                <span class="material-symbols-outlined icon-filled">print</span>
+                Imprimir Tarde
+            </button>
+        </div>
+        <div class="sidebar-list" id="ticket-list">
+            <div class="empty-state">
+                <span class="material-symbols-outlined">inbox</span>
+                <p>Sin env&iacute;os hoy</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDITOR: Form -->
+    <div class="editor">
+        <div class="editor-form" id="editor-form">
+            <div class="form-title">
+                <span class="material-symbols-outlined icon-filled">label</span>
+                Nuevo Env&iacute;o
+            </div>
+
+            <!-- Client picker -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Cliente / Agenda</label>
+                    <input type="text" class="form-control" id="client-picker" placeholder="Buscar cliente guardado..." autocomplete="off">
+                </div>
+            </div>
+
+            <!-- Recipient -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Destinatario *</label>
+                    <input type="text" class="form-control big" id="f-receiver" placeholder="Nombre completo" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group w50">
+                    <label class="form-label">NIF / CIF *</label>
+                    <input type="text" class="form-control" id="f-nif" placeholder="12345678A" style="text-transform:uppercase;">
+                </div>
+                <div class="form-group w50">
+                    <label class="form-label">Tel&eacute;fono</label>
+                    <input type="text" class="form-control" id="f-phone" placeholder="600 000 000">
+                </div>
+            </div>
+
+            <!-- Address -->
+            <div class="form-row">
+                <div class="form-group" style="flex:3;">
+                    <label class="form-label">Direcci&oacute;n *</label>
+                    <input type="text" class="form-control" id="f-address" placeholder="Calle, n&uacute;mero, piso...">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group w33">
+                    <label class="form-label">Localidad</label>
+                    <input type="text" class="form-control" id="f-localidad" placeholder="Ciudad">
+                </div>
+                <div class="form-group w25">
+                    <label class="form-label">C.P. *</label>
+                    <input type="text" class="form-control" id="f-cp" placeholder="29001" maxlength="5">
+                </div>
+                <div class="form-group w33">
+                    <label class="form-label">Provincia *</label>
+                    <select class="form-control" id="f-province">
+                        <option value="">Seleccionar...</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Packages section -->
+            <div class="form-section">
+                <div class="section-title">
+                    <span class="material-symbols-outlined icon-filled">inventory_2</span>
+                    Bultos
+                </div>
+                <div class="pkg-list" id="pkg-list">
+                    <!-- Dynamic package rows -->
+                </div>
+                <button class="btn-add-pkg" id="btn-add-pkg">
+                    <span class="material-symbols-outlined">add_circle</span>
+                    A&ntilde;adir bulto
+                </button>
+            </div>
+
+            <!-- Options -->
+            <div class="form-section">
+                <div class="section-title">
+                    <span class="material-symbols-outlined">tune</span>
+                    Opciones
+                </div>
+                <div class="form-row">
+                    <div class="form-group w33">
+                        <label class="form-label">Turno *</label>
+                        <select class="form-control" id="f-slot">
+                            <option value="MAÑANA">Ma&ntilde;ana</option>
+                            <option value="TARDE">Tarde</option>
+                        </select>
+                    </div>
+                    <div class="form-group w33">
+                        <label class="form-label">Tipo env&iacute;o</label>
+                        <select class="form-control" id="f-shipping-type">
+                            <option value="Pagados">Pagados</option>
+                            <option value="Debidos">Debidos</option>
+                        </select>
+                    </div>
+                    <div class="form-group w33">
+                        <label class="form-label">Reembolso &euro;</label>
+                        <input type="number" class="form-control" id="f-cod" placeholder="0.00" step="0.01" min="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Observaciones</label>
+                        <textarea class="form-control" id="f-notes" placeholder="Notas para el repartidor..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="form-actions">
+                <button class="btn btn-primary" id="btn-save">
+                    <span class="material-symbols-outlined">save</span>
+                    Guardar
+                </button>
+                <button class="btn btn-green" id="btn-save-print">
+                    <span class="material-symbols-outlined">print</span>
+                    Guardar e Imprimir
+                </button>
+                <button class="btn btn-secondary" id="btn-clear">
+                    <span class="material-symbols-outlined">delete</span>
+                    Limpiar
+                </button>
+            </div>
+        </div>
+
+        <!-- LABEL PREVIEW -->
+        <div class="preview-panel">
+            <div class="preview-header">
+                <h3>
+                    <span class="material-symbols-outlined icon-filled">label</span>
+                    Vista Previa <span id="preview-format-label">6&times;4&Prime;</span>
+                </h3>
+                <div class="preview-actions">
+                    <button id="btn-preview-print" title="Imprimir esta etiqueta">
+                        <span class="material-symbols-outlined">print</span> Imprimir
+                    </button>
+                </div>
+            </div>
+            <div class="preview-body">
+                <div class="label-preview" id="label-preview">
+                    <div class="lbl-header">
+                        <div class="lbl-brand">NOVAPACK</div>
+                        <div class="lbl-date" id="lbl-date">--/--/----<br>--:--</div>
+                    </div>
+                    <div class="lbl-sender" id="lbl-sender">
+                        <strong>REMITENTE:</strong> <span id="lbl-sender-name">---</span><br>
+                        <span id="lbl-sender-addr">---</span>
+                    </div>
+                    <div class="lbl-body">
+                        <div class="lbl-dest-label">DESTINATARIO</div>
+                        <div class="lbl-dest-name" id="lbl-dest-name">NOMBRE DESTINATARIO</div>
+                        <div class="lbl-dest-addr" id="lbl-dest-addr">Direcci&oacute;n completa</div>
+                        <div class="lbl-dest-province" id="lbl-dest-province">PROVINCIA</div>
+                        <div class="lbl-qr"><div id="lbl-qr-placeholder" style="width:48px;height:48px;background:#eee;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:0.5rem;color:#999;">QR</div></div>
+                        <div class="lbl-cod-banner" id="lbl-cod-banner">REEMBOLSO &euro;0.00</div>
+                    </div>
+                    <div class="lbl-footer">
+                        <span id="lbl-pkg">Bulto 1 / 1</span>
+                        <span class="lbl-footer-id" id="lbl-id">NP-00000</span>
+                        <span id="lbl-weight">0 kg</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Paper Select Modal -->
+<div class="paper-modal" id="paper-modal">
+    <div class="paper-modal-box">
+        <h3><span class="material-symbols-outlined" style="color:var(--primary);">print</span> Seleccionar papel</h3>
+        <div class="paper-option" data-paper="thermal">
+            <span class="material-symbols-outlined icon-filled">receipt_long</span>
+            <div class="paper-option-info">
+                <div class="paper-option-title">Impresora T&eacute;rmica</div>
+                <div class="paper-option-desc">Etiqueta 6&times;4&Prime; (152&times;102 mm) &mdash; 1 por p&aacute;gina</div>
+            </div>
+        </div>
+        <div class="paper-option" data-paper="a4">
+            <span class="material-symbols-outlined icon-filled">description</span>
+            <div class="paper-option-info">
+                <div class="paper-option-title">A4 &mdash; L&aacute;ser / Tinta</div>
+                <div class="paper-option-desc">Hoja A4 con 2 etiquetas por p&aacute;gina + l&iacute;nea de corte</div>
+            </div>
+        </div>
+        <button class="btn btn-secondary" style="margin-top:12px; width:100%;" onclick="document.getElementById('paper-modal').classList.remove('open')">Cancelar</button>
+    </div>
+</div>
+
+<!-- Label Format Modal -->
+<div class="paper-modal" id="format-modal">
+    <div class="paper-modal-box" style="width:420px;">
+        <h3><span class="material-symbols-outlined" style="color:var(--primary);">straighten</span> Formato de Etiqueta</h3>
+        <p style="font-size:0.72rem; color:var(--text-muted); margin-bottom:14px;">
+            El formato se guarda por empresa. Siempre se imprimir&aacute; en el tama&ntilde;o configurado para NOVAPACK.
+        </p>
+        <div id="format-list" style="display:flex; flex-direction:column; gap:6px; max-height:340px; overflow-y:auto;">
+            <!-- Populated by JS -->
+        </div>
+        <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border-glass);">
+            <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:8px;">Formato personalizado</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <input type="number" id="custom-w" placeholder="Ancho mm" min="20" max="300" style="flex:1; padding:7px 10px; background:var(--bg-surface); border:1px solid var(--border-glass); border-radius:4px; color:var(--text-main); font-size:0.82rem;">
+                <span style="color:var(--text-muted); font-size:0.8rem;">&times;</span>
+                <input type="number" id="custom-h" placeholder="Alto mm" min="20" max="300" style="flex:1; padding:7px 10px; background:var(--bg-surface); border:1px solid var(--border-glass); border-radius:4px; color:var(--text-main); font-size:0.82rem;">
+                <button class="btn btn-primary" id="btn-custom-format" style="padding:7px 14px; font-size:0.72rem;">OK</button>
+            </div>
+        </div>
+        <button class="btn btn-secondary" style="margin-top:12px; width:100%;" onclick="document.getElementById('format-modal').classList.remove('open')">Cerrar</button>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Print area (hidden, used for actual printing) -->
+<div class="print-area" id="print-area"></div>
+
+<!-- App JS -->
+<script src="etiquetas.js" defer></script>
+</body>
+</html>
