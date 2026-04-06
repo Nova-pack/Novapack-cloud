@@ -55,6 +55,7 @@
         'mailbox':         { wsId: 'erp-tab-mailbox',            title: 'Buzón Correo',      icon: 'move_to_inbox',      closeable: true },
         'facturas-central':{ wsId: 'erp-tab-facturas-central',    title: 'Centro Facturación', icon: 'receipt_long',       closeable: true },
         'route-details':   { wsId: 'erp-tab-route-details',       title: 'Albaranes Ruta',     icon: 'route',              closeable: true },
+        'route-map':       { wsId: 'erp-tab-route-map',           title: 'GPS Ruta',           icon: 'my_location',        closeable: true },
         'comunicaciones':  { wsId: 'erp-tab-comunicaciones',      title: 'Comunicaciones',     icon: 'campaign',           closeable: true },
         'nif-enrichment':  { wsId: 'erp-tab-nif-enrichment',      title: 'Enriquecer NIF',     icon: 'badge',              closeable: true },
         'trash':           { wsId: 'erp-tab-trash',               title: 'Papelera',           icon: 'delete',             closeable: true },

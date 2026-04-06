@@ -1937,6 +1937,36 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 
+<!-- Tab wrapper: Route GPS Map -->
+<div id="erp-tab-route-map" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:0;">
+    <div style="display:flex; flex-direction:column; height:100%;">
+        <!-- Header bar -->
+        <div style="display:flex; align-items:center; gap:10px; padding:12px 20px; background:#0d0d1a; border-bottom:1px solid #2d2d44;">
+            <span class="material-symbols-outlined" style="color:#4CAF50; font-size:1.4rem;">my_location</span>
+            <div>
+                <h2 id="route-map-title" style="margin:0; color:#FF4D00; font-size:1rem;">GPS Ruta: ...</h2>
+                <div id="route-map-subtitle" style="font-size:0.72rem; color:#888; margin-top:2px;"></div>
+            </div>
+            <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+                <span id="route-map-driver-status" style="font-size:0.75rem; padding:3px 10px; border-radius:12px; font-weight:700;"></span>
+                <button onclick="if(_routeMapRefresh) _routeMapRefresh()" style="background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; padding:5px 12px; border-radius:4px; cursor:pointer; font-size:0.75rem; font-weight:700; display:flex; align-items:center; gap:4px;">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem;">refresh</span> Actualizar
+                </button>
+            </div>
+        </div>
+        <!-- Map container -->
+        <div id="route-map-container" style="flex:1; min-height:400px; background:#111;"></div>
+        <!-- Legend -->
+        <div style="display:flex; gap:16px; padding:8px 20px; background:#0d0d1a; border-top:1px solid #2d2d44; font-size:0.72rem; color:#888; flex-wrap:wrap; align-items:center;">
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#4CAF50; margin-right:4px;"></span> Entregado</span>
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#FF6600; margin-right:4px;"></span> Pendiente</span>
+            <span><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#FF3B30; margin-right:4px;"></span> Incidencia</span>
+            <span><span style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#2196F3; border:2px solid #fff; margin-right:4px;"></span> Furgoneta</span>
+            <span id="route-map-last-update" style="margin-left:auto; color:#666;"></span>
+        </div>
+    </div>
+</div>
+
 <!-- Tab wrapper: Mailbox -->
 <div id="erp-tab-mailbox" style="display:none; flex:1; overflow-y:auto; background:#0a0a0a; color:#d4d4d4; padding:30px;">
     <div class="header" style="margin-bottom:30px; display:flex; justify-content:space-between; align-items:center;">
@@ -8319,6 +8349,210 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            // ========== ROUTE MAP (GPS per route) ==========
+            let _routeMap = null;
+            let _routeMapDriverMarker = null;
+            let _routeMapDeliveryMarkers = [];
+            let _routeMapUnsub = null;
+            let _routeMapTicketUnsub = null;
+            let _routeMapRefresh = null;
+            let _routeMapGeoCache = {};
+
+            function openRouteMap(label, phone) {
+                window.erpOpenTab('route-map', { title: 'GPS: ' + label });
+                document.getElementById('route-map-title').textContent = 'GPS Ruta: ' + label;
+                document.getElementById('route-map-subtitle').textContent = 'Tel: ' + phone;
+                document.getElementById('route-map-driver-status').textContent = 'Conectando...';
+                document.getElementById('route-map-driver-status').style.background = '#555';
+                document.getElementById('route-map-driver-status').style.color = '#fff';
+                document.getElementById('route-map-last-update').textContent = '';
+
+                // Cleanup previous
+                if (_routeMapUnsub) { _routeMapUnsub(); _routeMapUnsub = null; }
+                if (_routeMapTicketUnsub) { _routeMapTicketUnsub(); _routeMapTicketUnsub = null; }
+                _routeMapDeliveryMarkers.forEach(function(m) { m.remove(); });
+                _routeMapDeliveryMarkers = [];
+
+                // Init map
+                var container = document.getElementById('route-map-container');
+                if (_routeMap) {
+                    _routeMap.remove();
+                    _routeMap = null;
+                }
+                _routeMap = L.map(container, { zoomControl: true }).setView([39.47, -0.376], 8);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap'
+                }).addTo(_routeMap);
+                setTimeout(function() { _routeMap.invalidateSize(); }, 200);
+
+                _routeMapDriverMarker = null;
+
+                // --- Listen to driver GPS ---
+                var normalPhone = phone.replace(/\D/g, '');
+                var gpsDocId = normalPhone.replace(/[^a-zA-Z0-9]/g, '_');
+                _routeMapUnsub = db.collection('driver_locations').doc(gpsDocId)
+                    .onSnapshot(function(doc) {
+                        if (!doc.exists) {
+                            var statusEl = document.getElementById('route-map-driver-status');
+                            statusEl.textContent = 'Sin datos GPS';
+                            statusEl.style.background = '#555';
+                            return;
+                        }
+                        var d = doc.data();
+                            if (!d.lat || !d.lng) return;
+
+                            var isOnline = d.online !== false;
+                            var stale = d.updatedAt && ((Date.now() - d.updatedAt.toDate().getTime()) > 5 * 60 * 1000);
+                            var statusEl = document.getElementById('route-map-driver-status');
+                            var updateEl = document.getElementById('route-map-last-update');
+
+                            if (isOnline && !stale) {
+                                statusEl.textContent = (d.driverName || 'Conductor') + ' — EN LÍNEA';
+                                statusEl.style.background = '#4CAF50';
+                            } else if (stale) {
+                                statusEl.textContent = (d.driverName || 'Conductor') + ' — Sin señal';
+                                statusEl.style.background = '#FF9800';
+                            } else {
+                                statusEl.textContent = (d.driverName || 'Conductor') + ' — Desconectado';
+                                statusEl.style.background = '#666';
+                            }
+
+                            if (d.updatedAt) {
+                                try {
+                                    var t = d.updatedAt.toDate();
+                                    updateEl.textContent = 'Última señal: ' + t.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+                                } catch(e) {}
+                            }
+
+                            var subtitle = document.getElementById('route-map-subtitle');
+                            var parts = ['Tel: ' + phone];
+                            if (d.speed > 0) parts.push(Math.round(d.speed) + ' km/h');
+                            if (d.accuracy) parts.push('±' + Math.round(d.accuracy) + 'm');
+                            subtitle.textContent = parts.join(' · ');
+
+                            // Driver marker
+                            var driverIcon = L.divIcon({
+                                className: '',
+                                html: '<div style="background:#2196F3; width:40px; height:40px; border-radius:50%; border:3px solid #fff; box-shadow:0 2px 8px rgba(33,150,243,0.5); display:flex; align-items:center; justify-content:center;"><span class="material-symbols-outlined" style="color:#fff; font-size:22px;">local_shipping</span></div>',
+                                iconSize: [40, 40],
+                                iconAnchor: [20, 20]
+                            });
+
+                            if (_routeMapDriverMarker) {
+                                _routeMapDriverMarker.setLatLng([d.lat, d.lng]);
+                            } else {
+                                _routeMapDriverMarker = L.marker([d.lat, d.lng], { icon: driverIcon, zIndexOffset: 1000 })
+                                    .bindPopup('<b>' + escapeHtml(d.driverName || 'Conductor') + '</b><br>Ruta: ' + escapeHtml(label))
+                                    .addTo(_routeMap);
+                                _routeMap.setView([d.lat, d.lng], 13);
+                            }
+                    });
+
+                // --- Load & geocode deliveries for this route ---
+                _routeMapTicketUnsub = db.collection('tickets')
+                    .where('driverPhone', '==', normalPhone)
+                    .onSnapshot(async function(snap) {
+                        // Clear old markers
+                        _routeMapDeliveryMarkers.forEach(function(m) { m.remove(); });
+                        _routeMapDeliveryMarkers = [];
+
+                        var tickets = [];
+                        snap.forEach(function(doc) {
+                            var t = doc.data();
+                            t._id = doc.id;
+                            tickets.push(t);
+                        });
+
+                        var bounds = [];
+                        if (_routeMapDriverMarker) {
+                            bounds.push(_routeMapDriverMarker.getLatLng());
+                        }
+
+                        var pendingIdx = 0;
+                        for (var i = 0; i < tickets.length; i++) {
+                            var t = tickets[i];
+                            var addr = [t.address, t.localidad, t.cp, t.province].filter(Boolean).join(', ');
+                            if (!addr) continue;
+
+                            var coords = await _routeMapGeocode(addr);
+                            if (!coords) continue;
+
+                            var isDelivered = t.status === 'Entregado' || t.delivered;
+                            var isIncident = t.status === 'Incidencia';
+                            var color = isIncident ? '#FF3B30' : (isDelivered ? '#4CAF50' : '#FF6600');
+                            var labelNum = isDelivered ? '✓' : String(++pendingIdx);
+                            var statusText = isIncident ? 'INCIDENCIA' : (isDelivered ? 'ENTREGADO' : 'PENDIENTE #' + pendingIdx);
+
+                            var icon = L.divIcon({
+                                className: '',
+                                html: '<div style="background:' + color + '; color:#fff; width:28px; height:28px; border-radius:50%; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800;">' + labelNum + '</div>',
+                                iconSize: [28, 28],
+                                iconAnchor: [14, 14]
+                            });
+
+                            var pkgs = t.packagesList ? t.packagesList.reduce(function(s, p) { return s + (parseInt(p.qty) || 1); }, 0) : (parseInt(t.packages) || 1);
+                            var popup = '<div style="min-width:180px;">' +
+                                '<b>' + escapeHtml(t.receiver || '---') + '</b><br>' +
+                                '<span style="color:#666; font-size:0.85em;">' + escapeHtml(addr) + '</span><br>' +
+                                '<span style="font-size:0.85em;">' + pkgs + ' bultos</span><br>' +
+                                '<span style="font-weight:700; color:' + color + ';">' + statusText + '</span>' +
+                                (t.deliveredTo ? '<br><span style="font-size:0.8em;">Receptor: ' + escapeHtml(t.deliveredTo) + '</span>' : '') +
+                                '</div>';
+
+                            var marker = L.marker([coords.lat, coords.lng], { icon: icon }).bindPopup(popup).addTo(_routeMap);
+                            _routeMapDeliveryMarkers.push(marker);
+                            bounds.push([coords.lat, coords.lng]);
+
+                        }
+
+                        // Fit map to show all
+                        if (bounds.length > 1) {
+                            _routeMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+                        }
+                    });
+
+                // Refresh handler
+                _routeMapRefresh = function() {
+                    openRouteMap(label, phone);
+                };
+            }
+
+            // Geocode with cache + fallback + rate limit
+            var _geoLastCall = 0;
+            async function _routeMapGeocode(addr) {
+                if (_routeMapGeoCache[addr]) return _routeMapGeoCache[addr];
+                // Rate limit: 350ms between Nominatim API calls
+                var elapsed = Date.now() - _geoLastCall;
+                if (elapsed < 350) await new Promise(function(r) { setTimeout(r, 350 - elapsed); });
+                _geoLastCall = Date.now();
+                try {
+                    var res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=es&q=' + encodeURIComponent(addr));
+                    var data = await res.json();
+                    if (data && data[0]) {
+                        var result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+                        _routeMapGeoCache[addr] = result;
+                        return result;
+                    }
+                    // Fallback: try without province
+                    var parts = addr.split(',');
+                    if (parts.length > 2) {
+                        var short = parts.slice(0, -1).join(',').trim();
+                        elapsed = Date.now() - _geoLastCall;
+                        if (elapsed < 350) await new Promise(function(r) { setTimeout(r, 350 - elapsed); });
+                        _geoLastCall = Date.now();
+                        var res2 = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=es&q=' + encodeURIComponent(short));
+                        var data2 = await res2.json();
+                        if (data2 && data2[0]) {
+                            var result2 = { lat: parseFloat(data2[0].lat), lng: parseFloat(data2[0].lon) };
+                            _routeMapGeoCache[addr] = result2;
+                            return result2;
+                        }
+                    }
+                } catch(e) { console.warn('Geocode error:', addr, e); }
+                return null;
+            }
+
             let unsubscribeRouteMonitor = null;
             let currentRouteDetailPhone = null;
             let routeTowerUnsubscribes = [];
@@ -8485,6 +8719,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                         <button onclick="event.stopPropagation(); openReassignRouteModal('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#3d2e11; border:1px solid #6b4e1f; color:#FF9800; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b4e1f'" onmouseout="this.style.background='#3d2e11'"><span class="material-symbols-outlined" style="font-size:0.9rem;">swap_horiz</span> REASIGNAR</button>
                                         <button onclick="event.stopPropagation(); openPickupAlertModal('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#1b3d1b; border:1px solid #2e6b2e; color:#4CAF50; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#2e6b2e'" onmouseout="this.style.background='#1b3d1b'"><span class="material-symbols-outlined" style="font-size:0.9rem;">campaign</span> AVISO</button>
                                         <button onclick="event.stopPropagation(); openRouteCooperModal('${escapeHtml(routeData.label)}')" style="flex:1; min-width:calc(50% - 4px); padding:6px; background:#2d1b3d; border:1px solid #6b2e6b; color:#CE93D8; font-size:0.72rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:4px;" onmouseover="this.style.background='#6b2e6b'" onmouseout="this.style.background='#2d1b3d'"><span class="material-symbols-outlined" style="font-size:0.9rem;">photo_library</span> COOPER</button>
+                                        <button onclick="event.stopPropagation(); openRouteMap('${escapeHtml(routeData.label)}', '${pNum}')" style="flex:1; min-width:100%; padding:7px; background:linear-gradient(135deg, #0d3320, #1b5e20); border:1px solid #2e7d32; color:#4CAF50; font-size:0.75rem; font-weight:700; cursor:pointer; border-radius:3px; display:flex; align-items:center; justify-content:center; gap:5px;" onmouseover="this.style.background='linear-gradient(135deg, #1b5e20, #2e7d32)'" onmouseout="this.style.background='linear-gradient(135deg, #0d3320, #1b5e20)'"><span class="material-symbols-outlined" style="font-size:1rem;">my_location</span> GPS EN VIVO</button>
                                     </div>
                                 `;
                             }
