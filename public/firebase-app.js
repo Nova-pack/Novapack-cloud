@@ -5314,17 +5314,21 @@ function _initTrackingMap(driverPhone) {
         if (_trackingMarker) {
             _trackingMarker.setPosition(pos);
         } else {
-            var truckSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36">' +
-                '<circle cx="18" cy="18" r="16" fill="#2196F3" stroke="white" stroke-width="3"/>' +
-                '<text x="18" y="23" text-anchor="middle" fill="white" font-size="14" font-weight="bold">T</text>' +
+            var truckSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="36" viewBox="0 0 48 36">' +
+                '<defs><filter id="ds" x="-10%" y="-10%" width="130%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.4"/></filter></defs>' +
+                '<rect x="1" y="4" width="30" height="22" rx="3" fill="#2196F3" stroke="white" stroke-width="1.5" filter="url(%23ds)"/>' +
+                '<path d="M31 12 L41 12 Q45 12 46 16 L47 22 Q47 26 44 26 L31 26 Z" fill="#2196F3" stroke="white" stroke-width="1.5" stroke-linejoin="round" filter="url(%23ds)"/>' +
+                '<rect x="33" y="13" width="9" height="7" rx="1.5" fill="rgba(255,255,255,0.85)"/>' +
+                '<circle cx="12" cy="28" r="5" fill="#333" stroke="white" stroke-width="1.5"/><circle cx="12" cy="28" r="2" fill="#999"/>' +
+                '<circle cx="40" cy="28" r="5" fill="#333" stroke="white" stroke-width="1.5"/><circle cx="40" cy="28" r="2" fill="#999"/>' +
                 '</svg>';
             _trackingMarker = new google.maps.Marker({
                 position: pos,
                 map: _trackingMap,
                 icon: {
                     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(truckSvg),
-                    scaledSize: new google.maps.Size(36, 36),
-                    anchor: new google.maps.Point(18, 18)
+                    scaledSize: new google.maps.Size(36, 27),
+                    anchor: new google.maps.Point(18, 27)
                 }
             });
         }
