@@ -412,10 +412,12 @@ async function loadCompanies() {
             name: clientName,
             prefix: (userData && userData.idNum) ? String(userData.idNum) : 'NP',
             address: rawAddr || 'Dirección no configurada',
-            street: addrParts[0] || '',
-            number: (addrParts[1] || "").replace(/Nº\s*/i, ''),
-            localidad: addrParts[2] || '',
-            cp: (addrParts[3] || "").replace(/[()CP\s]/g, ''),
+            street: (userData && userData.street) ? userData.street : (addrParts[0] || ''),
+            number: (userData && userData.number) ? userData.number : ((addrParts[1] || "").replace(/Nº\s*/i, '')),
+            localidad: (userData && userData.localidad) ? userData.localidad : (addrParts[2] || ''),
+            cp: (userData && userData.cp) ? userData.cp : ((addrParts[3] || "").replace(/[()CP\s]/g, '')),
+            province: (userData && userData.province) ? userData.province : '',
+            nif: (userData && userData.nif) ? userData.nif : '',
             phone: (userData && userData.senderPhone) ? String(userData.senderPhone) : '',
             startNum: 1,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -434,14 +436,25 @@ async function loadCompanies() {
             const mainComp = companies.find(c => c.id === 'comp_main') || companies[0];
             const needsUpdate = (userData.name && mainComp.name !== userData.name) ||
                 (userData.senderAddress && mainComp.address !== userData.senderAddress) ||
-                (userData.senderPhone && mainComp.phone !== userData.senderPhone);
+                (userData.senderPhone && mainComp.phone !== userData.senderPhone) ||
+                (userData.nif && mainComp.nif !== userData.nif) ||
+                (userData.street && mainComp.street !== userData.street) ||
+                (userData.localidad && mainComp.localidad !== userData.localidad) ||
+                (userData.cp && mainComp.cp !== userData.cp) ||
+                (userData.province && mainComp.province !== userData.province);
 
             if (needsUpdate && mainComp.id === 'comp_main') {
                 console.log("Actualizando datos de remitente principal según configuración de Administrador...");
                 const syncData = {
                     name: userData.name || mainComp.name || "Mi Empresa Novapack",
                     address: userData.senderAddress || mainComp.address || "Dirección no configurada",
-                    phone: userData.senderPhone || mainComp.phone || ""
+                    phone: userData.senderPhone || mainComp.phone || "",
+                    nif: userData.nif || mainComp.nif || "",
+                    street: userData.street || mainComp.street || "",
+                    number: userData.number || mainComp.number || "",
+                    localidad: userData.localidad || mainComp.localidad || "",
+                    cp: userData.cp || mainComp.cp || "",
+                    province: userData.province || mainComp.province || ""
                 };
                 
                 try {
