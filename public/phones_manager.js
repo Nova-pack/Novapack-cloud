@@ -187,7 +187,11 @@
                         <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px;">folder</span>
                         ${groupName} <span style="color:#666; font-size:0.75rem; font-weight:400;">(${totalChildren} subrutas)</span>
                     </td>
-                    <td style="padding:10px; text-align:right;"></td>
+                    <td style="padding:10px; text-align:right;">
+                        <button onclick="event.stopPropagation(); openPhoneModal(null, '${groupName.replace(/'/g, "\\'")}')" style="background:#1e3a5f; border:1px solid #2d5a8e; color:#5dade2; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:3px; margin-left:auto;">
+                            <span class="material-symbols-outlined" style="font-size:14px;">add</span> A\u00f1adir Subruta
+                        </button>
+                    </td>
                 </tr>
             `;
             children.forEach(p => { html += _renderRouteRow(p, true); });
@@ -201,7 +205,7 @@
 
     // ================== MODAL CREAR/EDITAR ==================
 
-    window.openPhoneModal = (docId) => {
+    window.openPhoneModal = (docId, presetParent) => {
         let modal = document.getElementById('modal-edit-phone');
         if (modal) modal.remove();
 
@@ -227,7 +231,7 @@
 
                 <div style="margin-bottom:15px;">
                     <label style="font-size:0.75rem; color:#2196F3; text-transform:uppercase; letter-spacing:1px;">Grupo / Ruta Padre <span style="color:#888; font-size:0.65rem; font-weight:400; text-transform:none;">(dejar vacío si es independiente)</span></label>
-                    <input id="phone-edit-parent" list="phone-parent-suggestions" value="${(existing?.parentRoute || '').replace(/"/g, '&quot;')}" placeholder="Ej: Sevilla, Madrid..." autocomplete="off" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px;">
+                    <input id="phone-edit-parent" list="phone-parent-suggestions" value="${(existing?.parentRoute || presetParent || '').replace(/"/g, '&quot;')}" placeholder="Ej: Sevilla, Madrid..." autocomplete="off" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px;">
                     <datalist id="phone-parent-suggestions">${[...new Set(phonesCache.map(p => p.parentRoute).filter(Boolean))].map(g => '<option value="' + g.replace(/"/g, '&quot;') + '">').join('')}</datalist>
                 </div>
 
