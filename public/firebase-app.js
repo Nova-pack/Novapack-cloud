@@ -3651,7 +3651,7 @@ function generateTicketHTML(t, footerLabel) {
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                 <!-- Left: Logo -->
                 <div style="flex: 1;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">${escapeHtml(companyName.toUpperCase())}</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
                 </div>
 
@@ -4071,7 +4071,7 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
             <!-- Header: Logo & Sender -->
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #FF6600; padding-bottom: 8px; margin-bottom: 8px; z-index:1;">
                 <div style="width: 40%;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">${companyName.toUpperCase()}</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
                     <div style="font-size: 0.5rem; letter-spacing: 0.5px; color:#333;">${companyEmail}</div>
                     <div style="font-size: 0.65rem; color:#666; margin-top: 4px;">${new Date(t.createdAt).toLocaleDateString()} ${new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
