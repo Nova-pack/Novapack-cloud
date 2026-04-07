@@ -231,8 +231,8 @@ function _doRenderMailbox() {
         else if (est === 'pod_autorizada') estIcon = '🚀';
 
         const catText = outgoing
-            ? '<span style="color:#2196F3; font-size:0.8rem;">Campaña</span>'
-            : getCategoryText(item.category || 'otro');
+            ? '<span style="color:#2196F3; font-size:0.8rem;">Campa\u00f1a</span>'
+            : (item.categoryLabel ? ('\u{1f3f7}\ufe0f ' + item.categoryLabel) : getCategoryText(item.category || 'otro'));
 
         // Direction indicator
         const dirIcon = outgoing
@@ -878,9 +878,11 @@ window.openCreateMailboxEntry = function() {
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
                 <div>
                     <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Categor\u00eda</label>
-                    <select id="create-mail-category" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px;">
+                    <select id="create-mail-category" onchange="document.getElementById('create-mail-custom-cat').style.display = this.value === '_custom' ? 'block' : 'none'" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px;">
                         ${catOptions}
+                        <option value="_custom">\u270f\ufe0f Categor\u00eda libre...</option>
                     </select>
+                    <input id="create-mail-custom-cat" placeholder="Escribe la categor\u00eda..." style="display:none; width:100%; background:#2d2d30; border:1px solid #4CAF50; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px; box-sizing:border-box;">
                 </div>
                 <div>
                     <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Referencia Albar\u00e1n</label>
@@ -910,13 +912,16 @@ window.saveCreateMailboxEntry = async function() {
     const subject = (document.getElementById('create-mail-subject')?.value || '').trim();
     if (!subject) { alert('El asunto es obligatorio'); return; }
 
-    const category = document.getElementById('create-mail-category')?.value || 'otro';
+    const catSelect = document.getElementById('create-mail-category')?.value || 'otro';
+    const customCat = (document.getElementById('create-mail-custom-cat')?.value || '').trim();
+    const category = (catSelect === '_custom' && customCat) ? 'otro' : catSelect;
+    const categoryLabel = (catSelect === '_custom' && customCat) ? customCat : '';
     const ticketRef = (document.getElementById('create-mail-ref')?.value || '').trim();
     const body = (document.getElementById('create-mail-body')?.value || '').trim();
 
     try {
-        await window.db.collection('mailbox').add({
-            subject: subject,
+        const docData = {
+            subject: categoryLabel ? ('[' + categoryLabel + '] ' + subject) : subject,
             category: category,
             ticketRef: ticketRef,
             body: body,
@@ -929,7 +934,10 @@ window.saveCreateMailboxEntry = async function() {
                 at: new Date(),
                 reason: 'creado manualmente'
             }]
-        });
+        };
+        if (categoryLabel) docData.categoryLabel = categoryLabel;
+
+        await window.db.collection('mailbox').add(docData);
 
         document.getElementById('modal-create-mailbox').remove();
         showMailboxToast('Asunto creado correctamente', 'success');
