@@ -3615,7 +3615,7 @@ function generateTicketHTML(t, footerLabel) {
     });
 
     return `
-    <div style="font-family: Arial, sans-serif; padding: 4px; border: 2px solid #000; min-height: 110mm; height: 110mm; position: relative; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: white;">
+    <div style="font-family: Arial, sans-serif; padding: 4px; border: 2px solid #000; min-height: 100mm; max-height: 130mm; position: relative; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: white;">
         <!-- Watermark (Province/Zone) -->
         ${t.province ? `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:4.5rem; color:#000; font-weight:900; white-space:nowrap; z-index:0; pointer-events:none; width: 100%; text-align: center; font-family: 'Arial Black', sans-serif; opacity: 0.04; text-transform: uppercase;">${escapeHtml(t.province)}</div>` : ''}
         
@@ -3646,7 +3646,7 @@ function generateTicketHTML(t, footerLabel) {
                          <div style="text-align: right;">
                               <div style="font-size: 1rem; font-weight: bold; margin-bottom: 5px;">${validDateStr}</div>
                               <div style="font-size: 0.75rem; color: #555; text-transform:uppercase; font-weight: 800;">Albarán Nº</div>
-                              <div style="font-family: 'Outfit', sans-serif; font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${escapeHtml(t.id)}</div>
+                              <div style="font-family: 'Outfit', sans-serif; font-size: 1.28rem; color: #000; font-weight: 800; letter-spacing: -1px;">${escapeHtml(t.id)}</div>
                          </div>
                          <div style="background: white; padding: 2px; border: 1px solid #eee;">
                             <img src="https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}`)}" 
@@ -3714,12 +3714,12 @@ async function printTicket(t) {
     const page = document.createElement('div');
     page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box;";
     
-    // Contenedores del 50% exacto para poder cortar el folio por la mitad
-    const ticket1 = `<div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
-        ${generateTicketHTML(t, "Ejemplar para Administración")}
+    // Contenedores flex 1 para repartir el espacio y autoajustar al contenido
+    const ticket1 = `<div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
+        ${generateTicketHTML(t, "Ejemplar para Administraci\u00f3n")}
     </div>`;
 
-    const ticket2 = `<div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+    const ticket2 = `<div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
         ${generateTicketHTML(t, "Ejemplar para el Cliente")}
     </div>`;
 
@@ -3970,11 +3970,11 @@ async function printShiftBatch(slot, reprint = false) {
             const page = document.createElement('div');
             page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box; page-break-after: always;";
             
-            const ticket1 = `<div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
-                ${generateTicketHTML(t, "Ejemplar para Administración")}
+            const ticket1 = `<div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
+                ${generateTicketHTML(t, "Ejemplar para Administraci\u00f3n")}
             </div>`;
 
-            const ticket2 = `<div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            const ticket2 = `<div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
                 ${generateTicketHTML(t, "Ejemplar para el Cliente")}
             </div>`;
 
