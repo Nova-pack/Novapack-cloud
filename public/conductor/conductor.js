@@ -288,7 +288,7 @@ function generateTicketHTML(t, footerLabel) {
         <div style="z-index: 2;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
                 <div style="flex: 1;">
-                    <div style="font-size: 24pt; color: #FF6600; font-weight: 900; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900;">&#10148;</span></div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
                 </div>
                 <div style="flex: 1; text-align: center; padding: 0 10px;">
