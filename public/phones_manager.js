@@ -123,6 +123,36 @@
         }
     };
 
+    function _renderRouteRow(p, indent) {
+        const names = [p.driverName, p.driverName2, p.driverName3, p.driverName4].filter(n => n && n.trim());
+        const namesStr = names.length > 0 ? names.join(' <span style="color:#555;">\u00b7</span> ') : '<span style="color:#666;">Sin asignar</span>';
+        const docIdSafe = (p.docId || '').replace(/'/g, "\\'");
+        const labelColor = indent ? '#FFCC80' : '#FF9800';
+        const prefix = indent ? '<span style="color:#555; margin-right:4px;">\u2514</span>' : '';
+
+        return `
+            <tr style="border-bottom:1px solid #333; cursor:pointer; transition:background 0.2s;"
+                onmouseover="this.style.background='rgba(255,152,0,0.08)'"
+                onmouseout="this.style.background='transparent'">
+                <td style="padding:10px ${indent ? '10px 10px 28px' : ''}; font-weight:bold; color:${labelColor};">${prefix}${p.label || 'Sin nombre'}</td>
+                <td style="padding:10px;">
+                    <a href="tel:${p.number || ''}" style="color:#4FC3F7; text-decoration:none;">${p.number || '-'}</a>
+                </td>
+                <td style="padding:10px; color:#d4d4d4;">${namesStr}</td>
+                <td style="padding:10px; text-align:right;">
+                    <div style="display:flex; gap:5px; justify-content:flex-end;">
+                        <button onclick="event.stopPropagation(); openPhoneModal('${docIdSafe}')" style="background:#333; border:1px solid #555; color:#4CAF50; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:3px;">
+                            <span class="material-symbols-outlined" style="font-size:14px;">edit</span> Editar
+                        </button>
+                        <button onclick="event.stopPropagation(); deletePhoneRoute('${docIdSafe}')" style="background:#333; border:1px solid #555; color:#FF5252; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:3px;">
+                            <span class="material-symbols-outlined" style="font-size:14px;">delete</span>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
     function renderPhonesTable() {
         const tbody = document.getElementById('phones-mgr-body');
         if (!tbody) return;
@@ -132,34 +162,39 @@
             return;
         }
 
-        let html = '';
+        // Group routes: grouped (with parentRoute) and standalone (without)
+        const groups = {};
+        const standalone = [];
         phonesCache.forEach(p => {
-            const names = [p.driverName, p.driverName2, p.driverName3, p.driverName4].filter(n => n && n.trim());
-            const namesStr = names.length > 0 ? names.join(' <span style="color:#555;">·</span> ') : '<span style="color:#666;">Sin asignar</span>';
-            const docIdSafe = (p.docId || '').replace(/'/g, "\\'");
+            if (p.parentRoute && p.parentRoute.trim()) {
+                const key = p.parentRoute.trim();
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(p);
+            } else {
+                standalone.push(p);
+            }
+        });
 
+        let html = '';
+
+        // Render grouped routes first
+        Object.keys(groups).sort((a, b) => a.localeCompare(b)).forEach(groupName => {
+            const children = groups[groupName];
+            const totalChildren = children.length;
             html += `
-                <tr style="border-bottom:1px solid #333; cursor:pointer; transition:background 0.2s;"
-                    onmouseover="this.style.background='rgba(255,152,0,0.08)'"
-                    onmouseout="this.style.background='transparent'">
-                    <td style="padding:10px; font-weight:bold; color:#FF9800;">${p.label || 'Sin nombre'}</td>
-                    <td style="padding:10px;">
-                        <a href="tel:${p.number || ''}" style="color:#4FC3F7; text-decoration:none;">${p.number || '-'}</a>
+                <tr style="border-bottom:1px solid #444; background:rgba(33,150,243,0.06);">
+                    <td colspan="3" style="padding:10px 10px 6px; font-weight:bold; color:#2196F3; font-size:0.9rem;">
+                        <span class="material-symbols-outlined" style="font-size:16px; vertical-align:middle; margin-right:4px;">folder</span>
+                        ${groupName} <span style="color:#666; font-size:0.75rem; font-weight:400;">(${totalChildren} subrutas)</span>
                     </td>
-                    <td style="padding:10px; color:#d4d4d4;">${namesStr}</td>
-                    <td style="padding:10px; text-align:right;">
-                        <div style="display:flex; gap:5px; justify-content:flex-end;">
-                            <button onclick="event.stopPropagation(); openPhoneModal('${docIdSafe}')" style="background:#333; border:1px solid #555; color:#4CAF50; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:3px;">
-                                <span class="material-symbols-outlined" style="font-size:14px;">edit</span> Editar
-                            </button>
-                            <button onclick="event.stopPropagation(); deletePhoneRoute('${docIdSafe}')" style="background:#333; border:1px solid #555; color:#FF5252; padding:4px 10px; font-size:0.75rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:3px;">
-                                <span class="material-symbols-outlined" style="font-size:14px;">delete</span>
-                            </button>
-                        </div>
-                    </td>
+                    <td style="padding:10px; text-align:right;"></td>
                 </tr>
             `;
+            children.forEach(p => { html += _renderRouteRow(p, true); });
         });
+
+        // Render standalone routes
+        standalone.forEach(p => { html += _renderRouteRow(p, false); });
 
         tbody.innerHTML = html;
     }
@@ -188,6 +223,12 @@
                 <div style="margin-bottom:15px;">
                     <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Localidad / Nombre de Ruta</label>
                     <input id="phone-edit-label" value="${(existing?.label || '').replace(/"/g, '&quot;')}" placeholder="Ej: Barcelona Centro" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px;">
+                </div>
+
+                <div style="margin-bottom:15px;">
+                    <label style="font-size:0.75rem; color:#2196F3; text-transform:uppercase; letter-spacing:1px;">Grupo / Ruta Padre <span style="color:#888; font-size:0.65rem; font-weight:400; text-transform:none;">(dejar vacío si es independiente)</span></label>
+                    <input id="phone-edit-parent" list="phone-parent-suggestions" value="${(existing?.parentRoute || '').replace(/"/g, '&quot;')}" placeholder="Ej: Sevilla, Madrid..." autocomplete="off" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px;">
+                    <datalist id="phone-parent-suggestions">${[...new Set(phonesCache.map(p => p.parentRoute).filter(Boolean))].map(g => '<option value="' + g.replace(/"/g, '&quot;') + '">').join('')}</datalist>
                 </div>
 
                 <div style="margin-bottom:15px;">
@@ -237,6 +278,7 @@
             driverName2: document.getElementById('phone-edit-d2').value.trim(),
             driverName3: document.getElementById('phone-edit-d3').value.trim(),
             driverName4: document.getElementById('phone-edit-d4').value.trim(),
+            parentRoute: document.getElementById('phone-edit-parent').value.trim(),
             coverageZones: (document.getElementById('phone-edit-zones')?.value || '').trim(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };

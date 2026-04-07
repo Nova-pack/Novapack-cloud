@@ -8640,17 +8640,69 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     grid.innerHTML = '';
 
-                    phoneSnap.forEach(doc => {
-                        const routeData = doc.data();
+                    // Collect all routes and group by parentRoute
+                    const allRoutes = [];
+                    phoneSnap.forEach(doc => { allRoutes.push({ docId: doc.id, ...doc.data() }); });
+
+                    const groups = {};
+                    const standalone = [];
+                    allRoutes.forEach(r => {
+                        if (r.parentRoute && r.parentRoute.trim()) {
+                            const key = r.parentRoute.trim();
+                            if (!groups[key]) groups[key] = [];
+                            groups[key].push(r);
+                        } else {
+                            standalone.push(r);
+                        }
+                    });
+
+                    // Render grouped routes inside collapsible containers
+                    Object.keys(groups).sort((a, b) => a.localeCompare(b)).forEach(groupName => {
+                        const groupContainer = document.createElement('div');
+                        groupContainer.style.cssText = 'grid-column: 1 / -1; margin-bottom:4px;';
+
+                        const header = document.createElement('div');
+                        header.style.cssText = 'background:linear-gradient(135deg, #0d1b3e, #1a237e); border:1px solid #2d5a8e; border-radius:6px; padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:8px; margin-bottom:8px; transition:all 0.2s;';
+                        header.onmouseover = () => { header.style.borderColor = '#2196F3'; };
+                        header.onmouseout = () => { header.style.borderColor = '#2d5a8e'; };
+                        header.innerHTML = '<span class="material-symbols-outlined" style="color:#2196F3; font-size:1.1rem;">folder</span>' +
+                            '<span style="color:#2196F3; font-weight:700; font-size:0.95rem;">' + escapeHtml(groupName) + '</span>' +
+                            '<span style="color:#666; font-size:0.75rem;">(' + groups[groupName].length + ' subrutas)</span>' +
+                            '<span class="material-symbols-outlined _group-arrow" style="color:#666; font-size:1rem; margin-left:auto; transition:transform 0.2s;">expand_more</span>';
+
+                        const childGrid = document.createElement('div');
+                        childGrid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:14px; padding:0 0 10px 20px;';
+
+                        header.onclick = () => {
+                            const isHidden = childGrid.style.display === 'none';
+                            childGrid.style.display = isHidden ? 'grid' : 'none';
+                            header.querySelector('._group-arrow').style.transform = isHidden ? '' : 'rotate(-90deg)';
+                        };
+
+                        groupContainer.appendChild(header);
+                        groupContainer.appendChild(childGrid);
+                        grid.appendChild(groupContainer);
+
+                        groups[groupName].forEach(routeData => {
+                            _createRouteCard(routeData, childGrid);
+                        });
+                    });
+
+                    // Render standalone routes directly in grid
+                    standalone.forEach(routeData => {
+                        _createRouteCard(routeData, grid);
+                    });
+
+                    function _createRouteCard(routeData, container) {
                         const pNum = routeData.number ? routeData.number.replace(/\D/g, '').replace(/^34/, '') : '';
-                        const cardId = 'route-card-' + doc.id;
-                        
+                        const cardId = 'route-card-' + routeData.docId;
+
                         const driverNames = [];
                         if (routeData.driverName) driverNames.push(routeData.driverName);
                         if (routeData.driverName2) driverNames.push(routeData.driverName2);
                         if (routeData.driverName3) driverNames.push(routeData.driverName3);
                         if (routeData.driverName4) driverNames.push(routeData.driverName4);
-                        const names = driverNames.join(" / ") || "Sin chóferes configurados";
+                        const names = driverNames.join(" / ") || "Sin ch\u00f3feres configurados";
 
                         // Create placeholder card (ERP style)
                         const card = document.createElement('div');
@@ -8659,9 +8711,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         card.onmouseover = () => { card.style.transform = 'translateY(-2px)'; card.style.boxShadow = '0 6px 20px rgba(0,0,0,0.5)'; card.style.borderColor = '#FF4D00'; };
                         card.onmouseout = () => { card.style.transform = 'translateY(0)'; card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)'; card.style.borderColor = '#2d2d44'; };
                         card.onclick = () => openRouteDetails(routeData.label, pNum);
-                        
+
                         card.innerHTML = `<div style="color:#555; text-align:center; padding:20px;">Sincronizando ${escapeHtml(routeData.label)}...</div>`;
-                        grid.appendChild(card);
+                        container.appendChild(card);
 
                         // Attach real-time listener for this specific route
                         const unsub = db.collection('tickets').where('driverPhone', '==', pNum).onSnapshot(ticketsSnap => {
@@ -8790,7 +8842,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }
                         });
                         routeTowerUnsubscribes.push(unsub);
-                    });
+                    }
 
                 } catch (e) {
                     console.error("Error conectando torre en tiempo real", e);
