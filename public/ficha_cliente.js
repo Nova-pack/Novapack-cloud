@@ -209,51 +209,49 @@
         if (!c) return;
 
         c.innerHTML = `
-        ${_sectionTitle('badge', 'Identificación', '#007acc')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Nº Cliente (ID)', 'fc-idnum', d.idNum, { flex: '0 0 100px', minWidth: '80px' })}
-            ${_field('Razón Social / Empresa', 'fc-name', d.name, { flex: 3 })}
-            ${_field('CIF / NIF', 'fc-nif', d.nif, { flex: 1 })}
+        ${_sectionTitle('badge', 'Identificaci\u00f3n', '#007acc')}
+        <div style="display:grid; grid-template-columns: 90px 1fr 150px; gap:6px; margin-bottom:6px;">
+            ${_field('N\u00ba Cliente', 'fc-idnum', d.idNum, { minWidth: 'auto' })}
+            ${_field('Raz\u00f3n Social / Empresa', 'fc-name', d.name, { minWidth: 'auto' })}
+            ${_field('CIF / NIF', 'fc-nif', d.nif, { minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('mail', 'Contacto', '#4CAF50')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Email (Login)', 'fc-email', d.email, { type: 'email' })}
-            ${_field('Email Administración (Facturas)', 'fc-admin-email', d.adminEmail, { type: 'email', placeholder: 'administracion@empresa.com' })}
-            ${_field('Teléfono', 'fc-phone', d.senderPhone || d.phone)}
+        <div style="display:grid; grid-template-columns: 1fr 1fr 140px; gap:6px; margin-bottom:6px;">
+            ${_field('Email (Login)', 'fc-email', d.email, { type: 'email', minWidth: 'auto' })}
+            ${_field('Email Administraci\u00f3n', 'fc-admin-email', d.adminEmail, { type: 'email', placeholder: 'admin@empresa.com', minWidth: 'auto' })}
+            ${_field('Tel\u00e9fono', 'fc-phone', d.senderPhone || d.phone, { minWidth: 'auto' })}
         </div>
 
-        ${_sectionTitle('location_on', 'Dirección Principal', '#FF9800')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Calle / Vía', 'fc-street', d.street, { flex: 3 })}
-            ${_field('Número', 'fc-number', d.number, { flex: '0 0 80px', minWidth: '60px' })}
-            ${_field('C. Postal', 'fc-cp', d.cp, { flex: '0 0 90px', minWidth: '70px' })}
-        </div>
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Localidad', 'fc-city', d.localidad)}
-            ${_field('Provincia', 'fc-province', d.province)}
+        ${_sectionTitle('location_on', 'Direcci\u00f3n Principal', '#FF9800')}
+        <div style="display:grid; grid-template-columns: 1fr 70px 80px 1fr 1fr; gap:6px; margin-bottom:6px;">
+            ${_field('Calle / V\u00eda', 'fc-street', d.street, { minWidth: 'auto' })}
+            ${_field('N\u00famero', 'fc-number', d.number, { minWidth: 'auto' })}
+            ${_field('C. Postal', 'fc-cp', d.cp, { minWidth: 'auto' })}
+            ${_field('Localidad', 'fc-city', d.localidad, { minWidth: 'auto' })}
+            ${_field('Provincia', 'fc-province', d.province, { minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('schedule', 'Configuraci\u00f3n de Recogidas', '#4CAF50')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Corte Ma\u00f1ana', 'fc-pickup-cutoff-am', d.pickupCutoffAM || '', { type: 'time', minWidth: '130px' })}
-            ${_field('Corte Tarde', 'fc-pickup-cutoff-pm', d.pickupCutoffPM || '', { type: 'time', minWidth: '130px' })}
-            ${_field('Tel\u00e9fono Ruta por Defecto', 'fc-default-route-phone', d.defaultRoutePhone || '', { placeholder: '600123456', minWidth: '160px' })}
+        <div style="display:grid; grid-template-columns: 120px 120px 180px; gap:6px; margin-bottom:6px;">
+            ${_field('Corte Ma\u00f1ana', 'fc-pickup-cutoff-am', d.pickupCutoffAM || '', { type: 'time', minWidth: 'auto' })}
+            ${_field('Corte Tarde', 'fc-pickup-cutoff-pm', d.pickupCutoffPM || '', { type: 'time', minWidth: 'auto' })}
+            ${_field('Tlf. Ruta Defecto', 'fc-default-route-phone', d.defaultRoutePhone || '', { placeholder: '600123456', minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('account_tree', 'Relaciones', '#2196F3')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:6px; margin-bottom:6px;">
             ${_field('Filial Facturadora', 'fc-billing-company', d.billingCompanyId, {
-                type: 'select',
-                options: [{ value: '', label: '-- Central (por defecto) --' }].concat(
+                type: 'select', minWidth: 'auto',
+                options: [{ value: '', label: '-- Central --' }].concat(
                     typeof billingCompaniesMap !== 'undefined' ? Object.entries(billingCompaniesMap).map(([id, bc]) => ({ value: id, label: bc.name })) : []
                 )
             })}
-            ${_field('Cliente Padre (Filial)', 'fc-parent-client', d.parentClientId || '', { placeholder: 'Sin padre (independiente)' })}
-            <div style="flex:1; min-width:150px;">
-                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tarifa Global</label>
-                <select id="fc-tariff" style="width:100%; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">
-                    <option value="">-- Cargando tarifas... --</option>
+            ${_field('Cliente Padre', 'fc-parent-client', d.parentClientId || '', { placeholder: 'Independiente', minWidth: 'auto' })}
+            <div style="min-width:auto;">
+                <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Tarifa Global</label>
+                <select id="fc-tariff" style="width:100%; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem;">
+                    <option value="">-- Cargando... --</option>
                 </select>
             </div>
         </div>
@@ -270,79 +268,79 @@
 
         c.innerHTML = `
         ${_sectionTitle('payments', 'Condiciones de Pago', '#FF9800')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <div style="display:grid; grid-template-columns: 200px 1fr; gap:6px; margin-bottom:6px;">
             ${_field('Forma de Pago', 'fc-payment-terms', d.paymentTerms || 'contado', {
-                type: 'select',
+                type: 'select', minWidth: 'auto',
                 options: [
                     { value: 'contado', label: 'Contado' },
-                    { value: 'giro_30', label: 'Giro a 30 días' },
-                    { value: 'giro_60', label: 'Giro a 60 días' },
-                    { value: 'giro_90', label: 'Giro a 90 días' },
-                    { value: 'giro_120', label: 'Giro a 120 días' },
+                    { value: 'giro_30', label: 'Giro a 30 d\u00edas' },
+                    { value: 'giro_60', label: 'Giro a 60 d\u00edas' },
+                    { value: 'giro_90', label: 'Giro a 90 d\u00edas' },
+                    { value: 'giro_120', label: 'Giro a 120 d\u00edas' },
                     { value: 'transferencia', label: 'Transferencia' },
                     { value: 'recibo_sepa', label: 'Recibo domiciliado (SEPA)' }
                 ]
             })}
-            ${_field('IBAN Bancario', 'fc-iban', d.iban, { placeholder: 'ES00 0000 0000 0000 0000 0000' })}
+            ${_field('IBAN Bancario', 'fc-iban', d.iban, { placeholder: 'ES00 0000 0000 0000 0000 0000', minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('description', 'Mandato SEPA', '#E040FB')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Referencia SEPA', 'fc-sepa-ref', d.sepaRef)}
-            ${_field('Fecha Mandato SEPA', 'fc-sepa-date', d.sepaDate, { type: 'date' })}
+        <div style="display:grid; grid-template-columns: 1fr 150px; gap:6px; margin-bottom:6px;">
+            ${_field('Referencia SEPA', 'fc-sepa-ref', d.sepaRef, { minWidth: 'auto' })}
+            ${_field('Fecha Mandato', 'fc-sepa-date', d.sepaDate, { type: 'date', minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('sell', 'Tarifas y Cuota Plana', '#FFD700')}
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            <div style="flex:1; min-width:150px;">
-                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">Tarifa Global Asignada</label>
-                <select id="fc-tariff-eco" style="width:100%; padding:9px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem;">
-                    <option value="">-- Cargando tarifas... --</option>
+        <div style="display:grid; grid-template-columns: 1fr 120px 140px; gap:6px; margin-bottom:6px;">
+            <div style="min-width:auto;">
+                <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px;">Tarifa Global</label>
+                <select id="fc-tariff-eco" style="width:100%; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem;">
+                    <option value="">-- Cargando... --</option>
                 </select>
             </div>
-            ${_field('Cuota Plana Activa', 'fc-flatrate', d.isFlatRate ? 'Sí' : 'No', {
-                type: 'select',
+            ${_field('Cuota Plana', 'fc-flatrate', d.isFlatRate ? 'S\u00ed' : 'No', {
+                type: 'select', minWidth: 'auto',
                 options: [
                     { value: 'No', label: 'No' },
-                    { value: 'Sí', label: 'Sí' }
+                    { value: 'S\u00ed', label: 'S\u00ed' }
                 ]
             })}
-            ${_field('Importe Cuota Plana (€)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number' })}
+            ${_field('Importe (\u20ac)', 'fc-flatrate-amt', d.flatRateAmount || '', { type: 'number', minWidth: 'auto' })}
         </div>
 
         ${_sectionTitle('tune', 'Subtarifa Especial (Precios Exclusivos)', '#E040FB')}
-        <div style="background:rgba(224,64,251,0.05); border:1px solid rgba(224,64,251,0.2); border-radius:10px; padding:16px; margin-bottom:20px;">
-            <div id="fc-custom-tariff-status" style="margin-bottom:12px; font-size:0.85rem; color:#aaa;">Cargando subtarifa...</div>
-            <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px;">
-                <div style="flex:2; min-width:150px;">
-                    <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Articulo / Medida</label>
-                    <input type="text" id="fc-custom-item-name" placeholder="Ej: Bulto, Palet, Sobre..." list="fc-custom-suggest" style="width:100%; padding:8px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+        <div style="background:rgba(224,64,251,0.05); border:1px solid rgba(224,64,251,0.2); border-radius:8px; padding:10px; margin-bottom:12px;">
+            <div id="fc-custom-tariff-status" style="margin-bottom:8px; font-size:0.8rem; color:#aaa;">Cargando subtarifa...</div>
+            <div style="display:grid; grid-template-columns: 1fr 120px auto; gap:6px; align-items:end; margin-bottom:8px;">
+                <div>
+                    <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; margin-bottom:2px;">Articulo / Medida</label>
+                    <input type="text" id="fc-custom-item-name" placeholder="Ej: Bulto, Palet, Sobre..." list="fc-custom-suggest" style="width:100%; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem; box-sizing:border-box;">
                     <datalist id="fc-custom-suggest"></datalist>
                 </div>
-                <div style="flex:1; min-width:100px;">
-                    <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Precio Especial</label>
-                    <input type="number" step="0.01" id="fc-custom-item-price" placeholder="0.00" style="width:100%; padding:8px 10px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:0.85rem; box-sizing:border-box;">
+                <div>
+                    <label style="display:block; color:#888; font-size:0.65rem; text-transform:uppercase; margin-bottom:2px;">Precio Especial</label>
+                    <input type="number" step="0.01" id="fc-custom-item-price" placeholder="0.00" style="width:100%; padding:5px 7px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:4px; font-size:0.8rem; box-sizing:border-box;">
                 </div>
-                <button onclick="window._fichaAddCustomPrice()" style="background:linear-gradient(135deg,#E040FB,#9C27B0); border:none; color:#fff; padding:8px 16px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; white-space:nowrap;">
-                    <span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">add</span> Anadir
+                <button onclick="window._fichaAddCustomPrice()" style="background:linear-gradient(135deg,#E040FB,#9C27B0); border:none; color:#fff; padding:6px 12px; border-radius:5px; font-weight:bold; font-size:0.8rem; cursor:pointer; white-space:nowrap;">
+                    <span class="material-symbols-outlined" style="font-size:0.9rem; vertical-align:middle;">add</span> A\u00f1adir
                 </button>
             </div>
             <div id="fc-custom-tariff-table" style="max-height:300px; overflow-y:auto;"></div>
         </div>
 
         ${_sectionTitle('account_balance_wallet', 'Saldo y Estado de Cuenta', '#4CAF50')}
-        <div id="fc-balance-container" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; margin-bottom:20px;">
-            <div style="background:linear-gradient(135deg, #1a237e, #283593); border-radius:10px; padding:18px; text-align:center;">
-                <div style="font-size:0.65rem; color:#9fa8da; text-transform:uppercase; letter-spacing:1px;">Facturado Total</div>
-                <div id="fc-total-facturado" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+        <div id="fc-balance-container" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:12px;">
+            <div style="background:linear-gradient(135deg, #1a237e, #283593); border-radius:8px; padding:12px; text-align:center;">
+                <div style="font-size:0.6rem; color:#9fa8da; text-transform:uppercase; letter-spacing:1px;">Facturado Total</div>
+                <div id="fc-total-facturado" style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">Cargando...</div>
             </div>
-            <div style="background:linear-gradient(135deg, #1b5e20, #2e7d32); border-radius:10px; padding:18px; text-align:center;">
-                <div style="font-size:0.65rem; color:#a5d6a7; text-transform:uppercase; letter-spacing:1px;">Cobrado</div>
-                <div id="fc-total-cobrado" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+            <div style="background:linear-gradient(135deg, #1b5e20, #2e7d32); border-radius:8px; padding:12px; text-align:center;">
+                <div style="font-size:0.6rem; color:#a5d6a7; text-transform:uppercase; letter-spacing:1px;">Cobrado</div>
+                <div id="fc-total-cobrado" style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">Cargando...</div>
             </div>
-            <div style="background:linear-gradient(135deg, #b71c1c, #c62828); border-radius:10px; padding:18px; text-align:center;">
-                <div style="font-size:0.65rem; color:#ef9a9a; text-transform:uppercase; letter-spacing:1px;">Pendiente</div>
-                <div id="fc-total-pendiente" style="font-size:1.6rem; font-weight:bold; color:#fff; margin:6px 0;">Cargando...</div>
+            <div style="background:linear-gradient(135deg, #b71c1c, #c62828); border-radius:8px; padding:12px; text-align:center;">
+                <div style="font-size:0.6rem; color:#ef9a9a; text-transform:uppercase; letter-spacing:1px;">Pendiente</div>
+                <div id="fc-total-pendiente" style="font-size:1.3rem; font-weight:bold; color:#fff; margin:4px 0;">Cargando...</div>
             </div>
         </div>
         `;
