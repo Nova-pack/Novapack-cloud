@@ -5602,12 +5602,23 @@ window.submitPickupRequest = async function() {
         // Block 3: auto-assign driver by CP
         var resolved = await resolveDriverPhone(pickupCp, pickupLocalidad, '');
 
-        // Block 2: cutoff time check
+        // Block 2: cutoff time check (morning + afternoon slots)
         var outOfSchedule = false;
-        var cutoffTime = userData ? (userData.pickupCutoffTime || '') : '';
-        if (cutoffTime) {
+        var cutoffAM = userData ? (userData.pickupCutoffAM || '') : '';
+        var cutoffPM = userData ? (userData.pickupCutoffPM || '') : '';
+        var activeCutoff = '';
+        if (cutoffAM || cutoffPM) {
             var now = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
-            if (now > cutoffTime) outOfSchedule = true;
+            if (cutoffPM && now >= '14:00') {
+                activeCutoff = cutoffPM;
+                if (now > cutoffPM) outOfSchedule = true;
+            } else if (cutoffAM) {
+                activeCutoff = cutoffAM;
+                if (now > cutoffAM) outOfSchedule = true;
+            } else if (cutoffPM) {
+                activeCutoff = cutoffPM;
+                if (now > cutoffPM) outOfSchedule = true;
+            }
         }
 
         var docData = {
@@ -5643,7 +5654,8 @@ window.submitPickupRequest = async function() {
         // Block 2: show cutoff warning
         if (outOfSchedule) {
             var driverContact = resolved.driverPhone || (userData ? userData.defaultRoutePhone : '') || '';
-            alert('AVISO: La solicitud se ha registrado pero est\u00e1 FUERA DE HORARIO.\n\nLa hora de corte es las ' + cutoffTime + '.\n' +
+            var franjaLabel = (activeCutoff === cutoffPM) ? 'tarde' : 'ma\u00f1ana';
+            alert('AVISO: La solicitud se ha registrado pero est\u00e1 FUERA DE HORARIO.\n\nCorte de ' + franjaLabel + ': ' + activeCutoff + '.\n' +
                 (driverContact ? 'Contacta directamente con el repartidor: ' + driverContact : 'Contacta con tu repartidor para confirmar.'));
         } else {
             alert('Solicitud de recogida enviada correctamente.\nEl repartidor recibir\u00e1 una notificaci\u00f3n.');

@@ -236,7 +236,8 @@
 
         ${_sectionTitle('schedule', 'Configuraci\u00f3n de Recogidas', '#4CAF50')}
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
-            ${_field('Hora de Corte Recogidas', 'fc-pickup-cutoff', d.pickupCutoffTime || '', { type: 'time', minWidth: '140px' })}
+            ${_field('Corte Ma\u00f1ana', 'fc-pickup-cutoff-am', d.pickupCutoffAM || '', { type: 'time', minWidth: '130px' })}
+            ${_field('Corte Tarde', 'fc-pickup-cutoff-pm', d.pickupCutoffPM || '', { type: 'time', minWidth: '130px' })}
             ${_field('Tel\u00e9fono Ruta por Defecto', 'fc-default-route-phone', d.defaultRoutePhone || '', { placeholder: '600123456', minWidth: '160px' })}
         </div>
 
@@ -887,7 +888,8 @@
         if (getVal('fc-tariff') !== null) updates.tariffId = getVal('fc-tariff');
 
         // Recogidas fields
-        if (getVal('fc-pickup-cutoff') !== null) updates.pickupCutoffTime = getVal('fc-pickup-cutoff');
+        if (getVal('fc-pickup-cutoff-am') !== null) updates.pickupCutoffAM = getVal('fc-pickup-cutoff-am');
+        if (getVal('fc-pickup-cutoff-pm') !== null) updates.pickupCutoffPM = getVal('fc-pickup-cutoff-pm');
         if (getVal('fc-default-route-phone') !== null) updates.defaultRoutePhone = getVal('fc-default-route-phone');
 
         // Económico fields
