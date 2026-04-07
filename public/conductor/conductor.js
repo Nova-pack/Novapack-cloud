@@ -48,7 +48,16 @@ async function verifyPin(pin) {
             return;
         }
 
-        // Success
+        // Anonymous auth so Firestore rules (request.auth != null) allow ticket reads
+        try {
+            await auth.signInAnonymously();
+            console.log('[CONDUCTOR] Anonymous auth OK');
+        } catch (authErr) {
+            console.error('[CONDUCTOR] Anonymous auth failed:', authErr);
+            errorEl.textContent = 'Error de autenticación';
+            return;
+        }
+
         sessionStorage.setItem('conductor_auth', '1');
         showApp();
     } catch (e) {
@@ -73,15 +82,27 @@ function logout() {
     routeTickets = {};
     currentRouteId = null;
 
+    auth.signOut().catch(() => {});
+
     document.getElementById('app-screen').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
     document.querySelectorAll('.pin-digit').forEach(d => { d.value = ''; });
     document.querySelector('.pin-digit').focus();
 }
 
-// Resume session
+// Resume session — re-auth anonymously if needed
 if (sessionStorage.getItem('conductor_auth') === '1') {
-    showApp();
+    if (auth.currentUser) {
+        showApp();
+    } else {
+        auth.signInAnonymously().then(() => {
+            console.log('[CONDUCTOR] Session resumed with anonymous auth');
+            showApp();
+        }).catch(() => {
+            sessionStorage.removeItem('conductor_auth');
+            console.warn('[CONDUCTOR] Could not resume session');
+        });
+    }
 }
 
 // --- Load Routes ---
