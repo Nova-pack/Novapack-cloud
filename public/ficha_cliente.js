@@ -17,10 +17,27 @@
     // ============================================================
     //  ENTRY POINT
     // ============================================================
-    window.openFichaCliente = function(clientId) {
+    window.openFichaCliente = async function(clientId) {
         if (!clientId) return;
         _fichaClientId = clientId;
+
+        // Try userMap first, then _advClientsCache, then Firestore
         _fichaClientData = (window.userMap && window.userMap[clientId]) ? { ...window.userMap[clientId], id: clientId } : null;
+
+        if (!_fichaClientData && window._advClientsCache) {
+            var cached = window._advClientsCache.find(function(c) { return c.id === clientId; });
+            if (cached) _fichaClientData = { ...cached, id: clientId };
+        }
+
+        if (!_fichaClientData) {
+            try {
+                var doc = await db.collection('users').doc(clientId).get();
+                if (doc.exists) {
+                    _fichaClientData = { ...doc.data(), id: clientId };
+                    if (window.userMap) window.userMap[clientId] = _fichaClientData;
+                }
+            } catch(e) { console.error('Error loading client:', e); }
+        }
 
         if (!_fichaClientData) {
             alert('No se encontraron datos para este cliente.');
