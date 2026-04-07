@@ -38,10 +38,9 @@ async function verifyPin(pin) {
     try {
         const configDoc = await db.collection('config').doc('phones').get();
         const data = configDoc.exists ? configDoc.data() : {};
-        const pin1 = data.masterPin1 || '';
-        const pin2 = data.masterPin2 || '';
+        const conductorPin = data.conductorPin || '';
 
-        if (pin !== pin1 && pin !== pin2) {
+        if (!conductorPin || pin !== conductorPin) {
             errorEl.textContent = 'PIN incorrecto';
             document.querySelectorAll('.pin-digit').forEach(d => { d.value = ''; });
             document.querySelector('.pin-digit').focus();

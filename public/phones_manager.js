@@ -56,6 +56,25 @@
                         </div>
                     </div>
 
+                    <!-- PIN Panel Conductor -->
+                    <div style="background:#1e2a1e; border:1px solid #2e7d32; border-radius:8px; padding:14px 18px; margin-top:15px; margin-bottom:15px;">
+                        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                            <span class="material-symbols-outlined" style="color:#4CAF50; font-size:1.2rem;">local_shipping</span>
+                            <span style="color:#4CAF50; font-weight:bold; font-size:0.85rem; text-transform:uppercase; letter-spacing:1px;">PIN Panel Conductor</span>
+                        </div>
+                        <p style="color:#888; font-size:0.8rem; margin:0 0 12px;">PIN exclusivo para acceder al panel de conductor (/conductor/). Permite ver todas las rutas e imprimir albaranes.</p>
+                        <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:flex-end;">
+                            <div>
+                                <label style="display:block; color:#888; font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">PIN Conductor</label>
+                                <input type="text" id="conductor-pin" maxlength="4" placeholder="4 dígitos" style="width:140px; padding:8px 12px; background:#2d2d30; border:1px solid #3c3c3c; color:#fff; border-radius:5px; font-size:1rem; font-weight:bold; letter-spacing:3px; text-align:center;">
+                            </div>
+                            <button onclick="saveConductorPin()" style="background:linear-gradient(135deg,#4CAF50,#2E7D32); border:none; color:#fff; padding:8px 20px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:5px;">
+                                <span class="material-symbols-outlined" style="font-size:16px;">save</span> Guardar PIN
+                            </button>
+                            <span id="conductor-pin-status" style="color:#888; font-size:0.8rem;"></span>
+                        </div>
+                    </div>
+
                     <table id="phones-mgr-table" style="width:100%; border-collapse:collapse; font-size:0.85rem;">
                         <thead style="background:#333;">
                             <tr>
@@ -295,11 +314,51 @@
         }
     };
 
+    // ============ CONDUCTOR PIN ============
+
+    async function loadConductorPin() {
+        try {
+            const doc = await db.collection('config').doc('phones').get();
+            if (doc.exists) {
+                const data = doc.data();
+                const pinEl = document.getElementById('conductor-pin');
+                if (pinEl && data.conductorPin) pinEl.value = data.conductorPin;
+            }
+        } catch (e) {
+            console.error('[Phones] Error loading conductor PIN:', e);
+        }
+    }
+
+    window.saveConductorPin = async () => {
+        const pin = (document.getElementById('conductor-pin')?.value || '').trim();
+        const statusEl = document.getElementById('conductor-pin-status');
+
+        if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+            alert('El PIN debe ser de 4 dígitos');
+            return;
+        }
+
+        try {
+            await db.collection('config').doc('phones').set({
+                conductorPin: pin,
+                conductorPinUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            if (statusEl) {
+                statusEl.textContent = 'PIN conductor guardado';
+                statusEl.style.color = '#4CAF50';
+                setTimeout(() => { statusEl.textContent = ''; }, 3000);
+            }
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+
     // Auto-load PINs after rendering
     const _origLoad = window.loadPhonesManager;
     window.loadPhonesManager = async () => {
         await _origLoad();
         loadMasterPins();
+        loadConductorPin();
     };
 
     // ============ COVERAGE ZONES AUTOCOMPLETE ============
