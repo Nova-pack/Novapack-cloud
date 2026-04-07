@@ -1279,7 +1279,7 @@
 
                 <!-- CONTACTOS dropdown -->
                 <div class="adv-dropdown">
-                    <button class="adv-dropdown-btn"><span class="material-symbols-outlined">group</span> Contactos ▾</button>
+                    <button class="adv-dropdown-btn"><span class="material-symbols-outlined">group</span> Clientes ▾</button>
                     <div class="adv-dropdown-menu">
                         <div class="dd-label">Clientes</div>
                         <button onclick="erpOpenTab('clients'); let m=this.closest('.adv-dropdown-menu'); if(m) m.classList.remove('show');"><span class="material-symbols-outlined">group</span> Ver Clientes</button>
@@ -8451,7 +8451,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 _routeMapDriverMarker = null;
 
                 // --- Listen to driver GPS ---
-                var normalPhone = phone.replace(/\D/g, '');
+                var normalPhone = phone.replace(/\D/g, '').replace(/^34/, '');
                 var gpsDocId = normalPhone.replace(/[^a-zA-Z0-9]/g, '_');
                 _routeMapUnsub = db.collection('driver_locations').doc(gpsDocId)
                     .onSnapshot(function(doc) {

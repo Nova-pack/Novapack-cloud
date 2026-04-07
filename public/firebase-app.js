@@ -5283,7 +5283,8 @@ function _initTrackingMap(driverPhone) {
         google.maps.event.trigger(_trackingMap, 'resize');
     }
 
-    var docId = driverPhone.replace(/[^a-zA-Z0-9]/g, '_');
+    var normalPhone = driverPhone.replace(/\D/g, '').replace(/^34/, '');
+    var docId = normalPhone.replace(/[^a-zA-Z0-9]/g, '_');
 
     if (_trackingUnsub) _trackingUnsub();
     _trackingUnsub = db.collection('driver_locations').doc(docId).onSnapshot(function(snap) {
