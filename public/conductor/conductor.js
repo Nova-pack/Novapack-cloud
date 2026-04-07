@@ -307,9 +307,9 @@ function generateTicketHTML(t, footerLabel) {
         ${t.province ? `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:4.5rem; color:#000; font-weight:900; white-space:nowrap; z-index:0; pointer-events:none; width: 100%; text-align: center; font-family: 'Arial Black', sans-serif; opacity: 0.04; text-transform: uppercase;">${escapeHtml(t.province)}</div>` : ''}
         <div style="z-index: 2;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
-                <div style="flex: 1;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 24pt; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
-                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
+                <div style="flex: 0 0 auto; max-width: 130px;">
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 14pt; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
+                    <div style="font-size: 0.6rem; letter-spacing: 0.3px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
                 </div>
                 <div style="flex: 1; text-align: center; padding: 0 10px;">
                     <div style="padding: 5px; background:#FFF; display: inline-block; min-width: 140px;">
