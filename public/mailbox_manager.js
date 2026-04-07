@@ -851,6 +851,94 @@ window.mailboxBulkResolve = async function() {
 
 // =================================================
 
+// ============ CREAR ASUNTO MANUAL ============
+window.openCreateMailboxEntry = function() {
+    let modal = document.getElementById('modal-create-mailbox');
+    if (modal) modal.remove();
+
+    const catOptions = Object.entries(MAILBOX_CATEGORIES).map(([k, v]) =>
+        `<option value="${k}">${v.emoji} ${v.label}</option>`
+    ).join('');
+
+    modal = document.createElement('div');
+    modal.id = 'modal-create-mailbox';
+    modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:50000; display:flex; align-items:center; justify-content:center;';
+    modal.innerHTML = `
+        <div style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:12px; width:95%; max-width:520px; padding:25px; color:#d4d4d4;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #3c3c3c; padding-bottom:12px; margin-bottom:18px;">
+                <h2 style="margin:0; color:#4CAF50; font-size:1.1rem;"><span class="material-symbols-outlined" style="vertical-align:middle; margin-right:5px;">note_add</span>Crear Asunto</h2>
+                <button onclick="document.getElementById('modal-create-mailbox').remove()" style="background:none; border:none; color:#aaa; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Asunto</label>
+                <input id="create-mail-subject" placeholder="Descripci\u00f3n del asunto..." style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.9rem; margin-top:4px; box-sizing:border-box;">
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+                <div>
+                    <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Categor\u00eda</label>
+                    <select id="create-mail-category" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px;">
+                        ${catOptions}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Referencia Albar\u00e1n</label>
+                    <input id="create-mail-ref" placeholder="Opcional" style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px; box-sizing:border-box;">
+                </div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+                <label style="font-size:0.75rem; color:#888; text-transform:uppercase; letter-spacing:1px;">Notas / Descripci\u00f3n</label>
+                <textarea id="create-mail-body" rows="4" placeholder="Detalles del asunto..." style="width:100%; background:#2d2d30; border:1px solid #3c3c3c; color:white; padding:8px; border-radius:4px; font-size:0.85rem; margin-top:4px; resize:vertical; box-sizing:border-box;"></textarea>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; border-top:1px solid #3c3c3c; padding-top:15px;">
+                <button onclick="document.getElementById('modal-create-mailbox').remove()" style="background:#333; border:1px solid #555; color:#ccc; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px;">Cancelar</button>
+                <button onclick="saveCreateMailboxEntry()" style="background:#4CAF50; border:none; color:#fff; padding:8px 20px; font-size:0.85rem; cursor:pointer; border-radius:4px; font-weight:bold; display:flex; align-items:center; gap:5px;">
+                    <span class="material-symbols-outlined" style="font-size:16px;">save</span> Crear
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.getElementById('create-mail-subject').focus();
+};
+
+window.saveCreateMailboxEntry = async function() {
+    const subject = (document.getElementById('create-mail-subject')?.value || '').trim();
+    if (!subject) { alert('El asunto es obligatorio'); return; }
+
+    const category = document.getElementById('create-mail-category')?.value || 'otro';
+    const ticketRef = (document.getElementById('create-mail-ref')?.value || '').trim();
+    const body = (document.getElementById('create-mail-body')?.value || '').trim();
+
+    try {
+        await window.db.collection('mailbox').add({
+            subject: subject,
+            category: category,
+            ticketRef: ticketRef,
+            body: body,
+            from: 'Admin',
+            status: 'nueva',
+            source: 'manual',
+            createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+            statusHistory: [{
+                status: 'nueva',
+                at: new Date(),
+                reason: 'creado manualmente'
+            }]
+        });
+
+        document.getElementById('modal-create-mailbox').remove();
+        showMailboxToast('Asunto creado correctamente', 'success');
+    } catch(e) {
+        console.error('[MAILBOX] Error creando asunto:', e);
+        alert('Error: ' + e.message);
+    }
+};
+
 // Auto-trigger styles
 document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
