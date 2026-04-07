@@ -16,11 +16,14 @@
         "xlsx": "^0.18.5"
     },
     "devDependencies": {
-        "firebase-tools": "^13.0.0"
+        "firebase-tools": "^13.0.0",
+        "terser": "^5.46.1"
     },
     "scripts": {
-        "deploy": "firebase deploy"
+        "build": "node build.js",
+        "deploy": "firebase deploy",
+        "deploy:prod": "node build.js && firebase deploy --only hosting --project novapack-68f05"
     },
     "author": "NOVAPACK",
-    "license": "ISC"
+    "license": "SEE LICENSE FILE"
 }
