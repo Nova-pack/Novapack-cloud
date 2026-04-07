@@ -361,7 +361,13 @@ async function saveTicket(andPrint) {
 
 // --- PRINT LABELS ---
 function generatePrintLabelHTML(t, bultoIndex, totalBultos) {
-    var now = t.createdAt ? (t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt)) : new Date();
+    var now = null;
+    if (t.createdAt && typeof t.createdAt.toDate === 'function') {
+        now = t.createdAt.toDate();
+    } else if (t.createdAt && !isNaN(new Date(t.createdAt).getTime())) {
+        now = new Date(t.createdAt);
+    }
+    if (!now || isNaN(now.getTime())) now = new Date();
     var dateStr = String(now.getDate()).padStart(2,'0') + '/' + String(now.getMonth()+1).padStart(2,'0') + '/' + now.getFullYear();
     var timeStr = now.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
     var weight = t.weight ? parseFloat(t.weight).toFixed(1) + ' kg' : '---';
