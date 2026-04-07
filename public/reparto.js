@@ -864,34 +864,59 @@ function initApp() {
     function startPickupListener() {
         if (pickupUnsubscribe) pickupUnsubscribe();
 
-        pickupUnsubscribe = db.collection('pickupRequests')
-            .where('status', '==', 'pending')
-            .onSnapshot(function(snap) {
-                var pickups = [];
-                snap.forEach(function(doc) {
-                    var d = doc.data();
-                    d._id = doc.id;
-                    pickups.push(d);
+        // Listen to pickups assigned to this driver + unassigned pickups
+        var unsub1 = null, unsub2 = null;
+        var assignedPickups = [], unassignedPickups = [];
+
+        function mergeAndRender() {
+            var all = assignedPickups.concat(unassignedPickups);
+            // Deduplicate by _id
+            var seen = {};
+            var pickups = [];
+            all.forEach(function(p) { if (!seen[p._id]) { seen[p._id] = true; pickups.push(p); } });
+
+            // Detect NEW pickups
+            if (!isFirstPickupSnapshot) {
+                pickups.forEach(function(p) {
+                    if (!knownPickupIds.has(p._id)) {
+                        sendNotification(
+                            '\ud83d\udce6 RECOGIDA PENDIENTE',
+                            (p.senderName || 'Cliente') + ' \u2014 ' + (p.senderAddress || '') + ' \u2014 ' + (p.packages || 1) + ' bultos'
+                        );
+                    }
                 });
+            }
+            knownPickupIds = new Set(pickups.map(function(p) { return p._id; }));
+            isFirstPickupSnapshot = false;
+            renderPickupCards(pickups);
+        }
 
-                // Detect NEW pickups (not on first load)
-                if (!isFirstPickupSnapshot) {
-                    pickups.forEach(function(p) {
-                        if (!knownPickupIds.has(p._id)) {
-                            sendNotification(
-                                '\ud83d\udce6 RECOGIDA PENDIENTE',
-                                (p.senderName || 'Cliente') + ' \u2014 ' + (p.senderAddress || '') + ' \u2014 ' + (p.packages || 1) + ' bultos'
-                            );
-                        }
-                    });
-                }
-                knownPickupIds = new Set(pickups.map(function(p) { return p._id; }));
-                isFirstPickupSnapshot = false;
+        // Query 1: assigned to this driver
+        if (currentDriverPhone) {
+            unsub1 = db.collection('pickupRequests')
+                .where('status', '==', 'pending')
+                .where('driverPhone', '==', currentDriverPhone)
+                .onSnapshot(function(snap) {
+                    assignedPickups = [];
+                    snap.forEach(function(doc) { var d = doc.data(); d._id = doc.id; assignedPickups.push(d); });
+                    mergeAndRender();
+                }, function(err) { console.warn('Pickup listener (assigned) error:', err); });
+        }
 
-                renderPickupCards(pickups);
-            }, function(err) {
-                console.warn('Pickup listener error:', err);
-            });
+        // Query 2: unassigned pickups (no driverPhone)
+        unsub2 = db.collection('pickupRequests')
+            .where('status', '==', 'pending')
+            .where('driverPhone', '==', '')
+            .onSnapshot(function(snap) {
+                unassignedPickups = [];
+                snap.forEach(function(doc) { var d = doc.data(); d._id = doc.id; unassignedPickups.push(d); });
+                mergeAndRender();
+            }, function(err) { console.warn('Pickup listener (unassigned) error:', err); });
+
+        pickupUnsubscribe = function() {
+            if (unsub1) unsub1();
+            if (unsub2) unsub2();
+        };
     }
 
     // --- DRIVER ALERTS LISTENER (admin pickup/collection alerts) ---
@@ -1086,7 +1111,11 @@ function initApp() {
         pickups.forEach(function(p) {
             var card = document.createElement('div');
             card.className = 'pickup-card';
-            card.style.cssText = 'background:linear-gradient(135deg,rgba(76,175,80,0.15),rgba(76,175,80,0.05)); border:2px solid #4CAF50; border-radius:12px; padding:14px; margin-bottom:10px; animation:slideDown 0.3s ease;';
+            var borderColor = p.outOfSchedule ? '#FF9800' : '#4CAF50';
+            var bgGrad = p.outOfSchedule
+                ? 'linear-gradient(135deg,rgba(255,152,0,0.15),rgba(255,152,0,0.05))'
+                : 'linear-gradient(135deg,rgba(76,175,80,0.15),rgba(76,175,80,0.05))';
+            card.style.cssText = 'background:' + bgGrad + '; border:2px solid ' + borderColor + '; border-radius:12px; padding:14px; margin-bottom:10px; animation:slideDown 0.3s ease;';
 
             var turnIcon = p.timeSlot === 'TARDE' ? '\ud83c\udf19' : '\u2600\ufe0f';
             var notesHtml = p.notes ? '<div style="margin-top:6px; font-style:italic; color:#aaa; font-size:0.75rem;">\ud83d\udcdd ' + escapeHtml(p.notes) + '</div>' : '';
@@ -1097,22 +1126,28 @@ function initApp() {
                 createdStr = d.toLocaleTimeString('es-ES', {hour:'2-digit', minute:'2-digit'});
             }
 
+            var badges = '';
+            if (p.outOfSchedule) badges += '<span style="background:#FF9800; color:#fff; font-size:0.6rem; padding:2px 6px; border-radius:4px; font-weight:800; margin-left:6px;">FUERA HORARIO</span>';
+            if (p.pickupType === 'thirdparty') badges += '<span style="background:#2196F3; color:#fff; font-size:0.6rem; padding:2px 6px; border-radius:4px; font-weight:800; margin-left:6px;">TERCERO</span>';
+            var requestedByHtml = p.requestedBy ? '<div style="color:#2196F3; font-size:0.7rem; margin-top:2px;">Solicitado por: ' + escapeHtml(p.requestedBy) + '</div>' : '';
+
             card.innerHTML =
-                '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
-                    '<span style="color:#4CAF50; font-weight:900; font-size:0.8rem; letter-spacing:1px;">\ud83d\udce6 RECOGIDA PENDIENTE</span>' +
+                '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap;">' +
+                    '<span style="color:' + borderColor + '; font-weight:900; font-size:0.8rem; letter-spacing:1px;">RECOGIDA PENDIENTE' + badges + '</span>' +
                     '<span style="color:#888; font-size:0.7rem;">' + turnIcon + ' ' + (p.timeSlot || '') + (createdStr ? ' \u2022 ' + createdStr : '') + '</span>' +
                 '</div>' +
                 '<div style="font-size:0.9rem; line-height:1.7; color:#eee;">' +
-                    '<div><strong>\ud83d\udc64 ' + escapeHtml(p.senderName || 'Cliente') + '</strong></div>' +
-                    '<div>\ud83d\udccd ' + escapeHtml(p.senderAddress || 'Sin direcci\u00f3n') + '</div>' +
-                    '<div>\ud83d\udcde ' + escapeHtml(p.senderPhone || '---') + '</div>' +
+                    '<div><strong>' + escapeHtml(p.senderName || 'Cliente') + '</strong></div>' +
+                    '<div>' + escapeHtml(p.senderAddress || 'Sin direcci\u00f3n') + '</div>' +
+                    '<div>' + escapeHtml(p.senderPhone || '---') + '</div>' +
+                    requestedByHtml +
                     destHtml +
-                    '<div>\ud83d\udce6 ' + escapeHtml(p.packages || 1) + ' bultos</div>' +
+                    '<div>' + escapeHtml(p.packages || 1) + ' bultos</div>' +
                     notesHtml +
                 '</div>' +
                 '<div style="display:flex; gap:8px; margin-top:10px;">' +
-                    '<button onclick="window.open(\'' + (p.mapsUrl || '#') + '\', \'_blank\')" style="flex:1; padding:8px; background:#4CAF50; color:white; border:none; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">\ud83d\udccd C\u00d3MO LLEGAR</button>' +
-                    '<button onclick="completePickup(\'' + p._id + '\')" style="flex:1; padding:8px; background:rgba(255,255,255,0.1); color:#4CAF50; border:1px solid #4CAF50; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">\u2705 COMPLETADA</button>' +
+                    '<button onclick="window.open(\'' + (p.mapsUrl || '#') + '\', \'_blank\')" style="flex:1; padding:8px; background:' + borderColor + '; color:white; border:none; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">C\u00d3MO LLEGAR</button>' +
+                    '<button onclick="completePickup(\'' + p._id + '\')" style="flex:1; padding:8px; background:rgba(255,255,255,0.1); color:' + borderColor + '; border:1px solid ' + borderColor + '; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">COMPLETADA</button>' +
                 '</div>';
 
             container.insertBefore(card, container.firstChild);

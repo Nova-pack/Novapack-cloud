@@ -41,6 +41,14 @@
       ]
     },
     {
+      "collectionGroup": "pickupRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "driverPhone", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "user_notifications",
       "queryScope": "COLLECTION",
       "fields": [

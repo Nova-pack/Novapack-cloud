@@ -217,6 +217,12 @@
             ${_field('Provincia', 'fc-province', d.province)}
         </div>
 
+        ${_sectionTitle('schedule', 'Configuraci\u00f3n de Recogidas', '#4CAF50')}
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+            ${_field('Hora de Corte Recogidas', 'fc-pickup-cutoff', d.pickupCutoffTime || '', { type: 'time', minWidth: '140px' })}
+            ${_field('Tel\u00e9fono Ruta por Defecto', 'fc-default-route-phone', d.defaultRoutePhone || '', { placeholder: '600123456', minWidth: '160px' })}
+        </div>
+
         ${_sectionTitle('account_tree', 'Relaciones', '#2196F3')}
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
             ${_field('Filial Facturadora', 'fc-billing-company', d.billingCompanyId, {
@@ -862,6 +868,10 @@
         if (getVal('fc-province') !== null) updates.province = getVal('fc-province');
         if (getVal('fc-billing-company') !== null) updates.billingCompanyId = getVal('fc-billing-company');
         if (getVal('fc-tariff') !== null) updates.tariffId = getVal('fc-tariff');
+
+        // Recogidas fields
+        if (getVal('fc-pickup-cutoff') !== null) updates.pickupCutoffTime = getVal('fc-pickup-cutoff');
+        if (getVal('fc-default-route-phone') !== null) updates.defaultRoutePhone = getVal('fc-default-route-phone');
 
         // Económico fields
         if (getVal('fc-payment-terms') !== null) updates.paymentTerms = getVal('fc-payment-terms');

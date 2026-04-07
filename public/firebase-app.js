@@ -1951,37 +1951,9 @@ async function handleFormSubmit(e) {
     try {
         let targetDriverPhone = '';
         try {
-            const routeCp = (cp || '').trim();
-            const routeLocality = (locality || '').toLowerCase().trim();
-            const routeProvince = (document.getElementById('ticket-province').value || '').toLowerCase().trim();
-            const phonesSnap = await db.collection('config').doc('phones').collection('list').get();
-            var routeList = [];
-            phonesSnap.forEach(doc => {
-                var d = doc.data();
-                routeList.push({ label: (d.label || '').toLowerCase(), number: d.number, zones: d.coverageZones || '' });
-            });
-            // Priority 1: match coverage zones field (comma-separated CPs/localities)
-            routeList.forEach(r => {
-                if (r.zones && !targetDriverPhone) {
-                    var zoneList = r.zones.toLowerCase().split(',').map(z => z.trim());
-                    if (routeCp && zoneList.indexOf(routeCp) !== -1) targetDriverPhone = r.number;
-                    else if (routeLocality && zoneList.indexOf(routeLocality) !== -1) targetDriverPhone = r.number;
-                }
-            });
-            // Priority 2: match by label
-            if (!targetDriverPhone) {
-                routeList.forEach(r => {
-                    if (targetDriverPhone) return;
-                    if (routeCp && r.label.includes(routeCp)) targetDriverPhone = r.number;
-                    else if (routeLocality && r.label === routeLocality) targetDriverPhone = r.number;
-                    else if (routeLocality && routeLocality.length > 3 && r.label.includes(routeLocality)) targetDriverPhone = r.number;
-                    else if (routeProvince && routeProvince.length > 3 && r.label.includes(routeProvince)) targetDriverPhone = r.number;
-                });
-            }
-            // Priority 3: if only one route exists, assign to it by default
-            if (!targetDriverPhone && routeList.length === 1) {
-                targetDriverPhone = routeList[0].number;
-            }
+            const routeProvince = (document.getElementById('ticket-province').value || '').trim();
+            const resolved = await resolveDriverPhone(cp, locality, routeProvince);
+            targetDriverPhone = resolved.driverPhone;
         } catch(e) { console.error("Auto-routing error:", e); }
 
         const data = {
@@ -5357,7 +5329,11 @@ setInterval(() => {
 
 // acceptTicketModification removed — admin changes now apply directly, client only receives notification
 
-// --- PICKUP REQUEST ---
+// --- PICKUP REQUEST (v2: third-party + auto-assign + cutoff) ---
+var _pickupMode = 'self';
+var _pickupThirdParty = null; // { name, address, phone, cp, localidad }
+var _pickupSearchTimer = null;
+
 window.openPickupModal = function() {
     const modal = document.getElementById('modal-pickup');
     if (!modal) return;
@@ -5371,7 +5347,9 @@ window.openPickupModal = function() {
         document.getElementById('pickup-sender-phone').textContent = comp.phone || '\u2014';
     }
 
-    // Reset fields
+    // Reset to self mode
+    togglePickupMode('self');
+    _pickupThirdParty = null;
     document.getElementById('pickup-destination').value = '';
     document.getElementById('pickup-packages').value = '1';
     document.getElementById('pickup-notes').value = '';
@@ -5379,26 +5357,266 @@ window.openPickupModal = function() {
     modal.style.display = 'flex';
 };
 
+// --- Mode toggle ---
+window.togglePickupMode = function(mode) {
+    _pickupMode = mode;
+    _pickupThirdParty = null;
+    const btnSelf = document.getElementById('pickup-mode-self');
+    const btnTP = document.getElementById('pickup-mode-thirdparty');
+    const secSelf = document.getElementById('pickup-sender-section');
+    const secTP = document.getElementById('pickup-thirdparty-section');
+
+    if (mode === 'self') {
+        btnSelf.style.background = '#4CAF50'; btnSelf.style.color = '#fff';
+        btnTP.style.background = 'transparent'; btnTP.style.color = '#4CAF50';
+        secSelf.style.display = 'block'; secTP.style.display = 'none';
+    } else {
+        btnTP.style.background = '#2196F3'; btnTP.style.color = '#fff';
+        btnSelf.style.background = 'transparent'; btnSelf.style.color = '#4CAF50';
+        secSelf.style.display = 'none'; secTP.style.display = 'block';
+    }
+    // Reset third-party fields
+    var search = document.getElementById('pickup-tp-search');
+    if (search) search.value = '';
+    var results = document.getElementById('pickup-tp-results');
+    if (results) { results.innerHTML = ''; results.style.display = 'none'; }
+    var selected = document.getElementById('pickup-tp-selected');
+    if (selected) selected.style.display = 'none';
+    var manual = document.getElementById('pickup-tp-manual');
+    if (manual) manual.style.display = 'none';
+    var manualToggle = document.getElementById('pickup-tp-manual-toggle');
+    if (manualToggle) manualToggle.style.display = 'block';
+};
+
+// --- Third-party search (agenda + PhantomDirectory) ---
+(function() {
+    document.addEventListener('input', function(e) {
+        if (e.target.id !== 'pickup-tp-search') return;
+        clearTimeout(_pickupSearchTimer);
+        var q = e.target.value.trim();
+        if (q.length < 2) {
+            document.getElementById('pickup-tp-results').style.display = 'none';
+            return;
+        }
+        _pickupSearchTimer = setTimeout(function() { _searchPickupContacts(q); }, 300);
+    });
+})();
+
+async function _searchPickupContacts(query) {
+    var results = [];
+    var q = query.toLowerCase();
+
+    // Search personal agenda
+    try {
+        var snap = await getCollection('destinations');
+        if (snap && snap.length) {
+            snap.forEach(function(d) {
+                if ((d.name || '').toLowerCase().includes(q) || (d.addresses && d.addresses.some(function(a) { return (a.address || '').toLowerCase().includes(q) || (a.localidad || '').toLowerCase().includes(q); }))) {
+                    var addr = d.addresses && d.addresses[0] ? d.addresses[0] : {};
+                    results.push({
+                        name: d.name || '', phone: d.phone || '',
+                        address: addr.address || [addr.street, addr.number, addr.localidad, addr.cp].filter(Boolean).join(', '),
+                        cp: addr.cp || '', localidad: addr.localidad || '',
+                        source: 'agenda'
+                    });
+                }
+            });
+        }
+    } catch(e) { console.warn('Agenda search error:', e); }
+
+    // Search PhantomDirectory (global)
+    if (window.searchPhantomDirectory) {
+        try {
+            var phantom = window.searchPhantomDirectory(query);
+            phantom.forEach(function(p) {
+                results.push({
+                    name: p.name || '', phone: p.senderPhone || '',
+                    address: [p.localidad, p.cp].filter(Boolean).join(', '),
+                    cp: p.cp || '', localidad: p.localidad || '',
+                    source: 'global'
+                });
+            });
+        } catch(e) {}
+    }
+
+    // Render
+    var container = document.getElementById('pickup-tp-results');
+    if (results.length === 0) {
+        container.innerHTML = '<div style="padding:10px; color:#888; font-size:0.8rem; text-align:center;">Sin resultados</div>';
+        container.style.display = 'block';
+        return;
+    }
+    container.innerHTML = results.slice(0, 8).map(function(r, i) {
+        var badge = r.source === 'agenda'
+            ? '<span style="background:#4CAF50; color:#fff; font-size:0.6rem; padding:1px 5px; border-radius:3px; font-weight:700;">MI AGENDA</span>'
+            : '<span style="background:#2196F3; color:#fff; font-size:0.6rem; padding:1px 5px; border-radius:3px; font-weight:700;">GLOBAL</span>';
+        return '<div onclick="selectThirdPartyContact(' + i + ')" style="padding:10px 12px; cursor:pointer; border-bottom:1px solid #333; transition:background 0.15s;" onmouseover="this.style.background=\'rgba(255,255,255,0.05)\'" onmouseout="this.style.background=\'transparent\'">' +
+            '<div style="display:flex; justify-content:space-between; align-items:center;">' +
+                '<strong style="color:#fff; font-size:0.85rem;">' + escapeHtml(r.name) + '</strong> ' + badge +
+            '</div>' +
+            '<div style="color:#aaa; font-size:0.75rem; margin-top:2px;">' + escapeHtml(r.address) + (r.phone ? ' | ' + escapeHtml(r.phone) : '') + '</div>' +
+        '</div>';
+    }).join('');
+    container.style.display = 'block';
+
+    // Store for selection
+    window._pickupSearchResults = results.slice(0, 8);
+}
+
+window.selectThirdPartyContact = function(idx) {
+    var r = window._pickupSearchResults && window._pickupSearchResults[idx];
+    if (!r) return;
+    _pickupThirdParty = r;
+    document.getElementById('pickup-tp-name').textContent = r.name;
+    document.getElementById('pickup-tp-address').textContent = r.address;
+    document.getElementById('pickup-tp-phone').textContent = r.phone || '—';
+    document.getElementById('pickup-tp-selected').style.display = 'block';
+    document.getElementById('pickup-tp-results').style.display = 'none';
+    document.getElementById('pickup-tp-search').value = '';
+    document.getElementById('pickup-tp-manual').style.display = 'none';
+    document.getElementById('pickup-tp-manual-toggle').style.display = 'none';
+};
+
+window.clearThirdPartySelection = function() {
+    _pickupThirdParty = null;
+    document.getElementById('pickup-tp-selected').style.display = 'none';
+    document.getElementById('pickup-tp-manual').style.display = 'none';
+    document.getElementById('pickup-tp-manual-toggle').style.display = 'block';
+    document.getElementById('pickup-tp-search').value = '';
+};
+
+window.toggleManualPickupEntry = function() {
+    document.getElementById('pickup-tp-manual').style.display = 'block';
+    document.getElementById('pickup-tp-manual-toggle').style.display = 'none';
+    document.getElementById('pickup-tp-selected').style.display = 'none';
+    document.getElementById('pickup-tp-results').style.display = 'none';
+    _pickupThirdParty = null;
+    // Clear fields
+    ['pickup-tp-manual-name','pickup-tp-manual-address','pickup-tp-manual-cp','pickup-tp-manual-phone'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.value = '';
+    });
+};
+
+window.saveThirdPartyToAgenda = async function() {
+    var name = (document.getElementById('pickup-tp-manual-name').value || '').trim().toUpperCase();
+    var address = (document.getElementById('pickup-tp-manual-address').value || '').trim();
+    var cp = (document.getElementById('pickup-tp-manual-cp').value || '').trim();
+    var phone = (document.getElementById('pickup-tp-manual-phone').value || '').trim();
+    if (!name) { alert('Introduce al menos el nombre.'); return; }
+    try {
+        var docId = name.replace(/[^a-z0-9\-_]/gi, '_').toLowerCase();
+        await db.collection('users').doc(currentUser.uid).collection('destinations').doc(docId).set({
+            name: name, phone: phone,
+            addresses: [{ id: 'addr_' + Date.now(), address: address, cp: cp }]
+        }, { merge: true });
+        alert('Contacto guardado en tu agenda.');
+    } catch(e) { alert('Error guardando: ' + e.message); }
+};
+
+// --- Route resolver (shared by tickets and pickups) ---
+async function resolveDriverPhone(cp, localidad, province) {
+    try {
+        var routeCp = (cp || '').trim();
+        var routeLocality = (localidad || '').toLowerCase().trim();
+        var routeProvince = (province || '').toLowerCase().trim();
+        var phonesSnap = await db.collection('config').doc('phones').collection('list').get();
+        var routeList = [];
+        phonesSnap.forEach(function(doc) {
+            var d = doc.data();
+            routeList.push({ label: (d.label || '').toLowerCase(), number: d.number, driverName: d.driverName || '', zones: d.coverageZones || '' });
+        });
+        var target = '';
+        var targetLabel = '';
+        // Priority 1: match coverage zones
+        routeList.forEach(function(r) {
+            if (r.zones && !target) {
+                var zoneList = r.zones.toLowerCase().split(',').map(function(z) { return z.trim(); });
+                if (routeCp && zoneList.indexOf(routeCp) !== -1) { target = r.number; targetLabel = r.label; }
+                else if (routeLocality && zoneList.indexOf(routeLocality) !== -1) { target = r.number; targetLabel = r.label; }
+            }
+        });
+        // Priority 2: match by label
+        if (!target) {
+            routeList.forEach(function(r) {
+                if (target) return;
+                if (routeCp && r.label.includes(routeCp)) { target = r.number; targetLabel = r.label; }
+                else if (routeLocality && r.label === routeLocality) { target = r.number; targetLabel = r.label; }
+                else if (routeLocality && routeLocality.length > 3 && r.label.includes(routeLocality)) { target = r.number; targetLabel = r.label; }
+                else if (routeProvince && routeProvince.length > 3 && r.label.includes(routeProvince)) { target = r.number; targetLabel = r.label; }
+            });
+        }
+        // Priority 3: single route default
+        if (!target && routeList.length === 1) { target = routeList[0].number; targetLabel = routeList[0].label; }
+        return { driverPhone: target, routeLabel: targetLabel };
+    } catch(e) {
+        console.error('resolveDriverPhone error:', e);
+        return { driverPhone: '', routeLabel: '' };
+    }
+}
+
+// --- Submit pickup request ---
 window.submitPickupRequest = async function() {
     const comp = companies.find(c => c.id === currentCompanyId) || companies[0];
     if (!comp) { alert('Error: no hay empresa seleccionada.'); return; }
+
+    var pickupName, pickupAddress, pickupPhone, pickupCp, pickupLocalidad;
+
+    if (_pickupMode === 'thirdparty') {
+        // From selected contact or manual entry
+        if (_pickupThirdParty) {
+            pickupName = _pickupThirdParty.name;
+            pickupAddress = _pickupThirdParty.address;
+            pickupPhone = _pickupThirdParty.phone;
+            pickupCp = _pickupThirdParty.cp;
+            pickupLocalidad = _pickupThirdParty.localidad;
+        } else if (document.getElementById('pickup-tp-manual').style.display !== 'none') {
+            pickupName = (document.getElementById('pickup-tp-manual-name').value || '').trim();
+            pickupAddress = (document.getElementById('pickup-tp-manual-address').value || '').trim();
+            pickupCp = (document.getElementById('pickup-tp-manual-cp').value || '').trim();
+            pickupPhone = (document.getElementById('pickup-tp-manual-phone').value || '').trim();
+            pickupLocalidad = '';
+        } else {
+            alert('Selecciona un contacto o introduce la dirección de recogida.');
+            return;
+        }
+        if (!pickupName && !pickupAddress) {
+            alert('Introduce al menos el nombre o la dirección de recogida.');
+            return;
+        }
+    } else {
+        pickupName = comp.name || '';
+        pickupAddress = [comp.street, comp.number, comp.localidad, comp.cp].filter(Boolean).join(', ') || comp.address || '';
+        pickupPhone = comp.phone || '';
+        pickupCp = comp.cp || '';
+        pickupLocalidad = comp.localidad || '';
+    }
 
     const destination = document.getElementById('pickup-destination').value.trim();
     const turn = document.getElementById('pickup-turn').value;
     const packages = parseInt(document.getElementById('pickup-packages').value) || 1;
     const notes = document.getElementById('pickup-notes').value.trim();
-
-    const senderAddr = [comp.street, comp.number, comp.localidad, comp.cp].filter(Boolean).join(', ') || comp.address || '';
-    const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(senderAddr + ', Espa\u00f1a');
+    const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(pickupAddress + ', Espa\u00f1a');
 
     showLoading();
     try {
-        await db.collection('pickupRequests').add({
-            senderName: comp.name || '',
-            senderAddress: senderAddr,
-            senderPhone: comp.phone || '',
-            senderLocalidad: comp.localidad || '',
-            senderCp: comp.cp || '',
+        // Block 3: auto-assign driver by CP
+        var resolved = await resolveDriverPhone(pickupCp, pickupLocalidad, '');
+
+        // Block 2: cutoff time check
+        var outOfSchedule = false;
+        var cutoffTime = userData ? (userData.pickupCutoffTime || '') : '';
+        if (cutoffTime) {
+            var now = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
+            if (now > cutoffTime) outOfSchedule = true;
+        }
+
+        var docData = {
+            pickupType: _pickupMode === 'thirdparty' ? 'thirdparty' : 'self',
+            senderName: pickupName,
+            senderAddress: pickupAddress,
+            senderPhone: pickupPhone,
+            senderLocalidad: pickupLocalidad,
+            senderCp: pickupCp,
             destination: destination,
             timeSlot: turn,
             packages: packages,
@@ -5407,12 +5625,29 @@ window.submitPickupRequest = async function() {
             uid: currentUser.uid,
             companyId: currentCompanyId,
             clientIdNum: userData ? userData.idNum : '',
+            driverPhone: resolved.driverPhone,
+            routeLabel: resolved.routeLabel,
+            outOfSchedule: outOfSchedule,
             status: 'pending',
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        // Track requester if third-party
+        if (_pickupMode === 'thirdparty') {
+            docData.requestedBy = comp.name || '';
+            docData.requestedByCp = comp.cp || '';
+        }
 
+        await db.collection('pickupRequests').add(docData);
         document.getElementById('modal-pickup').style.display = 'none';
-        alert('✅ Solicitud de recogida enviada correctamente.\nEl repartidor recibirá una notificación.');
+
+        // Block 2: show cutoff warning
+        if (outOfSchedule) {
+            var driverContact = resolved.driverPhone || (userData ? userData.defaultRoutePhone : '') || '';
+            alert('AVISO: La solicitud se ha registrado pero est\u00e1 FUERA DE HORARIO.\n\nLa hora de corte es las ' + cutoffTime + '.\n' +
+                (driverContact ? 'Contacta directamente con el repartidor: ' + driverContact : 'Contacta con tu repartidor para confirmar.'));
+        } else {
+            alert('Solicitud de recogida enviada correctamente.\nEl repartidor recibir\u00e1 una notificaci\u00f3n.');
+        }
     } catch (e) {
         console.error('Error enviando solicitud de recogida:', e);
         alert('Error al enviar la solicitud: ' + e.message);

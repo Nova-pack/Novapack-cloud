@@ -822,13 +822,20 @@
     <datalist id="predefined-phones"></datalist>
 
     <!-- Pickup Request Modal -->
-    <div id="modal-pickup" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center;">
-        <div class="modal-content" style="background:var(--bg-dark); border:2px solid #4CAF50; border-radius:16px; padding:25px; width:95%; max-width:500px; position:relative;">
+    <div id="modal-pickup" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; justify-content:center; align-items:center; overflow-y:auto;">
+        <div class="modal-content" style="background:var(--bg-dark); border:2px solid #4CAF50; border-radius:16px; padding:25px; width:95%; max-width:500px; position:relative; margin:20px auto;">
             <button type="button" onclick="document.getElementById('modal-pickup').style.display='none'" style="position:absolute; top:12px; right:15px; background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">&times;</button>
-            <h2 style="margin:0 0 20px 0; color:#4CAF50; font-family:var(--font-heading); text-align:center;">📦 SOLICITAR RECOGIDA</h2>
-            
-            <div style="background:rgba(76,175,80,0.08); padding:15px; border-radius:10px; border:1px solid rgba(76,175,80,0.3); margin-bottom:20px;">
-                <h4 style="margin:0 0 10px 0; color:#4CAF50; font-size:0.75rem; text-transform:uppercase; letter-spacing:2px;">📍 DATOS DE RECOGIDA (tu empresa)</h4>
+            <h2 style="margin:0 0 15px 0; color:#4CAF50; font-family:var(--font-heading); text-align:center;">SOLICITAR RECOGIDA</h2>
+
+            <!-- Mode Toggle -->
+            <div style="display:flex; gap:0; margin-bottom:18px; border-radius:8px; overflow:hidden; border:1px solid #4CAF50;">
+                <button type="button" id="pickup-mode-self" onclick="togglePickupMode('self')" style="flex:1; padding:10px 8px; font-weight:800; font-size:0.75rem; cursor:pointer; border:none; background:#4CAF50; color:#fff; transition:all 0.2s;">MIS INSTALACIONES</button>
+                <button type="button" id="pickup-mode-thirdparty" onclick="togglePickupMode('thirdparty')" style="flex:1; padding:10px 8px; font-weight:800; font-size:0.75rem; cursor:pointer; border:none; background:transparent; color:#4CAF50; transition:all 0.2s;">RECOGIDA EN TERCEROS</button>
+            </div>
+
+            <!-- Self pickup: sender info (auto-filled) -->
+            <div id="pickup-sender-section" style="background:rgba(76,175,80,0.08); padding:15px; border-radius:10px; border:1px solid rgba(76,175,80,0.3); margin-bottom:18px;">
+                <h4 style="margin:0 0 10px 0; color:#4CAF50; font-size:0.7rem; text-transform:uppercase; letter-spacing:2px;">DATOS DE RECOGIDA (tu empresa)</h4>
                 <div style="font-size:0.9rem; line-height:1.8; color:#ddd;">
                     <div><strong>Nombre:</strong> <span id="pickup-sender-name">—</span></div>
                     <div><strong>Dirección:</strong> <span id="pickup-sender-address">—</span></div>
@@ -836,32 +843,82 @@
                 </div>
             </div>
 
+            <!-- Third-party pickup: search + manual entry -->
+            <div id="pickup-thirdparty-section" style="display:none; margin-bottom:18px;">
+                <div style="background:rgba(33,150,243,0.08); padding:15px; border-radius:10px; border:1px solid rgba(33,150,243,0.3);">
+                    <h4 style="margin:0 0 10px 0; color:#2196F3; font-size:0.7rem; text-transform:uppercase; letter-spacing:2px;">DIRECCIÓN DE RECOGIDA (tercero)</h4>
+                    <div style="position:relative; margin-bottom:10px;">
+                        <input type="text" id="pickup-tp-search" class="form-control" placeholder="Buscar en agenda o directorio..." style="font-weight:700; padding-right:35px;" autocomplete="off">
+                        <span style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#888; font-size:0.8rem;">🔍</span>
+                        <div id="pickup-tp-results" style="display:none; position:absolute; top:100%; left:0; right:0; background:#1e1e20; border:1px solid #444; border-radius:8px; max-height:200px; overflow-y:auto; z-index:10; margin-top:4px;"></div>
+                    </div>
+                    <!-- Selected / Manual display -->
+                    <div id="pickup-tp-selected" style="display:none; background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="color:#2196F3; font-weight:800; font-size:0.7rem; text-transform:uppercase;">Contacto seleccionado</span>
+                            <button type="button" onclick="clearThirdPartySelection()" style="background:none; border:none; color:#FF5252; cursor:pointer; font-size:0.75rem; font-weight:700;">Cambiar</button>
+                        </div>
+                        <div style="font-size:0.85rem; line-height:1.6; color:#ddd;">
+                            <div><strong>Nombre:</strong> <span id="pickup-tp-name">—</span></div>
+                            <div><strong>Dirección:</strong> <span id="pickup-tp-address">—</span></div>
+                            <div><strong>Teléfono:</strong> <span id="pickup-tp-phone">—</span></div>
+                        </div>
+                    </div>
+                    <!-- Manual entry (hidden by default) -->
+                    <div id="pickup-tp-manual" style="display:none;">
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label class="form-label" style="color:#2196F3; font-size:0.7rem;">Nombre / Empresa</label>
+                            <input type="text" id="pickup-tp-manual-name" class="form-control" placeholder="Nombre del contacto">
+                        </div>
+                        <div class="form-group" style="margin-bottom:8px;">
+                            <label class="form-label" style="color:#2196F3; font-size:0.7rem;">Dirección completa</label>
+                            <input type="text" id="pickup-tp-manual-address" class="form-control" placeholder="Calle, número, ciudad, CP">
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                            <div class="form-group">
+                                <label class="form-label" style="color:#2196F3; font-size:0.7rem;">Código Postal</label>
+                                <input type="text" id="pickup-tp-manual-cp" class="form-control" placeholder="CP" maxlength="5">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" style="color:#2196F3; font-size:0.7rem;">Teléfono</label>
+                                <input type="tel" id="pickup-tp-manual-phone" class="form-control" placeholder="Teléfono">
+                            </div>
+                        </div>
+                        <button type="button" onclick="saveThirdPartyToAgenda()" style="background:none; border:1px solid #2196F3; color:#2196F3; padding:6px 12px; border-radius:6px; font-size:0.7rem; font-weight:700; cursor:pointer; margin-bottom:4px;">+ Guardar en mi agenda</button>
+                    </div>
+                    <!-- Toggle manual link -->
+                    <div id="pickup-tp-manual-toggle" style="text-align:center; margin-top:6px;">
+                        <button type="button" onclick="toggleManualPickupEntry()" style="background:none; border:none; color:#2196F3; font-size:0.75rem; cursor:pointer; text-decoration:underline;">Introducir dirección manualmente</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-group" style="margin-bottom:15px;">
-                <label class="form-label" style="color:#4CAF50;">🏷️ DESTINO DE LA MERCANCÍA</label>
+                <label class="form-label" style="color:#4CAF50;">DESTINO DE LA MERCANCÍA</label>
                 <input type="text" id="pickup-destination" class="form-control" placeholder="¿A dónde va la mercancía? (ciudad, dirección...)" style="font-weight:700;">
             </div>
 
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
                 <div class="form-group">
-                    <label class="form-label">⏰ TURNO</label>
+                    <label class="form-label">TURNO</label>
                     <select id="pickup-turn" class="form-control" style="font-weight:700;">
-                        <option value="MAÑANA">☀️ MAÑANA</option>
-                        <option value="TARDE">🌙 TARDE</option>
+                        <option value="MAÑANA">MAÑANA</option>
+                        <option value="TARDE">TARDE</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">📦 BULTOS APROX.</label>
+                    <label class="form-label">BULTOS APROX.</label>
                     <input type="number" id="pickup-packages" class="form-control" value="1" min="1" style="font-weight:700; text-align:center;">
                 </div>
             </div>
 
             <div class="form-group" style="margin-bottom:20px;">
-                <label class="form-label">📝 OBSERVACIONES</label>
+                <label class="form-label">OBSERVACIONES</label>
                 <textarea id="pickup-notes" class="form-control" placeholder="Detalles adicionales para el repartidor..." rows="2" style="resize:none;"></textarea>
             </div>
 
             <button type="button" onclick="submitPickupRequest()" class="btn" style="width:100%; padding:15px; font-weight:900; font-size:1rem; background:linear-gradient(135deg,#4CAF50,#2E7D32); color:white; border:none; border-radius:10px; cursor:pointer;">
-                🚚 ENVIAR SOLICITUD DE RECOGIDA
+                ENVIAR SOLICITUD DE RECOGIDA
             </button>
         </div>
     </div>
