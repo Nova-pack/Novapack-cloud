@@ -5386,6 +5386,8 @@ window.openPickupModal = function() {
     document.getElementById('pickup-destination').value = '';
     document.getElementById('pickup-packages').value = '1';
     document.getElementById('pickup-notes').value = '';
+    var destOpts = document.getElementById('pickup-dest-options');
+    if (destOpts) destOpts.style.display = 'none';
 
     modal.style.display = 'flex';
 };
@@ -5408,6 +5410,12 @@ window.togglePickupMode = function(mode) {
         btnSelf.style.background = 'transparent'; btnSelf.style.color = '#4CAF50';
         secSelf.style.display = 'none'; secTP.style.display = 'block';
     }
+    // Show/hide "Mis Instalaciones" button (only in third-party mode)
+    var btnMyLoc = document.getElementById('btn-pickup-my-locations');
+    if (btnMyLoc) btnMyLoc.style.display = (mode === 'thirdparty') ? 'inline-flex' : 'none';
+    var destOpts = document.getElementById('pickup-dest-options');
+    if (destOpts) destOpts.style.display = 'none';
+
     // Reset third-party fields
     var search = document.getElementById('pickup-tp-search');
     if (search) search.value = '';
@@ -5586,6 +5594,54 @@ async function resolveDriverPhone(cp, localidad, province) {
         return { driverPhone: '', routeLabel: '' };
     }
 }
+
+// --- "Mis Instalaciones" destination auto-fill ---
+window.fillDestinationFromCompany = function() {
+    var destInput = document.getElementById('pickup-destination');
+    var destOptions = document.getElementById('pickup-dest-options');
+    if (!destInput || !destOptions) return;
+
+    // If dropdown is already open, close it
+    if (destOptions.style.display !== 'none') {
+        destOptions.style.display = 'none';
+        return;
+    }
+
+    if (companies.length === 0) return;
+
+    // Single company: auto-fill directly
+    if (companies.length === 1) {
+        var c = companies[0];
+        var addr = [c.street, c.number, c.localidad, c.cp, c.province].filter(Boolean).join(', ') || c.address || '';
+        destInput.value = addr;
+        destOptions.style.display = 'none';
+        return;
+    }
+
+    // Multiple companies: show dropdown
+    var html = '';
+    companies.forEach(function(c, idx) {
+        var addr = [c.street, c.number, c.localidad, c.cp].filter(Boolean).join(', ') || c.address || '';
+        var prov = c.province ? ' (' + c.province + ')' : '';
+        html += '<div onclick="selectDestinationCompany(' + idx + ')" style="padding:12px 14px; cursor:pointer; border-bottom:1px solid #333; transition:background 0.15s;" onmouseover="this.style.background=\'rgba(33,150,243,0.15)\'" onmouseout="this.style.background=\'transparent\'">' +
+            '<div style="font-weight:700; font-size:0.85rem; color:#2196F3;">' +
+                '<span class="material-symbols-outlined" style="font-size:0.85rem; vertical-align:middle;">business</span> ' +
+                (c.name || 'Empresa ' + (idx + 1)) + prov +
+            '</div>' +
+            '<div style="font-size:0.78rem; color:#aaa; margin-top:3px;">' + addr + '</div>' +
+        '</div>';
+    });
+    destOptions.innerHTML = html;
+    destOptions.style.display = 'block';
+};
+
+window.selectDestinationCompany = function(idx) {
+    var c = companies[idx];
+    if (!c) return;
+    var addr = [c.street, c.number, c.localidad, c.cp, c.province].filter(Boolean).join(', ') || c.address || '';
+    document.getElementById('pickup-destination').value = addr;
+    document.getElementById('pickup-dest-options').style.display = 'none';
+};
 
 // --- Submit pickup request ---
 window.submitPickupRequest = async function() {
