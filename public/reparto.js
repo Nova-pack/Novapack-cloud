@@ -2151,6 +2151,37 @@ function initApp() {
                 console.warn('Error mandando notificación al cliente:', notifErr);
             }
 
+            // --- ARCHIVADO: Guardar copia inmutable en delivery_archive ---
+            try {
+                var archiveData = {
+                    ticketId: docId,
+                    ticketRef: currentScanDoc.id || docId,
+                    status: 'Entregado',
+                    deliveredAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    receiverName: receiverName,
+                    driverName: currentDriverName,
+                    driverPhone: currentDriverPhone,
+                    signatureURL: deliveryData.signatureURL || null,
+                    photoURL: deliveryData.photoURL || null,
+                    billingTarget: deliveryData.billingTarget || null,
+                    billingName: deliveryData.billingName || null,
+                    billingReady: deliveryData.billingReady || false,
+                    sender: currentScanDoc.sender || currentScanDoc.clientName || '',
+                    senderUid: currentScanDoc.uid || null,
+                    clientIdNum: currentScanDoc.clientIdNum || null,
+                    recipient: currentScanDoc.recipient || currentScanDoc.destinatario || '',
+                    destination: currentScanDoc.destination || currentScanDoc.localidad || '',
+                    shippingType: currentScanDoc.shippingType || '',
+                    packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
+                    route: currentScanDoc.route || currentScanDoc.driverPhone || ''
+                };
+                await db.collection('delivery_archive').doc(docId).set(archiveData);
+                console.log('[REPARTO] Entrega archivada:', docId);
+            } catch (archiveErr) {
+                console.warn('[REPARTO] Error archivando entrega (no afecta al registro):', archiveErr);
+            }
+
             document.getElementById('scan-ticket-details').innerHTML =
                 '<div style="text-align:center; padding:20px;">' +
                     '<div style="font-size:3rem;"><span class="material-symbols-outlined icon-filled" style="font-size:3rem; color:var(--success);">check_circle</span></div>' +
