@@ -1317,76 +1317,109 @@ async function getNextId() {
     if (!myIdNum) return yearPrefix + "0";
 
     const cid = currentCompanyId;
+    const counterDocId = cid + "_" + myIdNum + "_" + currentYY;
+    const counterRef = db.collection('ticket_counters').doc(counterDocId);
 
     try {
-        const identityIds = [currentUser.uid, userData.email, userData.id, userData.authUid].filter(x => x);
-        const idVariants = [...new Set([myIdNum, myIdNum.padStart(3, '0'), parseInt(myIdNum).toString(), ...identityIds])].filter(v => v).map(v => String(v).trim()).slice(0, 10);
+        // ATOMIC TRANSACTION: guarantees unique sequential numbers across all sessions/devices
+        const nextNum = await db.runTransaction(async (transaction) => {
+            const counterDoc = await transaction.get(counterRef);
 
-        console.log('[SYNC] getNextId searching with variants:', idVariants);
+            if (counterDoc.exists) {
+                // Counter exists: increment atomically
+                const currentMax = counterDoc.data().currentMax || 0;
+                const newMax = currentMax + 1;
+                transaction.update(counterRef, {
+                    currentMax: newMax,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                return newMax;
+            } else {
+                // First time: scan existing tickets to find real max, then create counter
+                const identityIds = [currentUser.uid, userData.email, userData.id, userData.authUid].filter(x => x);
+                const idVariants = [...new Set([myIdNum, myIdNum.padStart(3, '0'), parseInt(myIdNum).toString(), ...identityIds])].filter(v => v).map(v => String(v).trim()).slice(0, 10);
 
-        // Helper to extract max sequence number from tickets matching current year format PREFIX-YY-SEQ
-        const extractMaxNum = (snap, currentMax) => {
-            let m = currentMax;
-            snap.forEach(doc => {
-                const d = doc.data();
-                if (d.compId !== cid) return;
-                const bid = d.id || "";
-                // New format: PREFIX-YY-SEQ (e.g., 5402-26-0)
-                if (bid.startsWith(yearPrefix)) {
-                    const seq = parseInt(bid.substring(yearPrefix.length), 10);
-                    if (!isNaN(seq) && seq > m) m = seq;
-                }
-                // Legacy format: PREFIX00001 — ignore for sequence but still recognized
-                else if (bid.startsWith(prefix) && !bid.startsWith(prefix + "-")) {
-                    // Old format tickets exist but don't affect new year-based sequence
-                }
-            });
-            return m;
-        };
+                const extractMaxNum = (snap, currentMax) => {
+                    let m = currentMax;
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        if (d.compId !== cid) return;
+                        const bid = d.id || "";
+                        if (bid.startsWith(yearPrefix)) {
+                            const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                            if (!isNaN(seq) && seq > m) m = seq;
+                        }
+                    });
+                    return m;
+                };
 
-        let maxNum = -1; // Start from -1 so first ticket is 0
+                let maxNum = -1;
+                // Note: queries inside transactions are read-only and consistent
+                const serverSnap1 = await db.collection('tickets')
+                    .where('uid', 'in', idVariants)
+                    .limit(5000)
+                    .get();
+                maxNum = extractMaxNum(serverSnap1, maxNum);
 
-        // 1. Cache read by uid (fast, reflects recent local writes)
-        const cacheSnap = await db.collection('tickets')
-            .where('uid', 'in', idVariants)
-            .get({ source: 'cache' }).catch(() => null);
-        if (cacheSnap && !cacheSnap.empty) maxNum = extractMaxNum(cacheSnap, maxNum);
+                const serverSnap2 = await db.collection('tickets')
+                    .where('clientIdNum', 'in', idVariants)
+                    .limit(5000)
+                    .get();
+                maxNum = extractMaxNum(serverSnap2, maxNum);
 
-        // 2. Server read by uid (authoritative)
-        const serverSnap1 = await db.collection('tickets')
-            .where('uid', 'in', idVariants)
-            .limit(5000)
-            .get();
-        maxNum = extractMaxNum(serverSnap1, maxNum);
-
-        // 3. CRITICAL FIX: Also search by clientIdNum to find tickets created from other terminals/UIDs
-        const serverSnap2 = await db.collection('tickets')
-            .where('clientIdNum', 'in', idVariants)
-            .limit(5000)
-            .get();
-        maxNum = extractMaxNum(serverSnap2, maxNum);
-
-        console.log('[SYNC] getNextId maxNum after all queries:', maxNum);
-
-        // Si existe un tracker de lote temporal para inserciones rápidas, lo usamos y actualizamos
-        if (window.tempBatchHighestId && window.tempBatchHighestId.cid === cid && window.tempBatchHighestId.yy === currentYY) {
-            if (window.tempBatchHighestId.maxNum > maxNum) maxNum = window.tempBatchHighestId.maxNum;
-        }
-        window.tempBatchHighestId = { cid, yy: currentYY, maxNum: maxNum + 1 };
-
-        return yearPrefix + (maxNum + 1);
-
-    } catch (e) {
-        console.warn("Optimized NextId query failed (possibly missing index), falling back...", e);
-        // Fallback to local memory search (very reliable but limited to what's loaded)
-        let maxNum = -1;
-        lastTicketsBatch.forEach(t => {
-            if (t.id && t.id.startsWith(yearPrefix)) {
-                const seq = parseInt(t.id.substring(yearPrefix.length), 10) || 0;
-                if (seq > maxNum) maxNum = seq;
+                const newMax = maxNum + 1;
+                transaction.set(counterRef, {
+                    compId: cid,
+                    clientIdNum: myIdNum,
+                    year: currentYY,
+                    prefix: prefix,
+                    currentMax: newMax,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                return newMax;
             }
         });
-        return yearPrefix + (maxNum + 1);
+
+        console.log('[SYNC] getNextId atomic counter:', counterDocId, '→', nextNum);
+        return yearPrefix + nextNum;
+
+    } catch (e) {
+        console.warn("Atomic counter failed, using scan fallback:", e);
+        // Fallback: scan tickets (less safe but functional)
+        try {
+            const identityIds = [currentUser.uid, userData.email, userData.id, userData.authUid].filter(x => x);
+            const idVariants = [...new Set([myIdNum, myIdNum.padStart(3, '0'), parseInt(myIdNum).toString(), ...identityIds])].filter(v => v).map(v => String(v).trim()).slice(0, 10);
+
+            let maxNum = -1;
+            const snap1 = await db.collection('tickets').where('uid', 'in', idVariants).limit(5000).get();
+            snap1.forEach(doc => {
+                const bid = (doc.data().id || "");
+                if (bid.startsWith(yearPrefix)) {
+                    const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                    if (!isNaN(seq) && seq > maxNum) maxNum = seq;
+                }
+            });
+            const snap2 = await db.collection('tickets').where('clientIdNum', 'in', idVariants).limit(5000).get();
+            snap2.forEach(doc => {
+                const bid = (doc.data().id || "");
+                if (bid.startsWith(yearPrefix)) {
+                    const seq = parseInt(bid.substring(yearPrefix.length), 10);
+                    if (!isNaN(seq) && seq > maxNum) maxNum = seq;
+                }
+            });
+            return yearPrefix + (maxNum + 1);
+        } catch (e2) {
+            console.warn("All getNextId methods failed, using local fallback:", e2);
+            let maxNum = -1;
+            lastTicketsBatch.forEach(t => {
+                if (t.id && t.id.startsWith(yearPrefix)) {
+                    const seq = parseInt(t.id.substring(yearPrefix.length), 10) || 0;
+                    if (seq > maxNum) maxNum = seq;
+                }
+            });
+            return yearPrefix + (maxNum + 1);
+        }
     }
 }
 
@@ -5070,7 +5103,7 @@ async function handleExcelUpload(e) {
         console.error("Excel Import Error:", e);
         alert("Ocurrió un error leyendo el Excel: " + e.message);
     } finally {
-        window.tempBatchHighestId = null; // Clean up batch state
+        // Batch import complete (counter managed atomically by getNextId)
         hideLoading();
     }
 }
