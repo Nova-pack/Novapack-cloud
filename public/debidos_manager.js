@@ -302,8 +302,8 @@ function debidosFilterClients(query) {
         const item = document.createElement('div');
         item.style.cssText = 'padding:8px 10px; cursor:pointer; font-size:0.85rem; border-bottom:1px solid #3c3c3c; display:flex; justify-content:space-between; align-items:center; background:#1e1e1e;';
         item.innerHTML = `
-            <span style="color:#fff;">${u.name || 'Sin Nombre'}</span>
-            <span style="color:#888; font-size:0.75rem;">Nº: ${u.idNum || '?'}${u.nif ? ' · NIF: ' + u.nif : ''}</span>
+            <span style="color:#fff;">${escapeHtml(u.name || 'Sin Nombre')}</span>
+            <span style="color:#888; font-size:0.75rem;">Nº: ${escapeHtml(u.idNum || '?')}${u.nif ? ' · NIF: ' + escapeHtml(u.nif) : ''}</span>
         `;
         item.addEventListener('mouseenter', () => { item.style.background = 'rgba(76, 175, 80, 0.3)'; });
         item.addEventListener('mouseleave', () => { item.style.background = '#1e1e1e'; });

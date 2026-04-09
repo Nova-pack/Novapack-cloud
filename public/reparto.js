@@ -368,6 +368,180 @@ function waitForFirebase(cb) {
     }
 }
 
+// ============================================================
+//  OFFLINE QUEUE — IndexedDB-backed retry system
+// ============================================================
+var _offlineQueue = {
+    DB_NAME: 'novapack_offline',
+    STORE: 'pending_ops',
+    DB_VERSION: 1,
+    _db: null,
+    _processing: false,
+
+    open: function() {
+        var self = this;
+        return new Promise(function(resolve, reject) {
+            if (self._db) { resolve(self._db); return; }
+            var req = indexedDB.open(self.DB_NAME, self.DB_VERSION);
+            req.onupgradeneeded = function(e) {
+                var db = e.target.result;
+                if (!db.objectStoreNames.contains(self.STORE)) {
+                    db.createObjectStore(self.STORE, { keyPath: 'id', autoIncrement: true });
+                }
+            };
+            req.onsuccess = function(e) { self._db = e.target.result; resolve(self._db); };
+            req.onerror = function() { reject(req.error); };
+        });
+    },
+
+    enqueue: function(operation) {
+        var self = this;
+        return self.open().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(self.STORE, 'readwrite');
+                var store = tx.objectStore(self.STORE);
+                operation.queuedAt = new Date().toISOString();
+                operation.retries = 0;
+                store.add(operation);
+                tx.oncomplete = function() {
+                    console.log('[OFFLINE] Operación encolada:', operation.type);
+                    resolve();
+                };
+                tx.onerror = function() { reject(tx.error); };
+            });
+        });
+    },
+
+    getAll: function() {
+        var self = this;
+        return self.open().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(self.STORE, 'readonly');
+                var store = tx.objectStore(self.STORE);
+                var req = store.getAll();
+                req.onsuccess = function() { resolve(req.result || []); };
+                req.onerror = function() { reject(req.error); };
+            });
+        });
+    },
+
+    remove: function(id) {
+        var self = this;
+        return self.open().then(function(db) {
+            return new Promise(function(resolve, reject) {
+                var tx = db.transaction(self.STORE, 'readwrite');
+                tx.objectStore(self.STORE).delete(id);
+                tx.oncomplete = function() { resolve(); };
+                tx.onerror = function() { reject(tx.error); };
+            });
+        });
+    },
+
+    processQueue: function() {
+        var self = this;
+        if (self._processing || !navigator.onLine) return;
+        self._processing = true;
+
+        self.getAll().then(function(ops) {
+            if (ops.length === 0) { self._processing = false; return; }
+            console.log('[OFFLINE] Procesando ' + ops.length + ' operaciones pendientes...');
+            if (typeof showToast === 'function') showToast('Sincronizando ' + ops.length + ' operación(es) pendiente(s)...', 'info');
+
+            var chain = Promise.resolve();
+            ops.forEach(function(op) {
+                chain = chain.then(function() {
+                    return self._executeOp(op).then(function() {
+                        return self.remove(op.id);
+                    }).catch(function(err) {
+                        console.warn('[OFFLINE] Reintento fallido para op ' + op.id + ':', err.message);
+                        // Keep in queue for next retry, max 5 retries
+                        if (op.retries >= 5) {
+                            console.error('[OFFLINE] Operación descartada tras 5 reintentos:', op);
+                            return self.remove(op.id);
+                        }
+                    });
+                });
+            });
+
+            chain.then(function() {
+                self._processing = false;
+                self.getAll().then(function(remaining) {
+                    if (remaining.length === 0 && typeof showToast === 'function') {
+                        showToast('Todas las operaciones sincronizadas.', 'success');
+                    }
+                });
+            });
+        }).catch(function(err) {
+            console.error('[OFFLINE] Error procesando cola:', err);
+            self._processing = false;
+        });
+    },
+
+    _executeOp: function(op) {
+        var db = window.db || firebase.firestore();
+        var storage = firebase.storage();
+        switch (op.type) {
+            case 'delivery_confirm':
+                // Upload offline signature if present
+                var sigPromise = Promise.resolve();
+                if (op.deliveryData._offlineSignatureB64) {
+                    sigPromise = fetch(op.deliveryData._offlineSignatureB64)
+                        .then(function(r) { return r.blob(); })
+                        .then(function(blob) {
+                            var sigRef = storage.ref('deliveries/' + op.ticketId + '/signature.png');
+                            return sigRef.put(blob, { contentType: 'image/png' }).then(function() {
+                                return sigRef.getDownloadURL();
+                            });
+                        }).then(function(url) {
+                            op.deliveryData.signatureURL = url;
+                            op.archiveData.signatureURL = url;
+                            op.deliveryData.billingReady = true;
+                            op.archiveData.billingReady = true;
+                            delete op.deliveryData._offlineSignatureB64;
+                        }).catch(function(e) {
+                            console.warn('[OFFLINE] Firma upload fallido:', e.message);
+                            delete op.deliveryData._offlineSignatureB64;
+                        });
+                }
+                return sigPromise.then(function() {
+                    // Replace ISO strings with server timestamps
+                    op.deliveryData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
+                    op.deliveryData.distributedAt = firebase.firestore.FieldValue.serverTimestamp();
+                    op.archiveData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
+                    op.archiveData.archivedAt = firebase.firestore.FieldValue.serverTimestamp();
+
+                    var batch = db.batch();
+                    var ticketRef = db.collection('tickets').doc(op.ticketId);
+                    var archiveRef = db.collection('delivery_archive').doc(op.ticketId);
+                    batch.update(ticketRef, op.deliveryData);
+                    batch.set(archiveRef, op.archiveData);
+                    return batch.commit();
+                }).then(function() {
+                    console.log('[OFFLINE] Entrega sincronizada:', op.ticketId);
+                    if (op.notification) {
+                        op.notification.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                        db.collection('user_notifications').add(op.notification).catch(function() {});
+                    }
+                });
+            case 'incident_report':
+                return db.collection('tickets').doc(op.ticketId).update(op.data).then(function() {
+                    console.log('[OFFLINE] Incidencia sincronizada:', op.ticketId);
+                });
+            case 'pickup_complete':
+                return db.collection('driver_alerts').doc(op.alertId).update(op.data).then(function() {
+                    console.log('[OFFLINE] Recogida sincronizada:', op.alertId);
+                });
+            case 'gps_update':
+                return db.collection('driver_locations').doc(op.docId).set(op.data, { merge: true }).then(function() {
+                    console.log('[OFFLINE] GPS sincronizado');
+                });
+            default:
+                console.warn('[OFFLINE] Tipo desconocido:', op.type);
+                return Promise.resolve();
+        }
+    }
+};
+
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', function() {
     waitForFirebase(initApp);
@@ -386,9 +560,11 @@ function initApp() {
     updateConnectionDot(navigator.onLine);
     window.addEventListener('online', function() {
         updateConnectionDot(true);
-        showToast('Conexión restablecida.', 'success');
+        showToast('Conexión restablecida. Sincronizando...', 'success');
         var banner = document.getElementById('offline-banner');
         if (banner) banner.remove();
+        // Process offline queue on reconnection
+        setTimeout(function() { _offlineQueue.processQueue(); }, 1500);
     });
     window.addEventListener('offline', function() {
         updateConnectionDot(false);
@@ -2044,10 +2220,7 @@ function initApp() {
         if (!currentScanDoc) return;
         if (confirmInProgress) return; // Prevent double-click
 
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No puedes confirmar entregas sin conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
+        // Offline check moved after validation — we allow queueing if offline
 
         // Check all packages scanned
         var ticketKey = currentScanDoc.id || currentScanDoc._id;
@@ -2105,6 +2278,82 @@ function initApp() {
                 deliveryData.billingTarget = 'remitente';
                 deliveryData.billingName = currentScanDoc.sender || currentScanDoc.clientName || '';
             }
+            // --- Prepare archive data before uploads (needed for offline queue) ---
+            var archiveData = {
+                ticketId: docId,
+                ticketRef: currentScanDoc.id || docId,
+                status: 'Entregado',
+                receiverName: receiverName,
+                driverName: currentDriverName,
+                driverPhone: currentDriverPhone,
+                sender: currentScanDoc.sender || currentScanDoc.clientName || '',
+                senderUid: currentScanDoc.uid || null,
+                clientIdNum: currentScanDoc.clientIdNum || null,
+                recipient: currentScanDoc.recipient || currentScanDoc.destinatario || '',
+                destination: currentScanDoc.destination || currentScanDoc.localidad || '',
+                shippingType: currentScanDoc.shippingType || '',
+                packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
+                route: currentScanDoc.route || currentScanDoc.driverPhone || ''
+            };
+            var notifData = currentScanDoc.uid ? {
+                uid: currentScanDoc.uid,
+                type: 'delivery_confirmed',
+                ticketId: docId,
+                message: 'Su envío #' + (currentScanDoc.id || docId) + ' ha sido entregado a ' + receiverName,
+                receiverName: receiverName,
+                read: false
+            } : null;
+
+            // --- OFFLINE PATH: queue everything for later sync ---
+            if (!navigator.onLine) {
+                var sigB64 = getSignatureDataURL();
+                // Remove serverTimestamp (not serializable) — will be set on sync
+                var offlineDeliveryData = Object.assign({}, deliveryData);
+                offlineDeliveryData.deliveredAt = new Date().toISOString();
+                offlineDeliveryData.distributedAt = new Date().toISOString();
+                offlineDeliveryData.billingReady = !!sigB64;
+                offlineDeliveryData._offlineSignatureB64 = sigB64 || null;
+
+                var offlineArchiveData = Object.assign({}, archiveData);
+                offlineArchiveData.deliveredAt = new Date().toISOString();
+                offlineArchiveData.archivedAt = new Date().toISOString();
+
+                await _offlineQueue.enqueue({
+                    type: 'delivery_confirm',
+                    ticketId: docId,
+                    deliveryData: offlineDeliveryData,
+                    archiveData: offlineArchiveData,
+                    notification: notifData
+                });
+
+                // Show success to driver — will sync when online
+                document.getElementById('scan-ticket-details').innerHTML =
+                    '<div style="text-align:center; padding:20px;">' +
+                        '<div style="font-size:3rem;"><span class="material-symbols-outlined icon-filled" style="font-size:3rem; color:#FF9800;">cloud_off</span></div>' +
+                        '<div style="font-size:1.1rem; font-weight:900; color:#FF9800; margin:8px 0;">ENTREGA GUARDADA OFFLINE</div>' +
+                        '<div style="color:var(--text-dim); font-size:0.85rem;">Se sincronizará automáticamente al recuperar conexión</div>' +
+                        '<div style="color:var(--text-dim); font-size:0.8rem; margin-top:5px;">Receptor: <b>' + escapeHtml(receiverName) + '</b></div>' +
+                    '</div>';
+                document.getElementById('confirm-panel').style.display = 'none';
+                btn.style.display = 'none';
+                showToast('Entrega guardada offline. Se sincronizará al conectar.', 'warning', 6000);
+
+                var doneKey = currentScanDoc.id || currentScanDoc._id;
+                delete scannedPackages[doneKey];
+                currentPkgTotal = 0;
+                setTimeout(function() {
+                    document.getElementById('scan-result').style.display = 'none';
+                    confirmInProgress = false;
+                    switchView('view-deliveries');
+                    renderDeliveries();
+                    btn.disabled = false;
+                    btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
+                }, 2500);
+                hideLoading();
+                return; // Exit early — queued for later
+            }
+
+            // --- ONLINE PATH: upload + save normally ---
             // Upload signature (MANDATORY — abort delivery if fails)
             var sigData = getSignatureDataURL();
             if (sigData) {
@@ -2130,30 +2379,14 @@ function initApp() {
             // billingReady only if signature was uploaded
             deliveryData.billingReady = !!deliveryData.signatureURL;
 
-            // Save delivery status + archive in ATOMIC BATCH (all-or-nothing)
-            var archiveData = {
-                ticketId: docId,
-                ticketRef: currentScanDoc.id || docId,
-                status: 'Entregado',
-                deliveredAt: firebase.firestore.FieldValue.serverTimestamp(),
-                archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                receiverName: receiverName,
-                driverName: currentDriverName,
-                driverPhone: currentDriverPhone,
-                signatureURL: deliveryData.signatureURL || null,
-                photoURL: deliveryData.photoURL || null,
-                billingTarget: deliveryData.billingTarget || null,
-                billingName: deliveryData.billingName || null,
-                billingReady: deliveryData.billingReady || false,
-                sender: currentScanDoc.sender || currentScanDoc.clientName || '',
-                senderUid: currentScanDoc.uid || null,
-                clientIdNum: currentScanDoc.clientIdNum || null,
-                recipient: currentScanDoc.recipient || currentScanDoc.destinatario || '',
-                destination: currentScanDoc.destination || currentScanDoc.localidad || '',
-                shippingType: currentScanDoc.shippingType || '',
-                packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
-                route: currentScanDoc.route || currentScanDoc.driverPhone || ''
-            };
+            // Update archive with URLs
+            archiveData.signatureURL = deliveryData.signatureURL || null;
+            archiveData.photoURL = deliveryData.photoURL || null;
+            archiveData.billingTarget = deliveryData.billingTarget || null;
+            archiveData.billingName = deliveryData.billingName || null;
+            archiveData.billingReady = deliveryData.billingReady || false;
+            archiveData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
+            archiveData.archivedAt = firebase.firestore.FieldValue.serverTimestamp();
 
             var deliveryBatch = db.batch();
             deliveryBatch.update(docRef, deliveryData);
@@ -2163,17 +2396,9 @@ function initApp() {
 
             // --- POD: Notificar al cliente (non-blocking) ---
             try {
-                var uidToNotify = currentScanDoc.uid;
-                if (uidToNotify) {
-                    await db.collection('user_notifications').add({
-                        uid: uidToNotify,
-                        type: 'delivery_confirmed',
-                        ticketId: docId,
-                        message: 'Su envío #' + (currentScanDoc.id || docId) + ' ha sido entregado a ' + receiverName,
-                        receiverName: receiverName,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        read: false
-                    });
+                if (notifData) {
+                    notifData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    await db.collection('user_notifications').add(notifData);
                 }
             } catch (notifErr) {
                 console.warn('Error mandando notificación al cliente:', notifErr);

@@ -133,11 +133,11 @@ window.advLoadClientDetails = async (uid) => {
             const u = window.userMap[uid];
             card.innerHTML = `
                 <div style="flex:1;">
-                    <strong style="color:#FFF; font-size:0.9rem;">${u.name || 'Sin Nombre'}</strong><br>
-                    <span style="font-size:0.8rem; color:#aaa;">CIF: ${u.idNum || 'N/A'}</span>
+                    <strong style="color:#FFF; font-size:0.9rem;">${escapeHtml(u.name || 'Sin Nombre')}</strong><br>
+                    <span style="font-size:0.8rem; color:#aaa;">CIF: ${escapeHtml(u.idNum || 'N/A')}</span>
                 </div>
                 <div style="text-align:right; font-size:0.75rem; color:#ccc;">
-                    ${u.address || 'Sin dirección registrada'}
+                    ${escapeHtml(u.address || 'Sin dirección registrada')}
                 </div>
             `;
             card.style.background = 'rgba(76, 175, 80, 0.1)';
@@ -789,7 +789,7 @@ window.advRenderDrawerList = (filter = '') => {
         const safeName = item.name.replace(/'/g, "\\'");
         div.innerHTML = `
             <div style="flex:1; padding-right:10px;">
-                <div style="color:#d4d4d4; font-weight:bold; font-size:0.9rem; line-height:1.2; margin-bottom:4px;">${item.name}</div>
+                <div style="color:#d4d4d4; font-weight:bold; font-size:0.9rem; line-height:1.2; margin-bottom:4px;">${escapeHtml(item.name)}</div>
                 <div style="color:#4CAF50; font-size:0.85rem; font-weight:900;">${parseFloat(item.price).toFixed(2)} €</div>
             </div>
             <button style="background:#007acc; border:none; color:white; padding:8px 15px; border-radius:4px; font-weight:bold; cursor:pointer;" onmouseover="this.style.background='#0098ff'" onmouseout="this.style.background='#007acc'" onclick="advAddRowFromDrawer('${safeName}', ${item.price})">+ AÑADIR</button>

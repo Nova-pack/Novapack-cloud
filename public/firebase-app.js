@@ -8,6 +8,27 @@ function escapeHtml(str) {
 }
 const DEBUG_MODE = location.hostname === 'localhost';
 
+// --- RATE LIMITER: client-side throttle for critical operations ---
+const _rateLimiter = {
+    _counters: {},  // { key: { count, windowStart } }
+    WINDOW_MS: 60000, // 1 minute window
+
+    check: function(operationKey, maxPerMinute) {
+        var now = Date.now();
+        var entry = this._counters[operationKey];
+        if (!entry || (now - entry.windowStart) > this.WINDOW_MS) {
+            this._counters[operationKey] = { count: 1, windowStart: now };
+            return true;
+        }
+        if (entry.count >= maxPerMinute) {
+            console.warn('[RATE LIMIT] Operación bloqueada:', operationKey, entry.count + '/' + maxPerMinute);
+            return false;
+        }
+        entry.count++;
+        return true;
+    }
+};
+
 window.onerror = function(msg, url, lineNo, columnNo, error) {
     console.error("GLOBAL JS ERROR:", msg, "Line:", lineNo, "Col:", columnNo, error);
     if (typeof Sentry !== 'undefined' && Sentry.captureException && error) Sentry.captureException(error);
@@ -1906,6 +1927,10 @@ let isSubmittingTicket = false;
 async function handleFormSubmit(e) {
     e.preventDefault();
     if (isSubmittingTicket) return;
+    if (!_rateLimiter.check('ticket_create', 20)) {
+        alert('Has creado demasiados albaranes en poco tiempo. Espera un momento.');
+        return;
+    }
 
     // Daily reminder (Point 1: verify packages)
     const dailyOk = await checkDailyReminder();
@@ -5645,6 +5670,10 @@ window.selectDestinationCompany = function(idx) {
 
 // --- Submit pickup request ---
 window.submitPickupRequest = async function() {
+    if (!_rateLimiter.check('pickup_request', 10)) {
+        alert('Has enviado demasiadas solicitudes de recogida. Espera un momento.');
+        return;
+    }
     const comp = companies.find(c => c.id === currentCompanyId) || companies[0];
     if (!comp) { alert('Error: no hay empresa seleccionada.'); return; }
 

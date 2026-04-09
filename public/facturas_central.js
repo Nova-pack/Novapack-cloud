@@ -560,7 +560,7 @@
             _facAbonoOriginal = inv;
 
             const info = document.getElementById('fac-abono-info');
-            info.innerHTML = `Factura: <strong style="color:#FFD700;">${inv.invoiceId}</strong> · Cliente: <strong>${inv.clientName || '-'}</strong> · Total original: <strong style="color:#4CAF50;">${(inv.total || 0).toFixed(2)}€</strong>`;
+            info.innerHTML = `Factura: <strong style="color:#FFD700;">${escapeHtml(inv.invoiceId)}</strong> · Cliente: <strong>${escapeHtml(inv.clientName || '-')}</strong> · Total original: <strong style="color:#4CAF50;">${(inv.total || 0).toFixed(2)}€</strong>`;
 
             const tbody = document.getElementById('fac-abono-lines');
             tbody.innerHTML = '';
