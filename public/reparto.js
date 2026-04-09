@@ -34,6 +34,33 @@ var _gpsWatchId = null;
 var _gpsLastSent = 0;
 var _GPS_SEND_INTERVAL = 30000; // Send position every 30 seconds
 var _wakeLockSentinel = null;
+var _gpsHeartbeatId = null;
+var _GPS_HEARTBEAT_INTERVAL = 60000; // Fallback heartbeat every 60 seconds
+
+function _sendGPSPosition(pos) {
+    if (!currentDriverPhone) return;
+    var now = Date.now();
+    if (now - _gpsLastSent < _GPS_SEND_INTERVAL) return; // Throttle
+    _gpsLastSent = now;
+
+    var locationData = {
+        phone: currentDriverPhone,
+        driverName: currentDriverName,
+        routeLabel: currentRouteLabel,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy),
+        speed: pos.coords.speed !== null ? Math.round(pos.coords.speed * 3.6) : null, // m/s → km/h
+        heading: pos.coords.heading,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        online: true
+    };
+
+    var docId = currentDriverPhone.replace(/[^a-zA-Z0-9]/g, '_');
+    db.collection('driver_locations').doc(docId).set(locationData, { merge: true })
+        .then(function() { console.log('[GPS-TRACK] Position sent:', locationData.lat.toFixed(4), locationData.lng.toFixed(4)); })
+        .catch(function(e) { console.warn('[GPS-TRACK] Error sending position:', e.message); });
+}
 
 function startGPSTracking() {
     if (_gpsWatchId !== null) return; // Already tracking
@@ -45,34 +72,27 @@ function startGPSTracking() {
     console.log('[GPS-TRACK] Starting live GPS tracking...');
 
     _gpsWatchId = navigator.geolocation.watchPosition(
-        function(pos) {
-            var now = Date.now();
-            if (now - _gpsLastSent < _GPS_SEND_INTERVAL) return; // Throttle
-            _gpsLastSent = now;
-
-            var locationData = {
-                phone: currentDriverPhone,
-                driverName: currentDriverName,
-                routeLabel: currentRouteLabel,
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: Math.round(pos.coords.accuracy),
-                speed: pos.coords.speed !== null ? Math.round(pos.coords.speed * 3.6) : null, // m/s → km/h
-                heading: pos.coords.heading,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                online: true
-            };
-
-            var docId = currentDriverPhone.replace(/[^a-zA-Z0-9]/g, '_');
-            db.collection('driver_locations').doc(docId).set(locationData, { merge: true })
-                .then(function() { console.log('[GPS-TRACK] Position sent:', locationData.lat.toFixed(4), locationData.lng.toFixed(4)); })
-                .catch(function(e) { console.warn('[GPS-TRACK] Error sending position:', e.message); });
-        },
+        function(pos) { _sendGPSPosition(pos); },
         function(err) {
             console.warn('[GPS-TRACK] GPS error:', err.message);
         },
         { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
     );
+
+    // Heartbeat: periodic fallback in case watchPosition silently stops (common on mobile background)
+    if (_gpsHeartbeatId) clearInterval(_gpsHeartbeatId);
+    _gpsHeartbeatId = setInterval(function() {
+        if (!currentDriverPhone) return;
+        // If watchPosition hasn't sent anything in 2 intervals, force a getCurrentPosition
+        if (Date.now() - _gpsLastSent >= _GPS_SEND_INTERVAL * 2) {
+            console.log('[GPS-TRACK] Heartbeat: watchPosition stale, forcing getCurrentPosition');
+            navigator.geolocation.getCurrentPosition(
+                function(pos) { _gpsLastSent = 0; _sendGPSPosition(pos); },
+                function(err) { console.warn('[GPS-TRACK] Heartbeat GPS error:', err.message); },
+                { enableHighAccuracy: false, maximumAge: 60000, timeout: 10000 }
+            );
+        }
+    }, _GPS_HEARTBEAT_INTERVAL);
 
     // Wake Lock to keep GPS alive while screen is on
     requestGPSWakeLock();
@@ -84,6 +104,7 @@ function stopGPSTracking() {
         _gpsWatchId = null;
         console.log('[GPS-TRACK] Stopped GPS tracking.');
     }
+    if (_gpsHeartbeatId) { clearInterval(_gpsHeartbeatId); _gpsHeartbeatId = null; }
 
     // Mark driver as offline in Firestore
     if (currentDriverPhone) {
@@ -113,10 +134,25 @@ function releaseGPSWakeLock() {
     }
 }
 
-// Re-acquire wake lock when page becomes visible again
+// Restart GPS tracking when page becomes visible again (mobile browsers kill watchPosition in background)
 document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible' && _gpsWatchId !== null) {
         requestGPSWakeLock();
+        // Restart watchPosition — mobile browsers often silently stop it in background
+        console.log('[GPS-TRACK] Page visible again, restarting GPS watch');
+        navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = navigator.geolocation.watchPosition(
+            function(pos) { _sendGPSPosition(pos); },
+            function(err) { console.warn('[GPS-TRACK] GPS error:', err.message); },
+            { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+        );
+        // Also force an immediate position send
+        _gpsLastSent = 0;
+        navigator.geolocation.getCurrentPosition(
+            function(pos) { _sendGPSPosition(pos); },
+            function() {},
+            { enableHighAccuracy: false, maximumAge: 30000, timeout: 10000 }
+        );
     }
 });
 
