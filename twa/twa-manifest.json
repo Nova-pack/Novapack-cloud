@@ -1,0 +1,46 @@
+{
+  "packageId": "com.novapack.repartidor",
+  "host": "novapaack.com",
+  "name": "Novapack Repartidor",
+  "launcherName": "Reparto",
+  "display": "standalone",
+  "themeColor": "#FF4D00",
+  "themeColorDark": "#121212",
+  "navigationColor": "#121212",
+  "navigationColorDark": "#121212",
+  "navigationDividerColor": "#121212",
+  "navigationDividerColorDark": "#121212",
+  "backgroundColor": "#121212",
+  "enableNotifications": true,
+  "startUrl": "/reparto.html",
+  "iconUrl": "https://novapaack.com/icon_new.png",
+  "maskableIconUrl": "https://novapaack.com/icon_new.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "novapack-repartidor"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://novapaack.com/manifest-repartidor.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": true
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://novapaack.com/",
+  "minSdkVersion": 23,
+  "orientation": "portrait"
+}
