@@ -116,6 +116,7 @@ window.advInvoiceAllPending = async () => {
             .where('date', '>=', yearStart)
             .where('date', '<', yearEnd)
             .orderBy('date', 'desc')
+            .limit(10000)
             .get();
         let currentInvNumber = 0;
         invYearSnap.forEach(doc => {

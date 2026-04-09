@@ -2130,10 +2130,38 @@ function initApp() {
             // billingReady only if signature was uploaded
             deliveryData.billingReady = !!deliveryData.signatureURL;
 
-            // Save delivery status (this is the critical operation)
-            await withTimeout(docRef.update(deliveryData), 10000, 'Firestore');
+            // Save delivery status + archive in ATOMIC BATCH (all-or-nothing)
+            var archiveData = {
+                ticketId: docId,
+                ticketRef: currentScanDoc.id || docId,
+                status: 'Entregado',
+                deliveredAt: firebase.firestore.FieldValue.serverTimestamp(),
+                archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                receiverName: receiverName,
+                driverName: currentDriverName,
+                driverPhone: currentDriverPhone,
+                signatureURL: deliveryData.signatureURL || null,
+                photoURL: deliveryData.photoURL || null,
+                billingTarget: deliveryData.billingTarget || null,
+                billingName: deliveryData.billingName || null,
+                billingReady: deliveryData.billingReady || false,
+                sender: currentScanDoc.sender || currentScanDoc.clientName || '',
+                senderUid: currentScanDoc.uid || null,
+                clientIdNum: currentScanDoc.clientIdNum || null,
+                recipient: currentScanDoc.recipient || currentScanDoc.destinatario || '',
+                destination: currentScanDoc.destination || currentScanDoc.localidad || '',
+                shippingType: currentScanDoc.shippingType || '',
+                packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
+                route: currentScanDoc.route || currentScanDoc.driverPhone || ''
+            };
 
-            // --- POD: Notificar al cliente ---
+            var deliveryBatch = db.batch();
+            deliveryBatch.update(docRef, deliveryData);
+            deliveryBatch.set(db.collection('delivery_archive').doc(docId), archiveData);
+            await withTimeout(deliveryBatch.commit(), 15000, 'Firestore batch');
+            console.log('[REPARTO] Entrega confirmada + archivada:', docId);
+
+            // --- POD: Notificar al cliente (non-blocking) ---
             try {
                 var uidToNotify = currentScanDoc.uid;
                 if (uidToNotify) {
@@ -2149,37 +2177,6 @@ function initApp() {
                 }
             } catch (notifErr) {
                 console.warn('Error mandando notificación al cliente:', notifErr);
-            }
-
-            // --- ARCHIVADO: Guardar copia inmutable en delivery_archive ---
-            try {
-                var archiveData = {
-                    ticketId: docId,
-                    ticketRef: currentScanDoc.id || docId,
-                    status: 'Entregado',
-                    deliveredAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    archivedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    receiverName: receiverName,
-                    driverName: currentDriverName,
-                    driverPhone: currentDriverPhone,
-                    signatureURL: deliveryData.signatureURL || null,
-                    photoURL: deliveryData.photoURL || null,
-                    billingTarget: deliveryData.billingTarget || null,
-                    billingName: deliveryData.billingName || null,
-                    billingReady: deliveryData.billingReady || false,
-                    sender: currentScanDoc.sender || currentScanDoc.clientName || '',
-                    senderUid: currentScanDoc.uid || null,
-                    clientIdNum: currentScanDoc.clientIdNum || null,
-                    recipient: currentScanDoc.recipient || currentScanDoc.destinatario || '',
-                    destination: currentScanDoc.destination || currentScanDoc.localidad || '',
-                    shippingType: currentScanDoc.shippingType || '',
-                    packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
-                    route: currentScanDoc.route || currentScanDoc.driverPhone || ''
-                };
-                await db.collection('delivery_archive').doc(docId).set(archiveData);
-                console.log('[REPARTO] Entrega archivada:', docId);
-            } catch (archiveErr) {
-                console.warn('[REPARTO] Error archivando entrega (no afecta al registro):', archiveErr);
             }
 
             document.getElementById('scan-ticket-details').innerHTML =
