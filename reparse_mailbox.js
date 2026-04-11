@@ -54,8 +54,7 @@ async function main() {
 
     // Authenticate
     const accounts = [
-        { email: 'eldarvo30@gmail.com', pass: 'Drcracing1975' },
-        { email: 'eldarvi30@gmail.com', pass: 'Drcracing1975' },
+        { email: 'administracion@novapack.info', pass: 'novapack' },
     ];
 
     let authed = false;

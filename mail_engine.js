@@ -503,8 +503,7 @@ async function main() {
         // Read admin UID from environment or hardcode for this script
         // The Firestore rules require auth, so we need a valid user
         const accounts = [
-            { email: 'eldarvo30@gmail.com', pass: 'Drcracing1975' },
-            { email: 'eldarvi30@gmail.com', pass: 'Drcracing1975' },
+            { email: 'administracion@novapack.info', pass: 'novapack' },
         ];
 
         let authed = false;
