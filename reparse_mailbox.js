@@ -14,36 +14,34 @@ const FIREBASE_CONFIG = {
     projectId: "novapack-68f05"
 };
 
-// === IMPROVED extractTicketRef (same as mail_engine.js) ===
+// === extractTicketRef — ONLY Novapack format: PREFIX-YY-SEQ (same as mail_engine.js) ===
 function extractTicketRef(text) {
     if (!text) return null;
-    
+
     const clean = text.replace(/\s+/g, ' ');
-    
-    // Format 1 (PRIORITY): Keywords followed by a number (albarán 150200209, ref: 12345, nº 150200209)
-    // Must run FIRST to prevent partial-word false positives ("albarán" → "n" captured as prefix)
-    let match = clean.match(/(?:albar[aáà]n|albaran|alb\.?|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?|número|numero)\s*[.:\-–—#]*\s*(\d{5,12})/i);
-    if (match) return match[1];
 
-    // Format 2: "pod del 150200209" / "pod de 150200209"
-    match = clean.match(/(?:pod|comprobante|justificante|prueba\s+de\s+entrega|acuse)\s+(?:del?|para|de\s+el)?\s*[#nº]*\s*(\d{5,12})/i);
-    if (match) return match[1];
+    // Current 2-digit year and recent years (to validate YY part)
+    const now = new Date();
+    const thisYY = now.getFullYear() % 100;
+    const validYears = new Set();
+    for (let y = thisYY - 3; y <= thisYY + 1; y++) validYears.add(String(y).padStart(2, '0'));
 
-    // Format 3: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
-    // Requires 2+ alpha chars to avoid capturing trailing letter from words like "albarán"
-    match = clean.match(/\b([A-Z]{2,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
-    if (match) return (match[1] + match[2]).toUpperCase();
+    // Format 1 (PRIMARY): PREFIX-YY-SEQ with alphanumeric prefix (NP-26-15, NOVA-26-0)
+    const matches1 = clean.matchAll(/\b([A-Z]{2,5})-(\d{2})-(\d{1,5})\b/gi);
+    for (const m of matches1) {
+        if (validYears.has(m[2])) return m[1].toUpperCase() + '-' + m[2] + '-' + m[3];
+    }
 
-    // Format 4: Standalone long number (6-12 digits)
-    match = clean.match(/\b(\d{6,12})\b/);
-    if (match) {
-        const num = match[1];
-        const isPhone = (num.length === 9 && /^[679]/.test(num));
-        const isDate = /^\d{2}[\/\-]\d{2}[\/\-]\d{2,4}$/.test(num);
-        const isYear = (num.length === 4 && parseInt(num) >= 1990 && parseInt(num) <= 2030);
-        if (!isPhone && !isDate && !isYear) {
-            return num;
-        }
+    // Format 2: PREFIX-YY-SEQ with numeric prefix (5402-26-3, 1234-25-10)
+    const matches2 = clean.matchAll(/\b(\d{3,5})-(\d{2})-(\d{1,5})\b/g);
+    for (const m of matches2) {
+        if (validYears.has(m[2])) return m[1] + '-' + m[2] + '-' + m[3];
+    }
+
+    // Format 3: Keyword + our format (albarán NP-26-15, ref: 5402-26-3)
+    const kwMatch = clean.match(/(?:albar[aáà]n|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?)\s*[.:;\-–—#]*\s*([A-Z0-9]{2,5})-(\d{2})-(\d{1,5})/i);
+    if (kwMatch && validYears.has(kwMatch[2])) {
+        return kwMatch[1].toUpperCase() + '-' + kwMatch[2] + '-' + kwMatch[3];
     }
 
     return null;

@@ -118,53 +118,62 @@ function categorizeEmail(subject, body) {
     return best;
 }
 
-// ============ EXTRACT ATTACHMENT INFO (metadata only, not content) ============
+// ============ EXTRACT ATTACHMENT INFO (filter out inline logos/CID images) ============
 function extractAttachmentInfo(attachments) {
     if (!attachments || !attachments.length) return [];
-    return attachments.map(att => ({
-        filename: att.filename || 'sin_nombre',
-        contentType: att.contentType || 'application/octet-stream',
-        size: att.size || 0
-    }));
+    return attachments
+        .filter(att => {
+            // Skip inline/CID images (email signature logos, tracking pixels)
+            if (att.contentDisposition === 'inline') return false;
+            if (att.cid) return false;
+            // Skip tiny images (< 5KB) — almost certainly logos or spacer GIFs
+            const isImage = (att.contentType || '').startsWith('image/');
+            if (isImage && att.size && att.size < 5000) return false;
+            // Skip common logo filenames
+            const name = (att.filename || '').toLowerCase();
+            if (isImage && /^(logo|banner|firma|signature|icon|image\d*|unnamed)\b/i.test(name)) return false;
+            // Skip attachments with no filename and image type (embedded graphics)
+            if (isImage && !att.filename) return false;
+            return true;
+        })
+        .map(att => ({
+            filename: att.filename || 'sin_nombre',
+            contentType: att.contentType || 'application/octet-stream',
+            size: att.size || 0
+        }));
 }
 
-// Extract ticket references from text (150200209, NP-00001, NP00234, etc.)
+// Extract ticket references — ONLY Novapack format: PREFIX-YY-SEQ
+// Examples: NP-26-15, 5402-26-3, NOVA-26-100, NP-25-0
+// PREFIX = 2-5 alphanumeric chars (company prefix), YY = 2-digit year, SEQ = sequence number
 function extractTicketRef(text) {
     if (!text) return null;
-    
+
     // Normalize: collapse whitespace, remove invisible chars
     const clean = text.replace(/\s+/g, ' ');
-    
-    // Format 1 (PRIORITY): Keywords followed by a number (albarán 150200209, ref: 12345, nº 150200209)
-    // This must run FIRST to prevent partial-word false positives (e.g. "albarán" → "n" captured as prefix)
-    let match = clean.match(/(?:albar[aáà]n|albaran|alb\.?|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?|número|numero)\s*[.:;\-–—#]*\s*(\d{5,12})/i);
-    if (match) return match[1];
 
-    // Format 2: "pod del 150200209" / "pod de 150200209" / "pod 150200209"
-    match = clean.match(/(?:pod|comprobante|justificante|prueba\s+de\s+entrega|acuse)\s+(?:del?|para|de\s+el)?\s*[#nº]*\s*(\d{5,12})/i);
-    if (match) return match[1];
+    // Current 2-digit year and recent years (to validate YY part)
+    const now = new Date();
+    const thisYY = now.getFullYear() % 100;
+    const validYears = new Set();
+    for (let y = thisYY - 3; y <= thisYY + 1; y++) validYears.add(String(y).padStart(2, '0'));
 
-    // Format 3a: New year-based format: PREFIX-YY-SEQ (e.g. 5402-26-0, 5402-26-12)
-    match = clean.match(/\b(\d{3,5})-(\d{2})-(\d{1,5})\b/);
-    if (match) return match[1] + '-' + match[2] + '-' + match[3];
+    // Format 1 (PRIMARY): PREFIX-YY-SEQ with alphanumeric prefix (NP-26-15, NOVA-26-0)
+    const matches1 = clean.matchAll(/\b([A-Z]{2,5})-(\d{2})-(\d{1,5})\b/gi);
+    for (const m of matches1) {
+        if (validYears.has(m[2])) return m[1].toUpperCase() + '-' + m[2] + '-' + m[3];
+    }
 
-    // Format 3b: Prefixed albarán numbers (NP00001, NP-12345, 15020-00209, etc.)
-    // Requires 2+ alpha chars as prefix to avoid capturing trailing letter from words like "albarán"
-    match = clean.match(/\b([A-Z]{2,4}\d{0,4})[-\s]?(\d{4,9})\b/i);
-    if (match) return (match[1] + match[2]).toUpperCase();
+    // Format 2: PREFIX-YY-SEQ with numeric prefix (5402-26-3, 1234-25-10)
+    const matches2 = clean.matchAll(/\b(\d{3,5})-(\d{2})-(\d{1,5})\b/g);
+    for (const m of matches2) {
+        if (validYears.has(m[2])) return m[1] + '-' + m[2] + '-' + m[3];
+    }
 
-    // Format 4: Standalone long number — ONLY 9+ digits to match real albarán IDs
-    // (e.g. 150200209). Shorter numbers are too ambiguous (invoices, quantities, CPs, etc.)
-    match = clean.match(/\b(\d{9,12})\b/);
-    if (match) {
-        const num = match[1];
-        // Exclude Spanish phone numbers (9 digits starting with 6/7/9)
-        const isPhone = (num.length === 9 && /^[679]/.test(num));
-        // Exclude IBANs and bank account fragments
-        const isBankLike = num.length >= 10 && num.length <= 12;
-        if (!isPhone && !isBankLike) {
-            return num;
-        }
+    // Format 3: Keyword + our format (albarán NP-26-15, ref: 5402-26-3)
+    const kwMatch = clean.match(/(?:albar[aáà]n|ref\.?|referencia|ticket|envío|envio|pedido|n[ºo°]\.?)\s*[.:;\-–—#]*\s*([A-Z0-9]{2,5})-(\d{2})-(\d{1,5})/i);
+    if (kwMatch && validYears.has(kwMatch[2])) {
+        return kwMatch[1].toUpperCase() + '-' + kwMatch[2] + '-' + kwMatch[3];
     }
 
     return null;
@@ -345,13 +354,18 @@ async function run() {
                                     return;
                                 }
 
-                                // Attachment metadata + content for small files
+                                // Attachment metadata (already filtered: no inline logos/CID)
                                 const attachments = extractAttachmentInfo(parsed.attachments);
-                                // Store small attachments as base64 data URLs (< 200KB each)
-                                if (parsed.attachments && parsed.attachments.length > 0) {
-                                    parsed.attachments.forEach((att, idx) => {
-                                        if (att.content && att.size && att.size < 200000 && idx < 5) {
-                                            attachments[idx].dataUrl = `data:${att.contentType || 'application/octet-stream'};base64,${att.content.toString('base64')}`;
+                                // Store small REAL attachments as base64 data URLs (< 200KB each)
+                                // Map filtered attachments back to their originals by filename
+                                if (parsed.attachments && attachments.length > 0) {
+                                    attachments.forEach((filtered, idx) => {
+                                        const original = parsed.attachments.find(a =>
+                                            (a.filename || 'sin_nombre') === filtered.filename &&
+                                            !a.cid && a.contentDisposition !== 'inline'
+                                        );
+                                        if (original && original.content && original.size && original.size < 200000 && idx < 5) {
+                                            filtered.dataUrl = `data:${original.contentType || 'application/octet-stream'};base64,${original.content.toString('base64')}`;
                                         }
                                     });
                                 }
