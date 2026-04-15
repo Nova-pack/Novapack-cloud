@@ -3632,10 +3632,8 @@ function generateTicketHTML(t, footerLabel) {
     const ts = (t.createdAt && typeof t.createdAt.toDate === 'function') ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : new Date());
     const validDateStr = !isNaN(ts.getTime()) ? (ts.toLocaleDateString() + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : "Fecha pendiente";
 
-    // Company name for header (use client's company, fallback to NOVAPACK)
-    const _comp = (typeof companies !== 'undefined' && typeof currentCompanyId !== 'undefined') ? companies.find(c => c.id === currentCompanyId) : null;
-    const companyName = (_comp && _comp.name) ? _comp.name : (t.compName || t.sender || 'NOVAPACK');
-    const companyEmail = (_comp && _comp.email) ? _comp.email : (t.senderEmail || 'administracion@novapack.info');
+    // Always show NOVAPACK branding in the logo area
+    const companyEmail = 'administracion@novapack.info';
 
     // Grouped Package List Logic (One line per UI row)
     let displayList = [];
@@ -3920,7 +3918,7 @@ function generateManifestHTML(tickets) {
                     <div style="font-size:0.9rem;">RELACIÓN DE ENVÍOS DIARIOS</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-size: 1.2rem; font-weight:bold;">${escapeHtml(tickets[0] ? tickets[0].sender : (getCompanyName(db.companyId) || 'NOVAPACK'))}</div>
+                    <div style="font-family: 'Xenotron', sans-serif; font-size: 1.2rem; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
                     <div style="font-size: 1.2rem; font-weight:bold;">Fecha: ${new Date().toLocaleDateString()}</div>
                     <div style="font-size: 0.9rem;">Total Envíos: ${tickets.length}</div>
                 </div>
@@ -4081,10 +4079,8 @@ document.getElementById('btn-print-labels-morning').onclick = () => printLabelSh
 document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
 function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
-    // Company name for label header
-    const _lComp = (typeof companies !== 'undefined' && typeof currentCompanyId !== 'undefined') ? companies.find(c => c.id === currentCompanyId) : null;
-    const companyName = (_lComp && _lComp.name) ? _lComp.name : (t.compName || t.sender || 'NOVAPACK');
-    const companyEmail = (_lComp && _lComp.email) ? _lComp.email : (t.senderEmail || 'administracion@novapack.info');
+    // Always show NOVAPACK branding in the logo area
+    const companyEmail = 'administracion@novapack.info';
 
     if (!weightStr) {
         let w = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : t.weight;

@@ -8409,6 +8409,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let _routeMapGeoCache = {};
             let _routeMapInfoWindow = null;
             let _routeMapGeocoder = null;
+            let _routeMapStaleCheckId = null;
+            let _routeMapLastData = null;
 
             function _makeCircleSvg(color, label, size) {
                 size = size || 28;
@@ -8436,6 +8438,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Cleanup previous
                 if (_routeMapUnsub) { _routeMapUnsub(); _routeMapUnsub = null; }
                 if (_routeMapTicketUnsub) { _routeMapTicketUnsub(); _routeMapTicketUnsub = null; }
+                if (_routeMapStaleCheckId) { clearInterval(_routeMapStaleCheckId); _routeMapStaleCheckId = null; }
+                _routeMapLastData = null;
                 _routeMapDeliveryMarkers.forEach(function(m) { m.setMap(null); });
                 _routeMapDeliveryMarkers = [];
 
@@ -8456,39 +8460,46 @@ document.addEventListener('DOMContentLoaded', () => {
                 // --- Listen to driver GPS ---
                 var normalPhone = phone.replace(/\D/g, '').replace(/^34/, '');
                 var gpsDocId = normalPhone.replace(/[^a-zA-Z0-9]/g, '_');
+
+                // Shared function to update driver status badge (called from snapshot AND periodic check)
+                function _updateDriverStatus(d) {
+                    if (!d || !d.lat || !d.lng) return;
+                    var isOnline = d.online !== false;
+                    var stale = d.updatedAt && ((Date.now() - d.updatedAt.toDate().getTime()) > 5 * 60 * 1000);
+                    var statusEl = document.getElementById('route-map-driver-status');
+                    var updateEl = document.getElementById('route-map-last-update');
+
+                    if (isOnline && !stale) {
+                        statusEl.textContent = (d.driverName || 'Conductor') + ' — EN LÍNEA';
+                        statusEl.style.background = '#4CAF50';
+                    } else if (stale) {
+                        statusEl.textContent = (d.driverName || 'Conductor') + ' — Sin señal';
+                        statusEl.style.background = '#FF9800';
+                    } else {
+                        statusEl.textContent = (d.driverName || 'Conductor') + ' — Desconectado';
+                        statusEl.style.background = '#666';
+                    }
+
+                    if (d.updatedAt) {
+                        try {
+                            var t = d.updatedAt.toDate();
+                            updateEl.textContent = 'Última señal: ' + t.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+                        } catch(e) {}
+                    }
+                }
+
                 _routeMapUnsub = db.collection('driver_locations').doc(gpsDocId)
                     .onSnapshot(function(doc) {
                         if (!doc.exists) {
                             var statusEl = document.getElementById('route-map-driver-status');
                             statusEl.textContent = 'Sin datos GPS';
                             statusEl.style.background = '#555';
+                            _routeMapLastData = null;
                             return;
                         }
                         var d = doc.data();
-                            if (!d.lat || !d.lng) return;
-
-                            var isOnline = d.online !== false;
-                            var stale = d.updatedAt && ((Date.now() - d.updatedAt.toDate().getTime()) > 5 * 60 * 1000);
-                            var statusEl = document.getElementById('route-map-driver-status');
-                            var updateEl = document.getElementById('route-map-last-update');
-
-                            if (isOnline && !stale) {
-                                statusEl.textContent = (d.driverName || 'Conductor') + ' — EN LÍNEA';
-                                statusEl.style.background = '#4CAF50';
-                            } else if (stale) {
-                                statusEl.textContent = (d.driverName || 'Conductor') + ' — Sin señal';
-                                statusEl.style.background = '#FF9800';
-                            } else {
-                                statusEl.textContent = (d.driverName || 'Conductor') + ' — Desconectado';
-                                statusEl.style.background = '#666';
-                            }
-
-                            if (d.updatedAt) {
-                                try {
-                                    var t = d.updatedAt.toDate();
-                                    updateEl.textContent = 'Última señal: ' + t.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-                                } catch(e) {}
-                            }
+                            _routeMapLastData = d;
+                            _updateDriverStatus(d);
 
                             var subtitle = document.getElementById('route-map-subtitle');
                             var parts = ['Tel: ' + phone];
@@ -8516,6 +8527,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 _routeMap.setZoom(13);
                             }
                     });
+
+                // Periodic staleness re-check every 60s (catches cases where driver stops sending and snapshot doesn't fire)
+                _routeMapStaleCheckId = setInterval(function() {
+                    if (_routeMapLastData) _updateDriverStatus(_routeMapLastData);
+                }, 60000);
 
                 // --- Load & geocode deliveries for this route ---
                 _routeMapTicketUnsub = db.collection('tickets')
