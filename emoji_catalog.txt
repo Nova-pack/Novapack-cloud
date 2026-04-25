@@ -1,317 +1,0 @@
-Total unique emojis: 77
-
-✅ (x42)
-  ctx: adius:4px; font-weight:bold;">✅ Adjudicar Tarifa</button>            
-  ctx: lse <b style="color:#4CAF50;">✅ Adjudicar</b></div>                 <
-  ctx: ize:1.5rem; font-weight:400;">✅ ¿Quién está operando el sistema?</h3>
-
-⚠️ (x31)
-  ctx:                               ⚠️ ESPERANDO SELECCIÓN DE CLIENTE Y SEDE
-  ctx: 0.85rem; color:#fff;"><strong>⚠️ Aviso:</strong> La descarga puede   
-  ctx:    <option value="Incidencia">⚠️ Mantener en Incidencia</option>     
-
-🗑️ (x18)
-  ctx: :pointer; border-radius:4px;">🗑️ Eliminar</button>                 <
-  ctx: padding:6px; cursor:pointer;">🗑️ Eliminar Sub-Tarifa</button>       
-  ctx: ick="deleteSelectedClients()">🗑️ ELIMINAR SELECCIONADOS</button>    
-
-✏️ (x15)
-  ctx: :pointer; border-radius:4px;">✏️ Editar Manual</button>              
-  ctx: k="editArticle('${data.id}')">✏️</button>                            
-  ctx: id}')" title="Editar Cliente">✏️</button>                            
-
-📋 (x13)
-  ctx: tton class="adv-dropdown-btn">📋 Facturas ▾</button>                 
-  ctx: ').classList.remove('show');">📋 Albaranes Manuales</button>         
-  ctx: :1.1rem; margin-bottom:10px;">📋 Adjudicación de Tarifas a Clientes</d
-
-❌ (x13)
-  ctx:                        alert("❌ Error al generar la copia de seguridad
-  ctx: assignSelectedRouteTickets()">❌ Desasignar Seleccionados</button>    
-  ctx: ick="removeAbonoLine(${idx})">❌</button></td>                 `;    
-
-🖨️ (x12)
-  ctx: ').classList.remove('show');">🖨️ Imprimir PDF</button>              
-  ctx: :pointer; border-radius:4px;">🖨️ Imprimir Listado</button>          
-  ctx: xes" onclick="window.print()">🖨️ IMPRIMIR</button>                 <
-
-🔍 (x12)
-  ctx: ').classList.remove('show');">🔍 Historial y Abonos</button>         
-  ctx: m; text-transform:uppercase;">🔍 Buscar Cliente (nombre, nº, NIF...)</
-  ctx: v-drawer-search" placeholder="🔍 Buscar..." style="width:100%; padding
-
-📦 (x11)
-  ctx: s.style.background='#094771'">📦 Catálogo Master</button>            
-  ctx: tom: 10px; font-size:1.8rem;">📦 Albaranes Pendientes de Facturar</h2>
-  ctx: ize:0.8rem; font-weight:900;">📦 GENERAR REMESA SEPA</button>        
-
-🔄 (x9)
-  ctx: r()" title="Actualizar ahora">🔄 REFRESCAR</button>                  
-  ctx: ow');" style="color:#ffcccc;">🔄 Factura Rectificativa (Abono)</button
-  ctx: ns()" title="Refrescar lista">🔄 ACTUALIZAR</button>             </di
-
-💾 (x9)
-  ctx: ').classList.remove('show');">💾 Guardar / Emitir</button>           
-  ctx: cal" style="margin-top:10px;">💾 GUARDAR DATOS FISCALES</button>     
-  ctx: width:100%; margin-top:15px;">💾 CONFIRMAR ASIGNACIÓN</button>       
-
-📊 (x9)
-  ctx: tton class="adv-dropdown-btn">📊 Informes ▾</button>                 
-  ctx: ow');" style="color:#00CED1;">📊 Listados V4</button>                
-  ctx: yle.background='transparent'">📊 Panel Fiscal</button>               
-
-🚨 (x8)
-  ctx: #FF3B30;">             <span>🚨</span> <div id="alert-count-text">0 A
-  ctx:    <h1 style="color:#FF3B30;">🚨 Solicitudes de Anulación</h1>       
-  ctx:           const p1 = confirm("🚨 RESET TOTAL DE LA APLICACIÓN 🚨\n\nEs
-
-➕ (x8)
-  ctx: ').classList.remove('show');">➕ Nuevo Cliente</button>               
-  ctx: ').classList.remove('show');">➕ Nuevo Proveedor</button>             
-  ctx: adius:4px; font-weight:bold;">➕ Nuevo Cliente</button>               
-
-📥 (x7)
-  ctx: ').classList.remove('show');">📥 Importar Todos</button>             
-  ctx: :4px 10px; font-size:0.8rem;">📥 Importar Albaranes ▾</button>       
-  ctx: ').classList.remove('show');">📥 Todos (Sin Filtro)</button>         
-
-➤ (x6)
-  ctx: tro-logo-admin">NOVAPACK<span>➤</span></div>         <div class="intr
-  ctx: ">             NOVAPACK<span>➤</span>         </div>         <div s
-  ctx: ">             NOVAPACK<span>➤</span>         </div>          <div
-
-📷 (x6)
-  ctx: ">                     <span>📷</span> Escáner Cámara               
-  ctx: ').classList.remove('show');">📷 Escáner QR</button>                 
-  ctx: ="color:var(--brand-primary)">📷 Escáner de Albaranes</h1>           
-
-⚙️ (x6)
-  ctx: ">                     <span>⚙️</span> Ajustes App                 <
-  ctx: nombres de chóferes por ruta">⚙️ RUTAS / CARPETAS</button>           
-  ctx: olor:#FF9800; color:#FF9800;">⚙️ REPARAR INTEGRIDAD DE               
-
-👤 (x6)
-  ctx: ').classList.remove('show');">👤 Importar por Nombre</button>        
-  ctx: ').classList.remove('show');">👤 Por Nombre Destinatario</button>    
-  ctx: yle.background='transparent'">👤 Tarifas por Cliente</button>        
-
-️ (x5)
-  ctx: und='rgba(255,255,255,0.2)'">⏱️ Pendiente Facturar</button>          
-  ctx: ev')" id="btn-invoices-prev">⬅️ Anterior</button>                    
-  ctx: 'prev')" id="btn-users-prev">⬅️                     Anterior</button>
-
-🚚 (x5)
-  ctx: yle.background='transparent'">🚚 Portes Debidos</button>             
-  ctx:  += `<option value="${phone}">🚚 ${phone}</option>`;                 
-  ctx:        <td>${t.driverPhone ? '🚚 ' + t.driverPhone : '<span style="col
-
-🏢 (x5)
-  ctx: -color:var(--brand-primary);">🏢 Empresas Emisoras (Filiales de Factur
-  ctx:  color:var(--brand-primary);">🏢 Añadir Filial Central</h2>          
-  ctx: id}')" title="Sedes/Empresas">🏢</button>                            
-
-⚡ (x4)
-  ctx: ">                     <span>⚡</span> FACTURACIÓN PRO               
-  ctx: nt-weight:bold; opacity:0.9;">⚡ Facturación PRO</div>             </d
-  ctx: );">                         ⚡ FACTURAR TODOS LOS PENDIENTES (Automát
-
-👥 (x4)
-  ctx: ">                     <span>👥</span> Gestión Clientes             
-  ctx: tton class="adv-dropdown-btn">👥 Contactos ▾</button>                
-  ctx: ').classList.remove('show');">👥 Ver Clientes</button>               
-
-📝 (x4)
-  ctx: ">                     <span>📝</span> Albaranes Manuales           
-  ctx: tton class="adv-dropdown-btn">📝 Albaranes ▾</button>                
-  ctx:                              📝 Crear Nuevo Albarán Manual          
-
-📍 (x4)
-  ctx: ">                     <span>📍</span> Control Rutas                
-  ctx: :15px;">                 <h1>📍 Torre de Control de Rutas</h1>      
-  ctx:                               📍 Datos de Entrega (Destinatario)     
-
-💰 (x4)
-  ctx: ow');" style="color:#FFD700;">💰 Gestión de Tarifas</button>         
-  ctx: s.style.background='#2E7D32'">💰 Tarifas Cliente</button>            
-  ctx: e:0.85rem; font-weight:bold;">💰 Gestión de Tarifas</div>            
-
-➡️ (x4)
-  ctx:      IR A GESTOR DE ALBARANES ➡️                     </button>      
-  ctx: "btn-invoices-next">Siguiente ➡️</button>                 </div>    
-  ctx: iguiente                     ➡️</button>             </div>        
-
-✕ (x4)
-  ctx: :pointer; font-size:0.85rem;">✕</button>                     </div> 
-  ctx: ne;" title="Limpiar búsqueda">✕</button>             </div>       
-  ctx: :pointer; border-radius:4px;">✕</button>                 </div>     
-
-🚀 (x4)
-  ctx:                               🚀 GENERAR Y GUARDAR ALBARÁN           
-  ctx: ze: 0.8rem; min-width:200px;">🚀 GENERAR FACTURA</button>            
-  ctx: ync () => {     console.log('🚀 Iniciando importación artículos GESCO
-
-🏠 (x4)
-  ctx:  = '<option value="comp_main">🏠 Empresa Principal</option>';        
-  ctx:  = '<option value="comp_main">🏠 Empresa Principal</option>';        
-  ctx:  = '<option value="comp_main">🏠 Empresa Principal (Automática)</optio
-
-📄 (x3)
-  ctx: ').classList.remove('show');">📄 Nueva Factura</button>              
-  ctx: nloadInvoicePDF('${doc.id}')">📄</button>                            
-  ctx: :pointer; border-radius:3px;">📄 Mod.347</button>                 <bu
-
-📅 (x3)
-  ctx: ').classList.remove('show');">📅 Importar por Fecha</button>         
-  ctx: ').classList.remove('show');">📅 Por Fecha</button>                  
-  ctx: ="selectAdminTicketsByDate()">📅 Marcar Fecha</button>               
-
-🧾 (x3)
-  ctx: yle.background='transparent'">🧾 Facturas Emitidas</button>          
-  ctx: nvoiceSelectedAdminTickets()">🧾 Facturar Seleccionados</button>     
-  ctx: :pointer; border-radius:3px;">🧾 IVA</button>                 <button
-
-💬 (x3)
-  ctx: ata.name}')" title="WhatsApp">💬</button>                            
-  ctx: {t.docId}')" title="WhatsApp">💬</button>                            
-  ctx: WhatsAppInvoice('${doc.id}')">💬</button>                            
-
-🛡️ (x2)
-  ctx: ">                     <span>🛡️</span> DB Local                 </d
-  ctx: er">                     <h1>🛡️ Mantenimiento y Backups de Seguridad
-
-🔢 (x2)
-  ctx: ').classList.remove('show');">🔢 Importar por Número</button>        
-  ctx: ').classList.remove('show');">🔢 Por Número de Albarán</button>      
-
-💳 (x2)
-  ctx: tton class="adv-dropdown-btn">💳 Cobros ▾</button>                   
-  ctx: ').classList.remove('show');">💳 Registrar Cobro</button>            
-
-📚 (x2)
-  ctx: ow');" style="color:#E040FB;">📚 Contabilidad</button>               
-  ctx:  margin:0; font-size:1.2rem;">📚 Motor Contable · Novapack Cloud</h1>
-
-🏭 (x2)
-  ctx: ').classList.remove('show');">🏭 Ver Proveedores</button>            
-  ctx:  margin:0; font-size:1.2rem;">🏭 Gestión de Proveedores · Facturación 
-
-✖ (x2)
-  ctx: t-size:1.2rem; outline:none;">✖</button>                 </div>     
-  ctx: size:1.2rem; cursor:pointer;">✖</button>             </div>         
-
-📉 (x2)
-  ctx: yle.background='transparent'">📉 Abonos (NC)</button>                
-  ctx: glass); padding-bottom:10px;">📉 1. Generar Nuevo Abono</h3>         
-
-️⃣ (x2)
-  ctx: ze:0.85rem; min-width:90px;">1️⃣ Cliente:</span>                     
-  ctx: ze:0.85rem; min-width:90px;">2️⃣ Tarifa:</span>                      
-
-🤖 (x2)
-  ctx: display='flex'">             🤖         </div>          <div id="a
-  ctx: pan style="font-size:1.5rem;">🤖</span>                     <div>   
-
-🟢 (x2)
-  ctx: CAF50; border-color:#4CAF50;">🟢 Importación Masiva de Clientes (GESCO
-  ctx: Decision('${doc.id}', false)">🟢 DENEGAR</button>                    
-
-📧 (x2)
-  ctx:  onclick="sendTaxesByEmail()">📧 ENVIAR A                     GESTORÍ
-  ctx: k="emailInvoice('${doc.id}')">📧</button>                            
-
-📇 (x2)
-  ctx: penManageDestinationsModal()">📇 AGENDA</button>                     
-  ctx: )" title="Agenda/Direcciones">📇</button>                            
-
-🔴 (x2)
-  ctx:                 if (!confirm(`🔴 CONFIRMACIÓN FINAL: Se van a eliminar
-  ctx: nDecision('${doc.id}', true)">🔴 APROBAR</button>                    
-
-⚖️ (x2)
-  ctx:                  <div><strong>⚖️ Peso:</strong> ${parseFloat(peso).toF
-  ctx: :pointer; border-radius:3px;">⚖️ Balance</button>                 <bu
-
-☰ (x1)
-  ctx: sm" onclick="toggleSidebar()">☰ MENU</button>     </div>      <!-- 
-
-🔔 (x1)
-  ctx: ">                     <span>🔔</span> Alertas Pickup               
-
-🚪 (x1)
-  ctx: ut()">                 <span>🚪</span> CERRAR SESIÓN             </d
-
-✉️ (x1)
-  ctx: ').classList.remove('show');">✉️ Enviar a Cliente</button>           
-
-☑️ (x1)
-  ctx: ').classList.remove('show');">☑️ Solo Seleccionados</button>         
-
-📑 (x1)
-  ctx: " onclick="saveAbonoTicket()">📑 GENERAR Y ARCHIVAR ABONO</button>   
-
-📔 (x1)
-  ctx: glass); padding-bottom:10px;">📔 2. Libro de Abonos Emitidos</h3>    
-
-👋 (x1)
-  ctx: r(--brand-primary);"></span>! 👋</h2>                 <p style="color
-
-🔗 (x1)
-  ctx: ación de albaranes huérfanos">🔗 SINCRO GLOBAL</button>              
-
-🧨 (x1)
-  ctx: e="width:100%; padding:15px;">🧨                     BORRAR TODOS LOS
-
-💣 (x1)
-  ctx: dding:20px; font-weight:900;">💣                     HARD RESET (ELIM
-
-📲 (x1)
-  ctx:                  placeholder="📲 CLIC AQUÍ Y ESCANEA EL CÓDIGO QR / BA
-
-☀️ (x1)
-  ctx:        <option value="MAÑANA">☀️ MAÑANA</option>                     
-
-🌙 (x1)
-  ctx:         <option value="TARDE">🌙 TARDE</option>                      
-
-✓ (x1)
-  ctx:  title="Marcar como revisado">✓ VISTO</button></div>`);              
-
-📂 (x1)
-  ctx:         optAll.textContent = '📂 TODAS LAS SEDES';                   
-
-🕒 (x1)
-  ctx: (isPrinted ? '🖨️ IMPRESO' : '🕒 NUEVO')}</span></td>                
-
-📞 (x1)
-  ctx: ize:0.85rem; margin-top:4px;">📞 ${t.phone || '-'}</p>               
-
-🚫 (x1)
-  ctx: {                     alert("🚫 ERROR FISCAL:\nNo puedes facturar alb
-
-⚪ (x1)
-  ctx: sDelivered ? '✅ ENTREGADO' : '⚪ PENDIENTE';                 badge.cla
-
-☎️ (x1)
-  ctx:                  ${t.phone ? '☎️ ' + t.phone : ''}                   
-
-♻️ (x1)
-  ctx: nclick="saveTicketReassign()">♻️ ACTUALIZAR RUTA</button>            
-
-📩 (x1)
-  ctx: ick="saveTicketEditWarning()">📩 ENVIAR MODIFICACIÓN A CLIENTE</button
-
-📖 (x1)
-  ctx: :pointer; border-radius:3px;">📖 Diario</button>                 <but
-
-🏛️ (x1)
-  ctx: :pointer; border-radius:3px;">🏛️ Mod.303</button>                 <b
-
-💸 (x1)
-  ctx: :pointer; border-radius:3px;">💸 Gastos</button>                 <but
-
-📈 (x1)
-  ctx: :pointer; border-radius:3px;">📈 PyG</button>                 <button
-
-🏦 (x1)
-  ctx: :pointer; border-radius:3px;">🏦 SEPA</button>             </div>   
-

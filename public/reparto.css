@@ -162,6 +162,46 @@ html, body {
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
+/* GPS status indicator */
+.gps-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: rgba(0,0,0,0.15);
+}
+.gps-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s;
+}
+.gps-dot.gps-active {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(52, 199, 89, 0.5);
+}
+.gps-dot.gps-weak {
+    background: var(--warning);
+    box-shadow: 0 0 6px rgba(255, 149, 0, 0.5);
+}
+.gps-dot.gps-searching {
+    background: var(--warning);
+    animation: blink 1s infinite;
+}
+.gps-dot.gps-error {
+    background: var(--danger);
+    box-shadow: 0 0 6px rgba(255, 59, 48, 0.5);
+}
+.gps-label {
+    color: var(--text-dim);
+    line-height: 1;
+}
+
 /* Driver badge */
 .driver-badge {
     background: linear-gradient(135deg, var(--brand), #E64A19);

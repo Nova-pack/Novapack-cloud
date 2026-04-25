@@ -40,12 +40,15 @@ window.addEventListener('unhandledrejection', function(event) {
 });
 
 // ============ AUDIT TRAIL: Operador oculto ============
-// Devuelve { _operadoPor, _operadoAt } para inyectar en cada escritura Firestore
+// Devuelve { _operadoPor, _operadoAt, _operadorUid } para inyectar en cada escritura Firestore
+// Usa Firebase Auth como fuente de verdad (no window.adminIdentity que es inyectable por consola)
 window.getOperatorStamp = function() {
-    const identity = window.adminIdentity || sessionStorage.getItem('adminActiveIdentity') || 'sistema';
+    var user = typeof firebase !== 'undefined' && firebase.auth ? firebase.auth().currentUser : null;
+    var identity = sessionStorage.getItem('adminActiveIdentity') || (user && user.email) || 'sistema';
     return {
         _operadoPor: identity,
-        _operadoAt: new Date().toISOString()
+        _operadoAt: new Date().toISOString(),
+        _operadorUid: user ? user.uid : null
     };
 };
 // ======================================================
@@ -1161,7 +1164,7 @@ async function loadEditor(t) {
     // Show modification notice (read-only info) if admin modified this ticket
     if (t.lastModifiedBy === 'admin' && t.lastModifiedNote) {
         document.getElementById('editor-title').innerHTML = `<span style="color:#2196F3; font-weight:900;">ℹ️ ALBARÁN MODIFICADO POR CENTRAL</span>`;
-        document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#2196F3; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">MODIFICADO</span>`;
+        document.getElementById('editor-status').innerHTML = `ID: ${escapeHtml(t.id)} | <span style="background:#2196F3; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">MODIFICADO</span>`;
     }
 
     // Show incident info banner (informative, read-only)
@@ -1219,10 +1222,10 @@ async function loadEditor(t) {
     if (isLocked) {
         if (isPendingDelete) {
             document.getElementById('editor-title').innerHTML = `<span style="color:#FF3B30; font-weight:900;">🚨 ANULACIÓN SOLICITADA</span>`;
-            document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">ESPERANDO APROBACIÓN</span>`;
+            document.getElementById('editor-status').innerHTML = `ID: ${escapeHtml(t.id)} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.75rem;">ESPERANDO APROBACIÓN</span>`;
         } else {
             document.getElementById('editor-title').innerHTML = `<span style="color:#FF3B30; font-weight:900;">🔒 ALBARÁN FACTURADO (SÓLO LECTURA)</span>`;
-            document.getElementById('editor-status').innerHTML = `ID: ${t.id} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold;">FACTURA: ${t.invoiceNum || 'ASIGNADA'}</span>`;
+            document.getElementById('editor-status').innerHTML = `ID: ${escapeHtml(t.id)} | <span style="background:#FF3B30; color:white; padding:2px 6px; border-radius:4px; font-weight:bold;">FACTURA: ${escapeHtml(t.invoiceNum || 'ASIGNADA')}</span>`;
         }
 
         // Bloqueo físico mediante CSS (Inapelable)
@@ -1294,7 +1297,7 @@ async function resetEditor() {
     // 3. Metadatos y ID
     showLoading();
     const nextId = await getNextId();
-    document.getElementById('editor-status').innerHTML = `ALBARÁN NÚMERO: <strong style="color:var(--brand-primary);">${nextId}</strong>`;
+    document.getElementById('editor-status').innerHTML = `ALBARÁN NÚMERO: <strong style="color:var(--brand-primary);">${escapeHtml(String(nextId))}</strong>`;
 
     if (!document.getElementById('date-filter').value) {
         document.getElementById('date-filter').value = getTodayLocal();
@@ -2325,16 +2328,16 @@ function addAddressRowToEditor(data = null) {
     row.innerHTML = `
         <div class="form-group mb-2">
             <label style="font-size:0.6rem;">DIRECCIÓN COMPLETA (CALLE, Nº, PISO)</label>
-            <input type="text" class="edit-addr-full form-control" placeholder="Ej: Calle Mayor 5, Madrid" value="${data ? (data.address || data.street || '') : ''}">
+            <input type="text" class="edit-addr-full form-control" placeholder="Ej: Calle Mayor 5, Madrid" value="${escapeHtml(data ? (data.address || data.street || '') : '')}">
         </div>
         <div style="display:grid; grid-template-columns: 2fr 1fr 1.5fr; gap:10px;">
             <div>
                 <label style="font-size:0.6rem;">LOCALIDAD / CIUDAD</label>
-                <input type="text" class="edit-addr-city form-control" value="${data ? (data.localidad || '') : ''}">
+                <input type="text" class="edit-addr-city form-control" value="${escapeHtml(data ? (data.localidad || '') : '')}">
             </div>
             <div>
                 <label style="font-size:0.6rem;">C. POSTAL</label>
-                <input type="text" class="edit-addr-cp form-control" value="${data ? (data.cp || '') : ''}" maxlength="5">
+                <input type="text" class="edit-addr-cp form-control" value="${escapeHtml(data ? (data.cp || '') : '')}" maxlength="5">
             </div>
             <div>
                 <label style="font-size:0.6rem;">PROVINCIA (ZONA)</label>
@@ -2764,12 +2767,12 @@ function showExcelPreviewModal(clients, fileName) {
 
     const preview = clients.slice(0, 8);
     let tableRows = preview.map(c => {
-        const addrText = c.addresses.map(a => `${a.address}, ${a.localidad} ${a.cp}`).join(' | ') || 'Sin dirección';
+        const addrText = c.addresses.map(a => escapeHtml(a.address) + ', ' + escapeHtml(a.localidad) + ' ' + escapeHtml(a.cp)).join(' | ') || 'Sin dirección';
         return `<tr>
-            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.8rem; font-weight:600; color:white;">${c.name}</td>
+            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.8rem; font-weight:600; color:white;">${escapeHtml(c.name)}</td>
             <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.75rem; color:#CCC; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${addrText}</td>
-            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.75rem; color:#CCC;">${c.phone || '-'}</td>
-            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.75rem; color:#CCC;">${c.addresses[0]?.province || '-'}</td>
+            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.75rem; color:#CCC;">${escapeHtml(c.phone || '-')}</td>
+            <td style="padding:6px 8px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.75rem; color:#CCC;">${escapeHtml(c.addresses[0]?.province || '-')}</td>
         </tr>`;
     }).join('');
 
@@ -2783,7 +2786,7 @@ function showExcelPreviewModal(clients, fileName) {
                 <span style="font-size:1.8rem;">📊</span> PREVISUALIZACIÓN EXCEL
             </h3>
             <div style="margin-bottom:15px; padding:12px; background:rgba(33,163,102,0.1); border:1px solid rgba(33,163,102,0.3); border-radius:8px;">
-                <div style="color:#21a366; font-weight:700; font-size:0.85rem;">📁 ${fileName}</div>
+                <div style="color:#21a366; font-weight:700; font-size:0.85rem;">📁 ${escapeHtml(fileName)}</div>
                 <div style="color:#CCC; font-size:0.8rem; margin-top:4px;">
                     ✅ <strong>${clients.length}</strong> clientes únicos detectados
                     ${clients.length > preview.length ? ` (mostrando primeros ${preview.length})` : ''}
@@ -3433,13 +3436,13 @@ async function runReport() {
                 const weight = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseFloat(p.weight) || 0), 0) : 0;
 
                 tr.innerHTML = `
-                <td data-label="ID" style="padding:12px; border-bottom:1px solid #222;">${t.id}</td>
-                <td data-label="FECHA" style="padding:12px; border-bottom:1px solid #222;">${dStr}</td>
-                <td data-label="CLIENTE" style="padding:12px; border-bottom:1px solid #222;">${t.receiver}</td>
-                <td data-label="ZONA" style="padding:12px; border-bottom:1px solid #222;">${t.province || '-'}</td>
+                <td data-label="ID" style="padding:12px; border-bottom:1px solid #222;">${escapeHtml(t.id)}</td>
+                <td data-label="FECHA" style="padding:12px; border-bottom:1px solid #222;">${escapeHtml(dStr)}</td>
+                <td data-label="CLIENTE" style="padding:12px; border-bottom:1px solid #222;">${escapeHtml(t.receiver)}</td>
+                <td data-label="ZONA" style="padding:12px; border-bottom:1px solid #222;">${escapeHtml(t.province || '-')}</td>
                 <td data-label="BULTOS" style="padding:12px; border-bottom:1px solid #222; text-align:center;">${pkgCount}</td>
                 <td data-label="PESO" style="padding:12px; border-bottom:1px solid #222; text-align:center;">${weight.toFixed(1)}kg</td>
-                <td data-label="PORTES" style="padding:12px; border-bottom:1px solid #222; text-align:center;">${t.shippingType}</td>
+                <td data-label="PORTES" style="padding:12px; border-bottom:1px solid #222; text-align:center;">${escapeHtml(t.shippingType)}</td>
                 <td data-label="ESTADO" style="padding:12px; border-bottom:1px solid #222; text-align:center;">${t.printed ? '✅' : '⏳'}</td>
             `;
                 list.appendChild(tr);
@@ -4682,9 +4685,9 @@ async function showAppScannedTicket(id) {
         if (detailsEl) {
             detailsEl.innerHTML = `
                 <div style="margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:5px;">
-                    <b>Destinatario:</b> ${qrData.r || '---'}<br>
-                    <b>Dirección:</b> ${qrData.a || '---'}<br>
-                    <b>Bultos:</b> ${qrData.k || 1}<br>
+                    <b>Destinatario:</b> ${escapeHtml(qrData.r || '---')}<br>
+                    <b>Dirección:</b> ${escapeHtml(qrData.a || '---')}<br>
+                    <b>Bultos:</b> ${escapeHtml(String(qrData.k || 1))}<br>
                     <i style="font-size:0.8rem; color: #AAA;">Cargando historial operativo...</i>
                 </div>
             `;
@@ -4728,14 +4731,14 @@ async function showAppScannedTicket(id) {
         if (detailsEl) {
             detailsEl.innerHTML = `
             <div style="margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:5px;">
-                <b>Cliente:</b> ${t.clientName || 'Sin nombre'}<br>
-                <b>Origen:</b> ${t.sender || '---'}<br>
-                <b>Destino:</b> ${t.receiver || '---'}<br>
-                <b>Estado:</b> <span class="badge ${t.status === 'Entregado' ? 'badge-success' : 'badge-pending'}">${t.status || 'Pendiente'}</span>
+                <b>Cliente:</b> ${escapeHtml(t.clientName || 'Sin nombre')}<br>
+                <b>Origen:</b> ${escapeHtml(t.sender || '---')}<br>
+                <b>Destino:</b> ${escapeHtml(t.receiver || '---')}<br>
+                <b>Estado:</b> <span class="badge ${t.status === 'Entregado' ? 'badge-success' : 'badge-pending'}">${escapeHtml(t.status || 'Pendiente')}</span>
             </div>
             <div>
-                <b>Bultos:</b> ${t.packages || 1}<br>
-                <b>Fecha:</b> ${t.date || '---'}<br>
+                <b>Bultos:</b> ${escapeHtml(String(t.packages || 1))}<br>
+                <b>Fecha:</b> ${escapeHtml(t.date || '---')}<br>
             </div>
         `;
         }
@@ -4799,7 +4802,7 @@ async function showAppScannedTicket(id) {
                         <div style="text-align:center; padding:20px;">
                             <div style="font-size:3rem; margin-bottom:10px;">✅</div>
                             <div style="font-size:1.2rem; font-weight:900; color:var(--brand-primary); margin-bottom:5px;">¡ENTREGA REGISTRADA!</div>
-                            <div style="color:#aaa; font-size:0.85rem;">Receptor: <b>${receiverName.trim()}</b></div>
+                            <div style="color:#aaa; font-size:0.85rem;">Receptor: <b>${escapeHtml(receiverName.trim())}</b></div>
                             <div style="color:#888; font-size:0.75rem; margin-top:5px;">Firma y foto guardadas correctamente</div>
                         </div>
                     `;

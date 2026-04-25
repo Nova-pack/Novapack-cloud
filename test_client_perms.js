@@ -1,3 +1,0 @@
-const firebase = require('firebase/app');
-require('firebase/firestore');
-require('./public/firebase-config.js'); // Assuming this sets up firebase.initializeApp locally? Wait...

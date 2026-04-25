@@ -47,11 +47,13 @@ service cloud.firestore {
       }
     }
 
-    // ─── TICKETS ───
+    // ─── TICKETS (proteger campos de identidad en updates) ───
     match /tickets/{ticketId} {
       allow read: if isAuth();
       allow create: if isAuth();
-      allow update: if isAuth();
+      allow update: if isAuth()
+        && (!request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['companyId', 'clientIdNum']));
       allow delete: if isAdmin();
     }
 
@@ -89,9 +91,9 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ─── BLACKLIST (public read for IMAP sync, admin write) ───
+    // ─── BLACKLIST (auth read, admin write) ───
     match /deleted_erp_ids/{docId} {
-      allow read: if true;
+      allow read: if isAuth();
       allow write: if isAdmin();
     }
 
@@ -107,10 +109,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── DRIVER: GPS live tracking (auth write own, auth read all) ───
+    // ─── DRIVER: GPS live tracking (validate data structure) ───
     match /driver_locations/{docId} {
       allow read: if isAuth();
-      allow write: if isAuth();
+      allow write: if isAuth()
+        && request.resource.data.lat is number
+        && request.resource.data.lng is number
+        && request.resource.data.phone is string;
     }
 
     // ─── DRIVER: route reassignments log (auth create, admin read/delete) ───
@@ -120,24 +125,35 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ─── DRIVER: alerts, pickups, cooper photos (auth read/write) ───
+    // ─── DRIVER: alerts (admin creates, drivers update, admin deletes) ───
     match /driver_alerts/{docId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth();
+      allow create: if isAdmin();
+      allow update: if isAuth();
+      allow delete: if isAdmin();
     }
+    // ─── DRIVER: pickups (auth create/update, admin delete) ───
     match /pickupRequests/{docId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAdmin();
     }
+    // ─── DRIVER: cooper photos (auth create/update, admin delete) ───
     match /cooper_photos/{docId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth();
+      allow create, update: if isAuth();
+      allow delete: if isAdmin();
     }
 
-    // ─── USER: notifications, destinations (auth read/write) ───
+    // ─── USER: notifications (auth read/create/update, admin delete) ───
     match /user_notifications/{docId} {
-      allow read, write: if isAuth();
+      allow read, create, update: if isAuth();
+      allow delete: if isAdmin();
     }
-    // Destinations (legacy top-level, actual data is in users/{uid}/destinations)
+    // ─── Destinations (legacy, auth read/create/update, admin delete) ───
     match /destinations/{docId} {
-      allow read, write: if isAuth();
+      allow read, create, update: if isAuth();
+      allow delete: if isAdmin();
     }
 
     // ─── CONTABILIDAD: providers, expenses, journal (admin-only write) ───
@@ -170,9 +186,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // ─── TICKET COUNTERS (atomic counter per client/company/year) ───
+    // ─── TICKET COUNTERS (atomic counter, validate increment by 1) ───
     match /ticket_counters/{docId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth()
+        && request.resource.data.currentMax is int
+        && request.resource.data.currentMax == resource.data.currentMax + 1;
+      allow delete: if isAdmin();
     }
 
     // ─── DELIVERY ARCHIVE (immutable audit trail) ───

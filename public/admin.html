@@ -1739,18 +1739,56 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
 </div>
 <script>
-// === PIN Gate — Identity Selection ===
+// === PIN Gate — Identity Selection (PINs stored in Firestore, hashed with SHA-256) ===
 (function() {
-    var FACTURA_PINS = {
-        'DAVID':       '2580',
-        'MARIA JOSE':  '1973',
-        'CLAUDIA':     '4567'
-    };
+    var _operatorPins = {}; // Loaded from Firestore: { 'NAME': 'sha256hash', ... }
+    var _pinsLoaded = false;
+
+    // Load PINs from Firestore on init
+    function _loadOperatorPins() {
+        if (typeof db === 'undefined') { setTimeout(_loadOperatorPins, 500); return; }
+        db.collection('config').doc('operator_pins').get().then(function(doc) {
+            if (doc.exists) {
+                _operatorPins = doc.data();
+                _pinsLoaded = true;
+                console.log('[PIN] Operator PINs loaded from Firestore');
+            } else {
+                console.warn('[PIN] No operator_pins document found in config. Creating from defaults...');
+                // Migration: create hashed PINs in Firestore from legacy hardcoded values
+                var legacy = { 'DAVID': '2580', 'MARIA JOSE': '1973', 'CLAUDIA': '4567' };
+                var promises = Object.keys(legacy).map(function(name) {
+                    return _hashPin(legacy[name]).then(function(hash) { return { name: name, hash: hash }; });
+                });
+                Promise.all(promises).then(function(results) {
+                    var pinData = {};
+                    results.forEach(function(r) { pinData[r.name] = r.hash; });
+                    db.collection('config').doc('operator_pins').set(pinData).then(function() {
+                        _operatorPins = pinData;
+                        _pinsLoaded = true;
+                        console.log('[PIN] Migrated legacy PINs to Firestore (hashed)');
+                    });
+                });
+            }
+        }).catch(function(e) { console.error('[PIN] Error loading PINs:', e); });
+    }
+    _loadOperatorPins();
+
+    // SHA-256 hash using Web Crypto API
+    function _hashPin(pin) {
+        var encoder = new TextEncoder();
+        return crypto.subtle.digest('SHA-256', encoder.encode(pin)).then(function(buffer) {
+            return Array.from(new Uint8Array(buffer)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+        });
+    }
 
     var _pendingIdentity = null, _pinAttempts = 0;
 
     // Called by identity picker buttons
     window.requestPinForIdentity = function(name) {
+        if (!_pinsLoaded) {
+            alert('Cargando sistema de PINs... Inténtalo en un momento.');
+            return;
+        }
         _pendingIdentity = name;
         var m = document.getElementById('pin-access-modal');
         if (!m) return;
@@ -1775,25 +1813,28 @@ document.addEventListener('DOMContentLoaded', () => {
         for (var i = 0; i < inps.length; i++) pin += inps[i].value;
         if (pin.length !== 4) return;
 
-        if (pin === FACTURA_PINS[_pendingIdentity]) {
-            var confirmedName = _pendingIdentity;
-            closePinModal();
-            // PIN correct → set identity and proceed
-            if (typeof erpSetIdentityFromInicio === 'function') {
-                erpSetIdentityFromInicio(confirmedName);
+        // Hash input PIN and compare with stored hash
+        _hashPin(pin).then(function(inputHash) {
+            if (_operatorPins[_pendingIdentity] && inputHash === _operatorPins[_pendingIdentity]) {
+                var confirmedName = _pendingIdentity;
+                closePinModal();
+                // PIN correct → set identity and proceed
+                if (typeof erpSetIdentityFromInicio === 'function') {
+                    erpSetIdentityFromInicio(confirmedName);
+                }
+            } else {
+                _pinAttempts++;
+                document.getElementById('pin-error').textContent = 'PIN incorrecto' + (_pinAttempts >= 3 ? ' \u2014 Contacta al administrador' : '');
+                var box = document.getElementById('pin-inputs');
+                box.style.animation = 'pinShake 0.4s ease-out';
+                setTimeout(function() { box.style.animation = ''; }, 420);
+                for (var i = 0; i < inps.length; i++) { inps[i].value = ''; inps[i].style.borderColor = '#FF3B30'; }
+                setTimeout(function() {
+                    for (var j = 0; j < inps.length; j++) inps[j].style.borderColor = '#444';
+                    inps[0].focus();
+                }, 800);
             }
-        } else {
-            _pinAttempts++;
-            document.getElementById('pin-error').textContent = 'PIN incorrecto' + (_pinAttempts >= 3 ? ' \u2014 Contacta al administrador' : '');
-            var box = document.getElementById('pin-inputs');
-            box.style.animation = 'pinShake 0.4s ease-out';
-            setTimeout(function() { box.style.animation = ''; }, 420);
-            for (var i = 0; i < inps.length; i++) { inps[i].value = ''; inps[i].style.borderColor = '#FF3B30'; }
-            setTimeout(function() {
-                for (var j = 0; j < inps.length; j++) inps[j].style.borderColor = '#444';
-                inps[0].focus();
-            }, 800);
-        }
+        });
     };
 
     // Auto-advance digits + auto-verify on 4th
@@ -5303,7 +5344,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 Clave
                                 <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('new-user-password').value); this.innerHTML='¡Copiado!'; setTimeout(()=>this.innerHTML='<span class=\'material-symbols-outlined\'>assignment</span> Copiar', 1500);" style="background:none; border:none; color:var(--brand-primary); cursor:pointer; font-size:0.8rem;"><span class="material-symbols-outlined">assignment</span> Copiar</button>
                             </label>
-                            <input type="text" id="new-user-password" required style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
+                            <input type="password" id="new-user-password" required autocomplete="new-password" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
                         </div>
                     </div>
 
@@ -6824,19 +6865,29 @@ document.addEventListener('DOMContentLoaded', () => {
             };
 
             // Función para reparar la base de datos (Admin Privs & Indexes)
+            // Protegida: requiere verificación doble (confirm + PIN de seguridad)
             window.repairDatabase = async () => {
-                if (!confirm("Esta acción reconstruirá los privilegios de administrador y verificará la estructura base. ¿Deseas continuar?")) return;
+                if (!confirm("ATENCIÓN: Esta acción reconstruirá los privilegios de administrador. Solo usar en caso de emergencia. ¿Deseas continuar?")) return;
+                const securityPin = prompt("Introduce el PIN de seguridad para confirmar:");
+                if (!securityPin) return;
+                // Verify PIN against stored operator PINs (any valid operator PIN works)
+                const encoder = new TextEncoder();
+                const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(securityPin));
+                const inputHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+                let pinDoc;
+                try { pinDoc = await db.collection('config').doc('operator_pins').get(); } catch(e) { alert("Error verificando PIN."); return; }
+                const pins = pinDoc.exists ? pinDoc.data() : {};
+                const validPin = Object.values(pins).some(h => h === inputHash);
+                if (!validPin) { alert("PIN incorrecto. Operación cancelada."); return; }
+
                 showLoading();
                 try {
                     if (auth.currentUser) {
-                        // Restaurar doc de admin explícitamente
                         await db.collection('config').doc('admin').set({ uid: auth.currentUser.uid }, { merge: true });
                         console.log("[Repair] Admin privileges restored for:", auth.currentUser.uid);
                     }
-
-                    // Forzar recarga de usuarios
                     await loadUsers();
-                    alert("✅ Reparación completada e índices refrescados.");
+                    alert("Reparación completada e índices refrescados.");
                 } catch (e) {
                     console.error("Repair failed:", e);
                     alert("Error en reparación: " + e.message);
@@ -7097,24 +7148,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             row.className = 'user-row';
                             if(data.isGlobal) { row.style.background = 'rgba(255,152,0,0.05)'; }
                             row.innerHTML = `
-                            <td style="text-align:center;"><input type="checkbox" class="client-check" data-id="${data.id}" ${data.isGlobal ? 'disabled' : ''}></td>
-                            <td style="font-weight:900; color:var(--brand-primary); padding-left:20px;">${data.isGlobal ? '<span style="color:#FF9800;">🌍 GLOBAL</span>' : '#' + (data.idNum || '---')}</td>
+                            <td style="text-align:center;"><input type="checkbox" class="client-check" data-id="${escapeHtml(data.id)}" ${data.isGlobal ? 'disabled' : ''}></td>
+                            <td style="font-weight:900; color:var(--brand-primary); padding-left:20px;">${data.isGlobal ? '<span style="color:#FF9800;">🌍 GLOBAL</span>' : '#' + escapeHtml(data.idNum || '---')}</td>
                             <td>
-                                <div style="font-weight:700">${data.name || 'Sin Nombre'}</div>
-                                <div style="font-size:0.8rem; color:#888">${data.email || data.nif || ''}</div>
-                                ${data.isGlobal ? '' : `<div style="font-size:0.7rem; color:var(--brand-primary); margin-top:2px;">Clave: ${data.password || '****'}</div>`}
-                                ${data.parentClientId ? `<div style="font-size:0.7rem; color:#2196F3; margin-top:2px;"><span class="material-symbols-outlined" style="font-size:0.75rem; vertical-align:middle;">account_tree</span> ↳ Hijo de #${(userMap[data.parentClientId] || {}).idNum || '?'} (${(userMap[data.parentClientId] || {}).name || data.parentClientId})</div>` : ''}
+                                <div style="font-weight:700">${escapeHtml(data.name || 'Sin Nombre')}</div>
+                                <div style="font-size:0.8rem; color:#888">${escapeHtml(data.email || data.nif || '')}</div>
+                                ${data.parentClientId ? `<div style="font-size:0.7rem; color:#2196F3; margin-top:2px;"><span class="material-symbols-outlined" style="font-size:0.75rem; vertical-align:middle;">account_tree</span> ↳ Hijo de #${escapeHtml((userMap[data.parentClientId] || {}).idNum || '?')} (${escapeHtml((userMap[data.parentClientId] || {}).name || data.parentClientId)})</div>` : ''}
                             </td>
                             <td><span class="chip" style="${data.isGlobal ? 'background:#FF9800' : (data.parentClientId ? 'background:#2196F3' : '')}">${data.isGlobal ? 'Nube' : (data.parentClientId ? 'Filial' : 'Activo')}</span></td>
                             <td style="color:#888">${data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().toLocaleDateString() : new Date(data.createdAt).toLocaleDateString()) : 'N/A'}</td>
                             <td>
                                 <div style="display:flex; gap:5px;">
                                     ${data.isGlobal ? '<button class="btn btn-outline btn-sm" onclick="alert(\\\'Este contacto es del Directorio Global Fantasma y no requiere edición local.\\\')" title="Global">☁️ Solo Lectura</button>' : `
-                                    <button class="btn btn-primary btn-sm" onclick="openEditUserModal('${data.id}')" title="Editar Cliente">✏️</button>
-                                    <button class="btn btn-outline btn-sm" onclick="openManageCompaniesModal('${data.id}')" title="Sedes/Empresas">🏢</button>
-                                    <button class="btn btn-outline btn-sm" onclick="openManageDestinationsModal('${data.id}')" title="Agenda/Direcciones">📇</button>
-                                    <button class="btn btn-secondary btn-sm" onclick="sendWhatsApp('${data.senderPhone || ''}', 'Hola ${data.name}')" title="WhatsApp">💬</button>
-                                    <button class="btn btn-danger btn-sm" onclick="deleteUser('${data.id}')" title="Eliminar">🗑️</button>
+                                    <button class="btn btn-primary btn-sm" onclick="openEditUserModal('${escapeHtml(data.id)}')" title="Editar Cliente">✏️</button>
+                                    <button class="btn btn-outline btn-sm" onclick="openManageCompaniesModal('${escapeHtml(data.id)}')" title="Sedes/Empresas">🏢</button>
+                                    <button class="btn btn-outline btn-sm" onclick="openManageDestinationsModal('${escapeHtml(data.id)}')" title="Agenda/Direcciones">📇</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="sendWhatsApp('${escapeHtml(data.senderPhone || '')}', 'Hola ${escapeHtml(data.name)}')" title="WhatsApp">💬</button>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteUser('${escapeHtml(data.id)}')" title="Eliminar">🗑️</button>
                                     `}
                                 </div>
                             </td>
@@ -7310,7 +7360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const idNumStr = String(idNum).trim();
                         const parentClientId = document.getElementById('new-user-parent-client') ? document.getElementById('new-user-parent-client').value : '';
                         const updateData = {
-                            idNum: idNumStr, name, email, password, tariffId, iban, sepaRef, sepaDate, billingCompanyId,
+                            idNum: idNumStr, name, email, tariffId, iban, sepaRef, sepaDate, billingCompanyId,
                             senderAddress, senderPhone, nif, adminEmail, paymentTerms,
                             street: street || '',
                             number: num || '',
@@ -7404,7 +7454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('new-user-id-num').value = data.idNum || '';
                 document.getElementById('new-user-name').value = data.name || '';
                 document.getElementById('new-user-email').value = data.email || '';
-                document.getElementById('new-user-password').value = data.password || '';
+                document.getElementById('new-user-password').value = ''; // Never load stored passwords into UI
                 document.getElementById('new-user-tariff-id').value = data.tariffId || '';
                 document.getElementById('new-user-iban').value = data.iban || '';
                 if(document.getElementById('new-user-billing-company')) document.getElementById('new-user-billing-company').value = data.billingCompanyId || '';

@@ -1,4 +1,0 @@
-Line 1729: <select id="new-user-sender-province" style="width:100%; padding:10px; background:rgba(0,0,0,0.3); border:1px solid var(--border-glass); color:white; border-radius:8px;">
-Line 2648: const sProv = document.getElementById('new-user-sender-province');
-Line 2753: const province = document.getElementById('new-user-sender-province').value;
-Line 2872: document.getElementById('new-user-sender-province').value = data.province || '';

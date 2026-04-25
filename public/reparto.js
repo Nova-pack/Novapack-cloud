@@ -34,20 +34,60 @@ var _gpsWatchId = null;
 var _gpsLastSent = 0;
 var _GPS_SEND_INTERVAL = 30000; // Send position every 30 seconds
 var _wakeLockSentinel = null;
+var _gpsRetryTimer = null;
+var _gpsRetryCount = 0;
+var _GPS_MAX_RETRIES = 5;
+var _GPS_RETRY_DELAYS = [3000, 5000, 10000, 20000, 30000]; // Escalating retry delays
+var _gpsTrackingEnabled = false; // Flag: should tracking be active?
+var _gpsLastPosition = null; // Last known good position timestamp
+var _gpsHealthCheckTimer = null;
+var _GPS_HEALTH_INTERVAL = 60000; // Check GPS health every 60 seconds
+var _GPS_STALE_THRESHOLD = 120000; // Position stale after 2 minutes
 
 function startGPSTracking() {
-    if (_gpsWatchId !== null) return; // Already tracking
+    _gpsTrackingEnabled = true;
+    _gpsRetryCount = 0;
+    _startGPSWatch();
+}
+
+function _startGPSWatch() {
+    // Clean up any existing watch first
+    if (_gpsWatchId !== null) {
+        navigator.geolocation.clearWatch(_gpsWatchId);
+        _gpsWatchId = null;
+    }
+    if (_gpsRetryTimer) {
+        clearTimeout(_gpsRetryTimer);
+        _gpsRetryTimer = null;
+    }
+
+    if (!_gpsTrackingEnabled) return;
+
     if (!navigator.geolocation) {
         console.warn('[GPS-TRACK] Geolocation not available');
+        _updateGPSIndicator('error', 'GPS no disponible');
         return;
     }
 
     console.log('[GPS-TRACK] Starting live GPS tracking...');
+    _updateGPSIndicator('searching', 'Buscando GPS...');
 
     _gpsWatchId = navigator.geolocation.watchPosition(
         function(pos) {
+            // Reset retry count on successful position
+            _gpsRetryCount = 0;
+            _gpsLastPosition = Date.now();
+
             var now = Date.now();
-            if (now - _gpsLastSent < _GPS_SEND_INTERVAL) return; // Throttle
+            if (now - _gpsLastSent < _GPS_SEND_INTERVAL) {
+                // Still update indicator even if throttled
+                if (pos.coords.accuracy > 100) {
+                    _updateGPSIndicator('weak', 'GPS: ~' + Math.round(pos.coords.accuracy) + 'm');
+                } else {
+                    _updateGPSIndicator('active', 'GPS activo');
+                }
+                return;
+            }
             _gpsLastSent = now;
 
             var locationData = {
@@ -63,27 +103,110 @@ function startGPSTracking() {
                 online: true
             };
 
+            // Update indicator based on accuracy
+            if (pos.coords.accuracy > 100) {
+                _updateGPSIndicator('weak', 'GPS: ~' + Math.round(pos.coords.accuracy) + 'm');
+            } else {
+                _updateGPSIndicator('active', 'GPS activo');
+            }
+
             var docId = currentDriverPhone.replace(/[^a-zA-Z0-9]/g, '_');
             db.collection('driver_locations').doc(docId).set(locationData, { merge: true })
-                .then(function() { console.log('[GPS-TRACK] Position sent:', locationData.lat.toFixed(4), locationData.lng.toFixed(4)); })
-                .catch(function(e) { console.warn('[GPS-TRACK] Error sending position:', e.message); });
+                .then(function() { console.log('[GPS-TRACK] Position sent:', locationData.lat.toFixed(4), locationData.lng.toFixed(4), 'accuracy:', locationData.accuracy + 'm'); })
+                .catch(function(e) {
+                    console.warn('[GPS-TRACK] Error sending position:', e.message);
+                    // Queue for offline sync
+                    if (typeof enqueueOfflineAction === 'function') {
+                        enqueueOfflineAction({ type: 'gps_update', docId: docId, data: locationData });
+                    }
+                });
         },
         function(err) {
-            console.warn('[GPS-TRACK] GPS error:', err.message);
+            console.warn('[GPS-TRACK] GPS error (code ' + err.code + '):', err.message);
+
+            if (err.code === 1) {
+                // PERMISSION_DENIED - user blocked GPS
+                _updateGPSIndicator('error', 'GPS bloqueado');
+                showToast('Ubicacion bloqueada. Activa el GPS en los ajustes del navegador.', 'error');
+                // Don't retry permission denied - user must fix manually
+                _gpsWatchId = null;
+                return;
+            }
+
+            if (err.code === 2) {
+                // POSITION_UNAVAILABLE - hardware/network issue
+                _updateGPSIndicator('error', 'GPS no disponible');
+            } else if (err.code === 3) {
+                // TIMEOUT
+                _updateGPSIndicator('searching', 'Buscando GPS...');
+            }
+
+            // Auto-retry with escalating delay
+            _gpsWatchId = null;
+            _scheduleGPSRetry();
         },
-        { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 }
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 }
     );
 
     // Wake Lock to keep GPS alive while screen is on
     requestGPSWakeLock();
+
+    // Start health check timer
+    _startGPSHealthCheck();
+}
+
+function _scheduleGPSRetry() {
+    if (!_gpsTrackingEnabled) return;
+    if (_gpsRetryCount >= _GPS_MAX_RETRIES) {
+        console.warn('[GPS-TRACK] Max retries reached, waiting for visibility change or manual restart');
+        _updateGPSIndicator('error', 'GPS perdido');
+        showToast('No se puede obtener la ubicacion. Verifica que el GPS esta activo.', 'error');
+        return;
+    }
+
+    var delay = _GPS_RETRY_DELAYS[Math.min(_gpsRetryCount, _GPS_RETRY_DELAYS.length - 1)];
+    _gpsRetryCount++;
+    console.log('[GPS-TRACK] Retrying in ' + (delay/1000) + 's (attempt ' + _gpsRetryCount + '/' + _GPS_MAX_RETRIES + ')');
+    _updateGPSIndicator('searching', 'Reintentando GPS...');
+
+    _gpsRetryTimer = setTimeout(function() {
+        _gpsRetryTimer = null;
+        _startGPSWatch();
+    }, delay);
+}
+
+function _startGPSHealthCheck() {
+    if (_gpsHealthCheckTimer) clearInterval(_gpsHealthCheckTimer);
+    _gpsHealthCheckTimer = setInterval(function() {
+        if (!_gpsTrackingEnabled || _gpsWatchId === null) return;
+        // If we haven't received a position in GPS_STALE_THRESHOLD, restart
+        if (_gpsLastPosition && (Date.now() - _gpsLastPosition > _GPS_STALE_THRESHOLD)) {
+            console.warn('[GPS-TRACK] Position stale (' + Math.round((Date.now() - _gpsLastPosition)/1000) + 's), restarting watch...');
+            _updateGPSIndicator('searching', 'Reconectando GPS...');
+            _gpsRetryCount = 0;
+            _startGPSWatch();
+        }
+    }, _GPS_HEALTH_INTERVAL);
 }
 
 function stopGPSTracking() {
+    _gpsTrackingEnabled = false;
+
+    if (_gpsRetryTimer) {
+        clearTimeout(_gpsRetryTimer);
+        _gpsRetryTimer = null;
+    }
+    if (_gpsHealthCheckTimer) {
+        clearInterval(_gpsHealthCheckTimer);
+        _gpsHealthCheckTimer = null;
+    }
     if (_gpsWatchId !== null) {
         navigator.geolocation.clearWatch(_gpsWatchId);
         _gpsWatchId = null;
         console.log('[GPS-TRACK] Stopped GPS tracking.');
     }
+
+    _updateGPSIndicator('off', '');
 
     // Mark driver as offline in Firestore
     if (currentDriverPhone) {
@@ -95,6 +218,31 @@ function stopGPSTracking() {
     }
 
     releaseGPSWakeLock();
+}
+
+function _updateGPSIndicator(status, text) {
+    var el = document.getElementById('gps-status-indicator');
+    if (!el) return;
+    var dot = el.querySelector('.gps-dot');
+    var label = el.querySelector('.gps-label');
+
+    el.style.display = 'flex';
+    if (label) label.textContent = text;
+
+    if (dot) {
+        dot.className = 'gps-dot';
+        if (status === 'active') {
+            dot.classList.add('gps-active');
+        } else if (status === 'weak') {
+            dot.classList.add('gps-weak');
+        } else if (status === 'searching') {
+            dot.classList.add('gps-searching');
+        } else if (status === 'error') {
+            dot.classList.add('gps-error');
+        } else if (status === 'off') {
+            el.style.display = 'none';
+        }
+    }
 }
 
 function requestGPSWakeLock() {
@@ -113,10 +261,33 @@ function releaseGPSWakeLock() {
     }
 }
 
-// Re-acquire wake lock when page becomes visible again
+// Re-acquire wake lock AND restart GPS when page becomes visible again
 document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible' && _gpsWatchId !== null) {
+    if (document.visibilityState === 'visible' && _gpsTrackingEnabled) {
+        console.log('[GPS-TRACK] Page visible again, recovering GPS...');
         requestGPSWakeLock();
+        // Reset retry count on visibility change - fresh start
+        _gpsRetryCount = 0;
+        // Restart GPS watch to ensure fresh position after background
+        _startGPSWatch();
+    }
+});
+
+// Handle bfcache restore (iOS Safari back/forward cache)
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted && _gpsTrackingEnabled) {
+        console.log('[GPS-TRACK] Page restored from bfcache, restarting GPS...');
+        _gpsRetryCount = 0;
+        _startGPSWatch();
+    }
+});
+
+// Handle device coming back online
+window.addEventListener('online', function() {
+    if (_gpsTrackingEnabled && _gpsWatchId === null) {
+        console.log('[GPS-TRACK] Device back online, restarting GPS...');
+        _gpsRetryCount = 0;
+        _startGPSWatch();
     }
 });
 

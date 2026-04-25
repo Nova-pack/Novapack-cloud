@@ -27,9 +27,17 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
     
-    // Cualquier otra cosa, prohibida por seguridad
+    // INCIDENCIAS - Fotos de incidencias reportadas por repartidores
+    match /incidents/{docId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // DENEGAR todo lo demas por seguridad
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }
