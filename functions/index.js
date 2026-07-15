@@ -23,6 +23,7 @@ const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const https = require('https');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -608,4 +609,401 @@ exports.verifactuStampAnulacion = onDocumentCreated({
     } catch (e) {
         logger.error(`verifactu anulación FAILED ${event.params.docId}`, { msg: e.message });
     }
+});
+
+// =============================================================
+// VERIFACTU — FASE 2: REMISIÓN DE REGISTROS A LA AEAT
+// =============================================================
+// Envía los registros de /verifactu_registros (estadoEnvioAEAT=
+// 'pendiente') a la sede electrónica de la AEAT, agrupados por
+// empresa emisora (un envío por NIF), autenticando con el
+// certificado electrónico de CADA empresa (mTLS).
+//
+// ACTIVACIÓN (ver tools/verifactu/ACTIVACION_FASE2.md):
+//   1. Secret VERIFACTU_CERTS = JSON {"<NIF>":{"pfxBase64":"...",
+//      "passphrase":"..."}, ...}  (uno por empresa)
+//   2. Firestore config/verifactu_sif = datos del productor del
+//      software (bloque SistemaInformatico del XML)
+//   3. Firestore config/verifactu_envio = { activo: true,
+//      entorno: 'pruebas' }  → probar → { entorno: 'produccion' }
+//
+// Mientras config/verifactu_envio.activo != true, el scheduler
+// no hace nada (gate seguro).
+// =============================================================
+
+const VERIFACTU_CERTS = defineSecret('VERIFACTU_CERTS');
+
+const VF_ENDPOINTS = {
+    pruebas: 'https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP',
+    produccion: 'https://www1.agenciatributaria.gob.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP'
+};
+const VF_NS_LR = 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd';
+const VF_NS_SI = 'https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd';
+const VF_BATCH_MAX = 100; // registros por envío (límite AEAT: 1000)
+
+function vfXml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+// Bloque SistemaInformatico (común a alta y anulación)
+function vfXmlSistema(sif) {
+    return ''
+        + '<sum1:SistemaInformatico>'
+        + '<sum1:NombreRazon>' + vfXml(sif.nombreRazonProductor) + '</sum1:NombreRazon>'
+        + '<sum1:NIF>' + vfXml(sif.nifProductor) + '</sum1:NIF>'
+        + '<sum1:NombreSistemaInformatico>' + vfXml(sif.nombreSistema || 'NOVAPACK CLOUD') + '</sum1:NombreSistemaInformatico>'
+        + '<sum1:IdSistemaInformatico>' + vfXml(sif.idSistema || 'NP') + '</sum1:IdSistemaInformatico>'
+        + '<sum1:Version>' + vfXml(sif.version || '2.2') + '</sum1:Version>'
+        + '<sum1:NumeroInstalacion>' + vfXml(sif.numeroInstalacion || '0001') + '</sum1:NumeroInstalacion>'
+        + '<sum1:TipoUsoPosibleSoloVerifactu>S</sum1:TipoUsoPosibleSoloVerifactu>'
+        + '<sum1:TipoUsoPosibleMultiOT>S</sum1:TipoUsoPosibleMultiOT>'
+        + '<sum1:IndicadorMultiplesOT>S</sum1:IndicadorMultiplesOT>'
+        + '</sum1:SistemaInformatico>';
+}
+
+// Bloque Encadenamiento a partir del registro anterior de la cadena
+function vfXmlEncadenamiento(reg, prevReg) {
+    if (!reg.huellaAnterior) {
+        return '<sum1:Encadenamiento><sum1:PrimerRegistro>S</sum1:PrimerRegistro></sum1:Encadenamiento>';
+    }
+    // Si no localizamos el registro anterior completo, referenciamos solo la huella
+    const p = prevReg || {};
+    return ''
+        + '<sum1:Encadenamiento><sum1:RegistroAnterior>'
+        + '<sum1:IDEmisorFactura>' + vfXml(p.idEmisorFactura || reg.idEmisorFactura) + '</sum1:IDEmisorFactura>'
+        + '<sum1:NumSerieFactura>' + vfXml(p.numSerieFactura || '') + '</sum1:NumSerieFactura>'
+        + '<sum1:FechaExpedicionFactura>' + vfXml(p.fechaExpedicionFactura || '') + '</sum1:FechaExpedicionFactura>'
+        + '<sum1:Huella>' + vfXml(reg.huellaAnterior) + '</sum1:Huella>'
+        + '</sum1:RegistroAnterior></sum1:Encadenamiento>';
+}
+
+// XML de un registro de ALTA
+function vfXmlRegistroAlta(reg, prevReg, sif) {
+    const esRectificativa = /^R[1-5]$/.test(reg.tipoFactura || '');
+    const base = reg.baseImponible != null ? reg.baseImponible
+        : (Number(reg.importeTotal || 0) - Number(reg.cuotaTotal || 0)).toFixed(2);
+    const tipoIVA = reg.tipoImpositivo != null ? reg.tipoImpositivo : 21;
+
+    let destinatarios = '';
+    if (reg.destinatarioNif) {
+        destinatarios = ''
+            + '<sum1:Destinatarios><sum1:IDDestinatario>'
+            + '<sum1:NombreRazon>' + vfXml(reg.destinatarioNombre || 'Cliente') + '</sum1:NombreRazon>'
+            + '<sum1:NIF>' + vfXml(reg.destinatarioNif) + '</sum1:NIF>'
+            + '</sum1:IDDestinatario></sum1:Destinatarios>';
+    }
+
+    return ''
+        + '<sum1:RegistroAlta>'
+        + '<sum1:IDVersion>1.0</sum1:IDVersion>'
+        + '<sum1:IDFactura>'
+        + '<sum1:IDEmisorFactura>' + vfXml(reg.idEmisorFactura) + '</sum1:IDEmisorFactura>'
+        + '<sum1:NumSerieFactura>' + vfXml(reg.numSerieFactura) + '</sum1:NumSerieFactura>'
+        + '<sum1:FechaExpedicionFactura>' + vfXml(reg.fechaExpedicionFactura) + '</sum1:FechaExpedicionFactura>'
+        + '</sum1:IDFactura>'
+        + '<sum1:NombreRazonEmisor>' + vfXml(reg.nombreRazonEmisor || '') + '</sum1:NombreRazonEmisor>'
+        + '<sum1:TipoFactura>' + vfXml(reg.tipoFactura || 'F1') + '</sum1:TipoFactura>'
+        + (esRectificativa ? '<sum1:TipoRectificativa>I</sum1:TipoRectificativa>' : '')
+        + '<sum1:DescripcionOperacion>' + vfXml(reg.descripcionOperacion || 'Servicios de transporte y logística') + '</sum1:DescripcionOperacion>'
+        + destinatarios
+        + '<sum1:Desglose><sum1:DetalleDesglose>'
+        + '<sum1:Impuesto>01</sum1:Impuesto>'
+        + '<sum1:ClaveRegimen>01</sum1:ClaveRegimen>'
+        + '<sum1:CalificacionOperacion>S1</sum1:CalificacionOperacion>'
+        + '<sum1:TipoImpositivo>' + vfXml(tipoIVA) + '</sum1:TipoImpositivo>'
+        + '<sum1:BaseImponibleOimporteNoSujeto>' + vfXml(base) + '</sum1:BaseImponibleOimporteNoSujeto>'
+        + '<sum1:CuotaRepercutida>' + vfXml(reg.cuotaTotal) + '</sum1:CuotaRepercutida>'
+        + '</sum1:DetalleDesglose></sum1:Desglose>'
+        + '<sum1:CuotaTotal>' + vfXml(reg.cuotaTotal) + '</sum1:CuotaTotal>'
+        + '<sum1:ImporteTotal>' + vfXml(reg.importeTotal) + '</sum1:ImporteTotal>'
+        + vfXmlEncadenamiento(reg, prevReg)
+        + vfXmlSistema(sif)
+        + '<sum1:FechaHoraHusoGenRegistro>' + vfXml(reg.fechaHoraHusoGenRegistro) + '</sum1:FechaHoraHusoGenRegistro>'
+        + '<sum1:TipoHuella>01</sum1:TipoHuella>'
+        + '<sum1:Huella>' + vfXml(reg.huella) + '</sum1:Huella>'
+        + '</sum1:RegistroAlta>';
+}
+
+// XML de un registro de ANULACIÓN
+function vfXmlRegistroAnulacion(reg, prevReg, sif) {
+    return ''
+        + '<sum1:RegistroAnulacion>'
+        + '<sum1:IDVersion>1.0</sum1:IDVersion>'
+        + '<sum1:IDFactura>'
+        + '<sum1:IDEmisorFacturaAnulada>' + vfXml(reg.idEmisorFactura) + '</sum1:IDEmisorFacturaAnulada>'
+        + '<sum1:NumSerieFacturaAnulada>' + vfXml(reg.numSerieFactura) + '</sum1:NumSerieFacturaAnulada>'
+        + '<sum1:FechaExpedicionFacturaAnulada>' + vfXml(reg.fechaExpedicionFactura) + '</sum1:FechaExpedicionFacturaAnulada>'
+        + '</sum1:IDFactura>'
+        + vfXmlEncadenamiento(reg, prevReg)
+        + vfXmlSistema(sif)
+        + '<sum1:FechaHoraHusoGenRegistro>' + vfXml(reg.fechaHoraHusoGenRegistro) + '</sum1:FechaHoraHusoGenRegistro>'
+        + '<sum1:TipoHuella>01</sum1:TipoHuella>'
+        + '<sum1:Huella>' + vfXml(reg.huella) + '</sum1:Huella>'
+        + '</sum1:RegistroAnulacion>';
+}
+
+// Sobre SOAP completo para UNA empresa
+function vfBuildEnvelope(nif, nombreRazon, registrosXml) {
+    return ''
+        + '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sum="' + VF_NS_LR + '" xmlns:sum1="' + VF_NS_SI + '">'
+        + '<soapenv:Header/><soapenv:Body>'
+        + '<sum:RegFactuSistemaFacturacion>'
+        + '<sum:Cabecera><sum1:ObligadoEmision>'
+        + '<sum1:NombreRazon>' + vfXml(nombreRazon) + '</sum1:NombreRazon>'
+        + '<sum1:NIF>' + vfXml(nif) + '</sum1:NIF>'
+        + '</sum1:ObligadoEmision></sum:Cabecera>'
+        + registrosXml.map(x => '<sum:RegistroFactura>' + x + '</sum:RegistroFactura>').join('')
+        + '</sum:RegFactuSistemaFacturacion>'
+        + '</soapenv:Body></soapenv:Envelope>';
+}
+
+// POST SOAP con mTLS (certificado de la empresa)
+function vfPostSoap(urlStr, xml, pfxBuffer, passphrase) {
+    return new Promise((resolve, reject) => {
+        const u = new URL(urlStr);
+        const req = https.request({
+            hostname: u.hostname,
+            path: u.pathname + (u.search || ''),
+            method: 'POST',
+            pfx: pfxBuffer,
+            passphrase: passphrase,
+            headers: {
+                'Content-Type': 'text/xml; charset=UTF-8',
+                'SOAPAction': '',
+                'Content-Length': Buffer.byteLength(xml, 'utf8')
+            },
+            timeout: 60000
+        }, (res) => {
+            let data = '';
+            res.on('data', (c) => { data += c; });
+            res.on('end', () => resolve({ status: res.statusCode, body: data }));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => req.destroy(new Error('Timeout conectando con AEAT')));
+        req.write(xml, 'utf8');
+        req.end();
+    });
+}
+
+// Parseo de la respuesta AEAT (regex tolerante a prefijos de namespace)
+function vfTag(xml, tag) {
+    const m = xml.match(new RegExp('<(?:\\w+:)?' + tag + '>([\\s\\S]*?)</(?:\\w+:)?' + tag + '>'));
+    return m ? m[1].trim() : '';
+}
+function vfParseRespuesta(xml) {
+    const lineas = [];
+    const re = /<(?:\w+:)?RespuestaLinea>([\s\S]*?)<\/(?:\w+:)?RespuestaLinea>/g;
+    let m;
+    while ((m = re.exec(xml)) !== null) {
+        const l = m[1];
+        lineas.push({
+            numSerieFactura: vfTag(l, 'NumSerieFactura') || vfTag(l, 'NumSerieFacturaAnulada'),
+            estadoRegistro: vfTag(l, 'EstadoRegistro'),
+            codigoError: vfTag(l, 'CodigoErrorRegistro'),
+            descripcionError: vfTag(l, 'DescripcionErrorRegistro')
+        });
+    }
+    return {
+        estadoEnvio: vfTag(xml, 'EstadoEnvio'),
+        csv: vfTag(xml, 'CSV'),
+        tiempoEspera: parseInt(vfTag(xml, 'TiempoEsperaEnvio'), 10) || 60,
+        lineas
+    };
+}
+
+// Registro anterior de la cadena (para el bloque Encadenamiento)
+async function vfGetRegistroAnterior(nif, chainIndex, batchMap) {
+    if (!chainIndex || chainIndex <= 1) return null;
+    if (batchMap && batchMap.has(chainIndex - 1)) return batchMap.get(chainIndex - 1);
+    const q = await db.collection('verifactu_registros')
+        .where('idEmisorFactura', '==', nif)
+        .where('chainIndex', '==', chainIndex - 1)
+        .limit(1).get();
+    return q.empty ? null : q.docs[0].data();
+}
+
+// ── Núcleo del envío ─────────────────────────────────────────
+async function vfProcessPending(triggeredBy) {
+    // Gate: solo si el envío está activado explícitamente
+    const cfgSnap = await db.collection('config').doc('verifactu_envio').get();
+    const cfg = cfgSnap.exists ? cfgSnap.data() : {};
+    if (cfg.activo !== true) {
+        return { skipped: true, reason: 'envio_no_activado' };
+    }
+    const entorno = cfg.entorno === 'produccion' ? 'produccion' : 'pruebas';
+    const endpoint = VF_ENDPOINTS[entorno];
+
+    // Respetar TiempoEsperaEnvio de la AEAT
+    const now = Date.now();
+    if (cfg.lastSendAt && cfg.tiempoEsperaSegundos) {
+        const nextAllowed = cfg.lastSendAt.toMillis() + cfg.tiempoEsperaSegundos * 1000;
+        if (now < nextAllowed) {
+            return { skipped: true, reason: 'espera_flujo', segundosRestantes: Math.ceil((nextAllowed - now) / 1000) };
+        }
+    }
+
+    // Datos del productor (bloque SistemaInformatico)
+    const sifSnap = await db.collection('config').doc('verifactu_sif').get();
+    if (!sifSnap.exists || !sifSnap.data().nifProductor) {
+        logger.error('verifactu envío: falta config/verifactu_sif (datos del productor)');
+        return { error: 'falta_config_sif' };
+    }
+    const sif = sifSnap.data();
+
+    // Certificados por empresa
+    let certs = {};
+    try {
+        certs = JSON.parse(VERIFACTU_CERTS.value() || '{}');
+    } catch (e) {
+        logger.error('verifactu envío: VERIFACTU_CERTS no es JSON válido');
+        return { error: 'certs_invalidos' };
+    }
+
+    // Registros pendientes, agrupados por empresa y ordenados por cadena
+    const pendSnap = await db.collection('verifactu_registros')
+        .where('estadoEnvioAEAT', '==', 'pendiente')
+        .limit(500).get();
+    if (pendSnap.empty) return { sent: 0, reason: 'sin_pendientes' };
+
+    const porNif = {};
+    pendSnap.forEach(d => {
+        const r = d.data(); r._ref = d.ref;
+        const nif = r.idEmisorFactura || 'SIN_NIF';
+        (porNif[nif] = porNif[nif] || []).push(r);
+    });
+
+    const resumen = { entorno, empresas: {}, sent: 0, rechazados: 0, bloqueados: 0 };
+    let ultimoTiempoEspera = 60;
+
+    for (const nif of Object.keys(porNif)) {
+        const grupo = porNif[nif].sort((a, b) => (a.chainIndex || 0) - (b.chainIndex || 0)).slice(0, VF_BATCH_MAX);
+
+        if (!nif || nif === 'SIN_NIF') {
+            for (const r of grupo) {
+                await r._ref.update({ estadoEnvioAEAT: 'bloqueado_sin_nif_emisor' });
+                resumen.bloqueados++;
+            }
+            continue;
+        }
+        const cert = certs[nif];
+        if (!cert || !cert.pfxBase64) {
+            logger.warn(`verifactu envío: sin certificado para ${nif} — ${grupo.length} registros esperan`);
+            resumen.empresas[nif] = { estado: 'sin_certificado', pendientes: grupo.length };
+            continue;
+        }
+
+        // F1 sin NIF de destinatario → bloquear (AEAT lo rechazaría)
+        const enviables = [];
+        for (const r of grupo) {
+            if (r.tipoRegistro === 'alta' && r.tipoFactura === 'F1' && !r.destinatarioNif) {
+                await r._ref.update({
+                    estadoEnvioAEAT: 'bloqueado_sin_nif_destinatario',
+                    bloqueadoAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+                resumen.bloqueados++;
+            } else {
+                enviables.push(r);
+            }
+        }
+        if (!enviables.length) continue;
+
+        // Construir XML (con lookup del registro anterior para Encadenamiento)
+        const batchMap = new Map();
+        enviables.forEach(r => batchMap.set(r.chainIndex, r));
+        const registrosXml = [];
+        for (const r of enviables) {
+            const prev = await vfGetRegistroAnterior(nif, r.chainIndex, batchMap);
+            registrosXml.push(r.tipoRegistro === 'anulacion'
+                ? vfXmlRegistroAnulacion(r, prev, sif)
+                : vfXmlRegistroAlta(r, prev, sif));
+        }
+        const nombreRazon = (enviables.find(r => r.nombreRazonEmisor) || {}).nombreRazonEmisor || nif;
+        const envelope = vfBuildEnvelope(nif, nombreRazon, registrosXml);
+
+        // Enviar
+        let resp;
+        try {
+            const pfx = Buffer.from(cert.pfxBase64, 'base64');
+            resp = await vfPostSoap(endpoint, envelope, pfx, cert.passphrase || '');
+        } catch (e) {
+            logger.error(`verifactu envío ${nif}: fallo de conexión`, { msg: e.message });
+            resumen.empresas[nif] = { estado: 'error_conexion', msg: e.message };
+            continue;
+        }
+        if (resp.status !== 200) {
+            logger.error(`verifactu envío ${nif}: HTTP ${resp.status}`, { body: (resp.body || '').slice(0, 800) });
+            resumen.empresas[nif] = { estado: 'http_' + resp.status };
+            continue;
+        }
+
+        // Procesar respuesta línea a línea (mismo orden que el envío)
+        const parsed = vfParseRespuesta(resp.body);
+        ultimoTiempoEspera = parsed.tiempoEspera || 60;
+        let ok = 0, ko = 0;
+        for (let i = 0; i < enviables.length; i++) {
+            const r = enviables[i];
+            const linea = parsed.lineas[i] || parsed.lineas.find(l => l.numSerieFactura === r.numSerieFactura) || {};
+            const estado = (linea.estadoRegistro || '').toLowerCase();
+            const update = {
+                envioEntorno: entorno,
+                envioAt: admin.firestore.FieldValue.serverTimestamp(),
+                envioCsv: parsed.csv || null,
+                envioEstadoLinea: linea.estadoRegistro || '',
+                envioCodigoError: linea.codigoError || '',
+                envioDescripcionError: linea.descripcionError || ''
+            };
+            if (estado === 'correcto') {
+                update.estadoEnvioAEAT = 'enviado'; ok++;
+            } else if (estado === 'aceptadoconerrores') {
+                update.estadoEnvioAEAT = 'aceptado_con_errores'; ok++;
+            } else if (estado) {
+                update.estadoEnvioAEAT = 'rechazado'; ko++;
+            } else {
+                // sin línea identificable: conservar pendiente para reintento
+                update.estadoEnvioAEAT = 'pendiente';
+                update.envioSinLinea = true;
+            }
+            await r._ref.update(update);
+        }
+        resumen.sent += ok; resumen.rechazados += ko;
+        resumen.empresas[nif] = { estado: parsed.estadoEnvio || 'sin_estado', ok, ko, csv: parsed.csv || null };
+        logger.info(`verifactu envío ${nif} [${entorno}]: ${parsed.estadoEnvio} — ${ok} ok, ${ko} rechazados`);
+    }
+
+    await db.collection('config').doc('verifactu_envio').set({
+        lastSendAt: admin.firestore.FieldValue.serverTimestamp(),
+        tiempoEsperaSegundos: ultimoTiempoEspera,
+        lastResumen: JSON.parse(JSON.stringify(resumen)),
+        lastTriggeredBy: triggeredBy || 'scheduler'
+    }, { merge: true });
+
+    return resumen;
+}
+
+// Scheduler cada 5 min (inofensivo mientras activo != true)
+exports.verifactuSendPending = onSchedule({
+    schedule: 'every 5 minutes',
+    timeZone: 'Europe/Madrid',
+    secrets: [VERIFACTU_CERTS],
+    timeoutSeconds: 300,
+    memory: '256MiB'
+}, async () => {
+    const r = await vfProcessPending('scheduler');
+    if (!r.skipped) logger.info('verifactu scheduler', r);
+});
+
+// Disparo manual desde admin (solo administrador)
+exports.verifactuSendNow = onCall({
+    secrets: [VERIFACTU_CERTS],
+    timeoutSeconds: 300,
+    memory: '256MiB'
+}, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Debes estar autenticado');
+    const adminDoc = await db.collection('config').doc('admin').get();
+    if (!adminDoc.exists || adminDoc.data().uid !== request.auth.uid) {
+        throw new HttpsError('permission-denied', 'Solo el administrador');
+    }
+    return await vfProcessPending('manual:' + request.auth.uid);
 });
