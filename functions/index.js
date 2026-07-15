@@ -330,7 +330,9 @@ exports.updateClientAuth = onCall({
 // Al mover una factura a la papelera (/deleted_invoices) se
 // genera un registro de anulación, también encadenado.
 //
-// - Cadena de huellas: config/verifactu (lastHuella, chainIndex)
+// - Cadena de huellas: verifactu_chains/{nif} — UNA CADENA POR
+//   EMPRESA emisora (obligado tributario), como exige la Orden
+//   HAC/1177/2024 en sistemas multi-empresa.
 // - Ledger append-only: /verifactu_registros (alta + anulación)
 //   con estadoEnvioAEAT='pendiente' para la FASE 2 (remisión).
 // - El QR tributario del PDF se genera en frontend (verifactu.js)
@@ -408,7 +410,9 @@ exports.verifactuStampInvoice = onDocumentCreated({
         return;
     }
 
-    const headRef = db.collection('config').doc('verifactu');
+    // Cadena independiente por empresa emisora (obligado tributario)
+    const nif = vfNif(inv.senderData && inv.senderData.cif);
+    const headRef = db.collection('verifactu_chains').doc(nif || 'SIN_NIF');
     const ledgerRef = db.collection('verifactu_registros').doc();
 
     try {
@@ -420,7 +424,6 @@ exports.verifactuStampInvoice = onDocumentCreated({
             const prev = (head.exists && head.data().lastHuella) || '';
             const idx = ((head.exists && head.data().chainIndex) || 0) + 1;
 
-            const nif = vfNif(inv.senderData && inv.senderData.cif);
             const numSerie = String(inv.invoiceId || event.params.docId);
             const fechaExp = vfFechaExpedicion(inv.date || inv.createdAt);
             const tipo = vfTipoFactura(inv);
@@ -469,6 +472,7 @@ exports.verifactuStampInvoice = onDocumentCreated({
                 }
             });
             tx.set(headRef, {
+                nif: nif || 'SIN_NIF',
                 lastHuella: huella,
                 chainIndex: idx,
                 lastNumSerie: numSerie,
@@ -494,7 +498,9 @@ exports.verifactuStampAnulacion = onDocumentCreated({
     if (!inv.invoiceId) return; // no era una factura real
     if (inv.verifactuAnulacion && inv.verifactuAnulacion.huella) return;
 
-    const headRef = db.collection('config').doc('verifactu');
+    // Cadena independiente por empresa emisora (obligado tributario)
+    const nif = vfNif(inv.senderData && inv.senderData.cif);
+    const headRef = db.collection('verifactu_chains').doc(nif || 'SIN_NIF');
     const ledgerRef = db.collection('verifactu_registros').doc();
 
     try {
@@ -504,7 +510,6 @@ exports.verifactuStampAnulacion = onDocumentCreated({
             const prev = (head.exists && head.data().lastHuella) || '';
             const idx = ((head.exists && head.data().chainIndex) || 0) + 1;
 
-            const nif = vfNif(inv.senderData && inv.senderData.cif);
             const numSerie = String(inv.invoiceId);
             const fechaExp = vfFechaExpedicion(inv.date || inv.createdAt);
             const fechaHora = vfMadridNowISO();
@@ -545,6 +550,7 @@ exports.verifactuStampAnulacion = onDocumentCreated({
                 });
             }
             tx.set(headRef, {
+                nif: nif || 'SIN_NIF',
                 lastHuella: huella,
                 chainIndex: idx,
                 lastNumSerie: numSerie,
