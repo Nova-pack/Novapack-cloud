@@ -660,29 +660,9 @@
         if (motivo === null) return; // cancelado
 
         try {
-            // Numeración atómica con serie R independiente (Fix legal-sprint1 #2)
-            // Counter: sequence_counters/credits_YYYY
-            // Serie:   R-YY-N  (rectificativa, conforme RD 1619/2012 art. 6.1.a)
-            const aboYear = new Date().getFullYear();
-            const aboYY = String(aboYear).slice(-2);
-            const counterPath = 'sequence_counters/credits_' + aboYear;
-
-            const nextNum = await window.allocSequentialNumber(counterPath, async () => {
-                // Seed inicial: máximo R-{aboYY}-N + máximo ABO-{aboYY}-N legacy + máximo FAC-{aboYY}-N
-                // Aseguramos no chocar con ningún número existente (transición)
-                const yrStart = new Date(aboYear, 0, 1);
-                const yrEnd = new Date(aboYear + 1, 0, 1);
-                const snap = await db.collection('invoices')
-                    .where('date', '>=', yrStart).where('date', '<', yrEnd)
-                    .limit(20000).get();
-                let max = 0;
-                snap.forEach(d => {
-                    const iid = d.data().invoiceId || '';
-                    const m = iid.match(/^R-\d{2}-(\d+)$/);
-                    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
-                });
-                return max;
-            });
+            // Serie R correlativa POR EMPRESA emisora (Verifactu multi-empresa)
+            const _allocR = await window.allocInvoiceNumber(_facAbonoOriginal.senderData || {}, 'R');
+            const nextNum = _allocR.number;
 
             const subtotal = selectedLines.reduce((s, l) => s + l.total, 0);
             const ivaRate = _facAbonoOriginal.ivaRate || 21;
@@ -693,7 +673,7 @@
 
             const abonoData = {
                 number: nextNum,
-                invoiceId: `R-${aboYY}-${nextNum}`,
+                invoiceId: _allocR.invoiceId,
                 serie: 'R',
                 date: new Date(),
                 clientId: _facAbonoOriginal.clientId,

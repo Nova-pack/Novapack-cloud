@@ -107,33 +107,8 @@ window.advInvoiceAllPending = async () => {
             if(filial.legal) finalSenderData.legal = filial.legal;
         }
 
-        // Atomic per-year invoice numbering. Each invoice in the loop reserves
-        // its own number transactionally so concurrent admin runs cannot collide.
-        const currentYear = new Date().getFullYear();
-        const currentYY = String(currentYear).slice(-2);
-        const _invCounterPath = 'sequence_counters/invoices_' + currentYear;
-        const _seedInvFromHistory = async () => {
-            const yearStart = new Date(currentYear, 0, 1);
-            const yearEnd = new Date(currentYear + 1, 0, 1);
-            const invSnap = await db.collection('invoices')
-                .where('date', '>=', yearStart)
-                .where('date', '<', yearEnd)
-                .orderBy('date', 'desc')
-                .limit(10000)
-                .get();
-            let max = 0;
-            invSnap.forEach(doc => {
-                const iid = doc.data().invoiceId || '';
-                const m = iid.match(/^FAC-\d{2}-(\d+)$/);
-                if (m) {
-                    const seq = parseInt(m[1], 10);
-                    if (!isNaN(seq) && seq > max) max = seq;
-                }
-                const n = doc.data().number || 0;
-                if (n > max) max = n;
-            });
-            return max;
-        };
+        // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa).
+        // Cada factura del lote reserva su número transaccionalmente.
         const invoiceDate = new Date(); // Fecha de emisión
 
         // 6. Generar facturas en lote
@@ -196,17 +171,12 @@ window.advInvoiceAllPending = async () => {
             
             const totalAmount = subtotal + ivaAmount - irpfAmount;
 
-            // Reserve next number atomically for THIS invoice only.
-            let nextInvNumber;
-            if (typeof window.allocSequentialNumber === 'function') {
-                nextInvNumber = await window.allocSequentialNumber(_invCounterPath, _seedInvFromHistory);
-            } else {
-                nextInvNumber = (await _seedInvFromHistory()) + 1;
-            }
-            const invoiceIdStr = `FAC-${currentYY}-${nextInvNumber}`;
+            // Reserva atómica del siguiente nº de la serie de esta empresa.
+            const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC');
+            const invoiceIdStr = _alloc.invoiceId;
 
             const invoiceData = {
-                number: nextInvNumber,
+                number: _alloc.number,
                 invoiceId: invoiceIdStr,
                 date: invoiceDate,
                 clientId: client.id,

@@ -388,10 +388,45 @@ function vfFechaExpedicion(v) {
 // F1 estándar; R1-R5 para rectificativas/abonos
 function vfTipoFactura(inv) {
     if (inv.serie === 'R' || inv.isCredit || inv.isAbono) {
-        const c = String(inv.rectificaCodigo || '').toUpperCase();
+        const c = String(inv.rectificaCodigo || inv.motivoRectificacion || '').toUpperCase();
         return ['R1', 'R2', 'R3', 'R4', 'R5'].includes(c) ? c : 'R1';
     }
     return 'F1';
+}
+
+// ¿Parece un NIF/CIF español? (clientCIF a veces guarda el Nº de cliente)
+function vfLooksLikeNif(s) {
+    const v = vfNif(s);
+    return /^[A-Z0-9]{8,9}$/.test(v) && /[A-Z]/.test(v);
+}
+
+// Resuelve nombre y NIF fiscal del destinatario. clientCIF no es fiable en
+// todos los flujos (a veces es el nº interno de cliente) → fallback a la
+// ficha del cliente en /users. Necesario para el XML de remisión (FASE 2).
+async function vfResolveDestinatario(inv) {
+    const dest = { nombre: inv.clientName || '', nif: '', avisos: [] };
+    if (vfLooksLikeNif(inv.clientCIF)) {
+        dest.nif = vfNif(inv.clientCIF);
+        return dest;
+    }
+    if (inv.clientId) {
+        try {
+            const uSnap = await db.collection('users').doc(String(inv.clientId)).get();
+            if (uSnap.exists) {
+                const u = uSnap.data();
+                const candidate = u.nif || u.cif || '';
+                if (vfLooksLikeNif(candidate)) {
+                    dest.nif = vfNif(candidate);
+                    if (!dest.nombre) dest.nombre = u.name || '';
+                    return dest;
+                }
+            }
+        } catch (e) {
+            logger.warn('verifactu: lookup destinatario falló', { clientId: inv.clientId, msg: e.message });
+        }
+    }
+    dest.avisos.push('sin_nif_destinatario');
+    return dest;
 }
 
 // ── Registro de ALTA: se sella cada factura nueva ────────────────
@@ -414,6 +449,9 @@ exports.verifactuStampInvoice = onDocumentCreated({
     const nif = vfNif(inv.senderData && inv.senderData.cif);
     const headRef = db.collection('verifactu_chains').doc(nif || 'SIN_NIF');
     const ledgerRef = db.collection('verifactu_registros').doc();
+
+    // Destinatario con NIF fiscal real (lookup a /users si hace falta) — FASE 2
+    const destinatario = await vfResolveDestinatario(inv);
 
     try {
         await db.runTransaction(async (tx) => {
@@ -449,11 +487,19 @@ exports.verifactuStampInvoice = onDocumentCreated({
                 tipoRegistro: 'alta',
                 invoiceDocId: event.params.docId,
                 idEmisorFactura: nif,
+                nombreRazonEmisor: (inv.senderData && inv.senderData.name) || '',
                 numSerieFactura: numSerie,
                 fechaExpedicionFactura: fechaExp,
                 tipoFactura: tipo,
+                // Desglose para el XML de remisión (FASE 2)
+                baseImponible: vfImporte(inv.subtotal),
+                tipoImpositivo: Number(inv.ivaRate) || 21,
                 cuotaTotal: cuota,
                 importeTotal: importe,
+                descripcionOperacion: 'Servicios de transporte y logística',
+                destinatarioNombre: destinatario.nombre,
+                destinatarioNif: destinatario.nif,
+                avisos: destinatario.avisos,
                 huella,
                 huellaAnterior: prev,
                 fechaHoraHusoGenRegistro: fechaHora,

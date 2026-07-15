@@ -36,6 +36,7 @@
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
     <script src="verifactu.js?v=20260715a"></script>
+    <script src="billing_series.js?v=20260715a"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="phantom-engine.js?v=1" defer></script>
@@ -3956,6 +3957,7 @@ window.runPublicTicketsBackfill = async function() {
             var linkedIds = data._linkedTicketIds || [];
             delete data._deletedAt; delete data._deletedBy; delete data._deleteReason;
             delete data._deleteSource; delete data._originalDocId; delete data._linkedTicketIds;
+            delete data.verifactuAnulacion; // sello de anulación pertenece a la papelera, no a la factura viva
             await db.collection('invoices').doc(docId).set(data);
             // Re-link tickets to this invoice
             if (linkedIds.length > 0) {
@@ -13648,14 +13650,12 @@ window.runPublicTicketsBackfill = async function() {
 
                 showLoading();
                 try {
-                    // Get next invoice number
-                    const invSnap = await db.collection('invoices').orderBy('number', 'desc').limit(1).get();
-                    let nextNum = 1;
-                    if (!invSnap.empty) nextNum = (invSnap.docs[0].data().number || 0) + 1;
+                    // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
+                    const _alloc = await window.allocInvoiceNumber(invCompanyData, 'FAC');
 
                     const invoiceData = {
-                        number: nextNum,
-                        invoiceId: `FAC - ${new Date().getFullYear()} -${nextNum.toString().padStart(4, '0')} `,
+                        number: _alloc.number,
+                        invoiceId: _alloc.invoiceId,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
                         clientId: uid,
                         clientName: clientData.name,
@@ -14393,29 +14393,13 @@ window.runPublicTicketsBackfill = async function() {
                     const doc = await db.collection('invoices').doc(id).get();
                     const inv = doc.data();
 
-                    // Year-based credit note numbering: ABO-YY-SEQ
-                    const aboYear = new Date().getFullYear();
-                    const aboYY = String(aboYear).slice(-2);
-                    const aboYrStart = new Date(aboYear, 0, 1);
-                    const aboYrEnd = new Date(aboYear + 1, 0, 1);
-                    const aboSnap = await db.collection('invoices')
-                        .where('date', '>=', aboYrStart)
-                        .where('date', '<', aboYrEnd)
-                        .orderBy('date', 'desc')
-                        .get();
-                    let nextNum = 0;
-                    aboSnap.forEach(d => {
-                        const iid = d.data().invoiceId || '';
-                        const match = iid.match(/^(?:FAC|ABO)-\d{2}-(\d+)$/);
-                        if (match) {
-                            const seq = parseInt(match[1], 10);
-                            if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
-                        }
-                    });
-                    const creditId = `ABO-${aboYY}-${nextNum}`;
+                    // Serie de abonos correlativa POR EMPRESA emisora (la del original)
+                    const _allocAbo = await window.allocInvoiceNumber(inv.senderData || {}, 'ABO');
+                    const creditId = _allocAbo.invoiceId;
 
                     const creditData = {
                         ...inv,
+                        number: _allocAbo.number,
                         invoiceId: creditId,
                         isCredit: true,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
@@ -14428,7 +14412,6 @@ window.runPublicTicketsBackfill = async function() {
                     };
 
                     await db.collection('invoices').doc(creditId).set(creditData);
-                    await db.collection('config').doc('counters').update({ invoice: nextNum });
 
                     alert(`Factura de abono ${creditId} generada con éxito.`);
                     loadInvoices();
@@ -16443,29 +16426,12 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                 showLoading();
                 try {
-                    // Year-based invoice numbering: FAC-YY-SEQ
-                    const invCurrentYear = new Date().getFullYear();
-                    const invCurrentYY = String(invCurrentYear).slice(-2);
-                    const invYearStart = new Date(invCurrentYear, 0, 1);
-                    const invYearEnd = new Date(invCurrentYear + 1, 0, 1);
-                    const invSnap = await db.collection('invoices')
-                        .where('date', '>=', invYearStart)
-                        .where('date', '<', invYearEnd)
-                        .orderBy('date', 'desc')
-                        .get();
-                    let nextNum = 0;
-                    invSnap.forEach(doc => {
-                        const iid = doc.data().invoiceId || '';
-                        const match = iid.match(/^FAC-\d{2}-(\d+)$/);
-                        if (match) {
-                            const seq = parseInt(match[1], 10);
-                            if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
-                        }
-                    });
+                    // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
+                    const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC');
 
                     const invoiceData = {
-                        number: nextNum,
-                        invoiceId: `FAC-${invCurrentYY}-${nextNum}`,
+                        number: _alloc.number,
+                        invoiceId: _alloc.invoiceId,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
                         clientId: adminTicketUID,
                         clientName: clientData.name,
@@ -18517,7 +18483,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             </div>
         </div>
 
-        <script src="billing_adv_v4.js?v=20260516_sprint2_final"></script>
+        <script src="billing_adv_v4.js?v=20260715_series"></script>
     
     <!-- MODAL REASIGNAR REPARTIDOR -->
     <div id="modal-ticket-reassign" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:102070; justify-content:center; align-items:center; padding:20px; overflow-y:auto;">
@@ -19515,12 +19481,12 @@ window.importTarifas50 = async () => {
 </script>
 
 <!-- Facturación Avanzada Utils -->
-<script src="adv_invoice_auto.js"></script>
+<script src="adv_invoice_auto.js?v=20260715_series"></script>
 <!-- Modal de Asignación de Debidos -->
 
 
 <script src="debidos_manager.js"></script>
-<script src="contabilidad.js?v=20260516_sprint3"></script>
+<script src="contabilidad.js?v=20260715_series"></script>
 
 <!-- Contabilidad Workspace (inside adv-billing, hidden by default) -->
 <script>
@@ -21923,8 +21889,8 @@ window.importTarifas50 = async () => {
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
 <script src="ficha_cliente.js?v=20260516_email_auto"></script>
 <script src="albaranes_central.js?v=20260402"></script>
-<script src="facturas_central.js?v=20260516_email_auto"></script>
-<script src="monthly_billing_flow.js?v=20260516_email_auto"></script>
+<script src="facturas_central.js?v=20260715_series"></script>
+<script src="monthly_billing_flow.js?v=20260715_series"></script>
 <script src="comunicaciones.js?v=20260404"></script>
 <script src="nif_enrichment.js?v=20260404"></script>
 <script src="erp_tabs.js?v=20260516_prealb"></script>
@@ -21934,7 +21900,7 @@ window.importTarifas50 = async () => {
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
-<script src="invoice_per_branch.js?v=20260715_vf"></script>
+<script src="invoice_per_branch.js?v=20260715_series"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>

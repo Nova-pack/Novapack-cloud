@@ -530,31 +530,7 @@
             const currentYear = new Date().getFullYear();
             const currentYY = String(currentYear).slice(-2);
 
-            // Atomic per-year invoice counter. Seeds from highest existing FAC-YY-N
-            // on first use, then increments transactionally for every invoice we add.
-            const _invCounterPath = 'sequence_counters/invoices_' + currentYear;
-            const _seedInvFromHistory = async () => {
-                const yearStart = new Date(currentYear, 0, 1);
-                const yearEnd = new Date(currentYear + 1, 0, 1);
-                const snap = await db.collection('invoices')
-                    .where('date', '>=', yearStart)
-                    .where('date', '<', yearEnd)
-                    .orderBy('date', 'desc')
-                    .get();
-                let max = 0;
-                snap.forEach(doc => {
-                    const iid = doc.data().invoiceId || '';
-                    const m = iid.match(/^FAC-\d{2}-(\d+)$/);
-                    if (m) {
-                        const seq = parseInt(m[1], 10);
-                        if (!isNaN(seq) && seq > max) max = seq;
-                    }
-                    const n = doc.data().number || 0;
-                    if (n > max) max = n;
-                });
-                return max;
-            };
-
+            // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa).
             const ivaRate = window.invCompanyData ? (window.invCompanyData.iva || 21) : 21;
             const invoiceDate = new Date();
             const failures = [];  // clientes saltados (sin NIF, etc.) — Sprint 2 §2.3
@@ -614,14 +590,10 @@
                     continue;
                 }
 
-                // Reserve next number atomically for THIS invoice only.
-                let nextInvNumber;
-                if (typeof window.allocSequentialNumber === 'function') {
-                    nextInvNumber = await window.allocSequentialNumber(_invCounterPath, _seedInvFromHistory);
-                } else {
-                    nextInvNumber = (await _seedInvFromHistory()) + 1;
-                }
-                const invoiceIdStr = `FAC-${currentYY}-${nextInvNumber}`;
+                // Reserva atómica del siguiente nº de la serie de esta empresa.
+                const _alloc = await window.allocInvoiceNumber(_mbSenderData, 'FAC');
+                const nextInvNumber = _alloc.number;
+                const invoiceIdStr = _alloc.invoiceId;
 
                 // FECHA DE DEVENGO (Sprint 2 §2.3) — el IVA se devenga cuando se
                 // presta el servicio (fecha del último albarán del grupo), NO cuando

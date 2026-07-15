@@ -222,27 +222,23 @@ window.advLoadClientDetails = async (uid) => {
     }
     advCurrentClient = window.userMap[uid];
     
-    // Auto-generate invoice number placeholder — Format: FAC-YY-SEQ
+    // Placeholder del próximo nº de la serie de la EMPRESA seleccionada.
+    // El número real se reserva al guardar (allocInvoiceNumber, por empresa).
     try {
-        const currentYY = String(new Date().getFullYear()).slice(-2);
-        const yearStart = new Date(new Date().getFullYear(), 0, 1);
-        const yearEnd = new Date(new Date().getFullYear() + 1, 0, 1);
-        const invSnap = await db.collection('invoices')
-            .where('date', '>=', yearStart)
-            .where('date', '<', yearEnd)
-            .orderBy('date', 'desc')
-            .limit(10000)
-            .get();
-        let nextNum = 0;
-        invSnap.forEach(doc => {
-            const iid = doc.data().invoiceId || '';
-            const match = iid.match(/^FAC-\d{2}-(\d+)$/);
-            if (match) {
-                const seq = parseInt(match[1], 10);
-                if (!isNaN(seq) && seq >= nextNum) nextNum = seq + 1;
-            }
-        });
-        document.getElementById('adv-inv-number').value = `FAC-${currentYY}-${nextNum} (BORRADOR)`;
+        const currentYear = new Date().getFullYear();
+        const currentYY = String(currentYear).slice(-2);
+        const compPicker = document.getElementById('adv-company-picker');
+        const compId = compPicker ? compPicker.value : '';
+        const sender = (compId && window.advCompaniesMap && window.advCompaniesMap[compId]) || window.invCompanyData || {};
+        const nif = String(sender.nif || sender.cif || '').replace(/[\s.\-]/g, '').toUpperCase();
+        let placeholder = 'FAC (se asigna al guardar)';
+        if (nif && typeof window.billingSerieCode === 'function') {
+            const serie = await window.billingSerieCode(nif);
+            const cSnap = await db.doc('sequence_counters/invoices_' + nif + '_' + currentYear).get();
+            const next = ((cSnap.exists && cSnap.data().currentMax) || 0) + 1;
+            placeholder = `FAC-${serie}-${currentYY}-${next} (BORRADOR)`;
+        }
+        document.getElementById('adv-inv-number').value = placeholder;
         document.getElementById('adv-inv-date').value = new Date().toISOString().split('T')[0];
     } catch(e) { console.error("Error auto-num:", e); }
     
@@ -703,37 +699,6 @@ document.getElementById('btn-adv-save').onclick = async () => {
         const invYear = finalDate.getFullYear();
         const invYY = String(invYear).slice(-2);
 
-        // Atomic invoice number: prevents collisions when two admins emit at once.
-        const _seedInvFromHistory = async () => {
-            const yearStart = new Date(invYear, 0, 1);
-            const yearEnd = new Date(invYear + 1, 0, 1);
-            const invSnap = await db.collection('invoices')
-                .where('date', '>=', yearStart)
-                .where('date', '<', yearEnd)
-                .orderBy('date', 'desc')
-                .limit(10000)
-                .get();
-            let max = 0;
-            invSnap.forEach(doc => {
-                const d = doc.data();
-                const iid = d.invoiceId || '';
-                const m = iid.match(/^FAC-\d{2}-(\d+)$/);
-                if (m) {
-                    const seq = parseInt(m[1], 10);
-                    if (!isNaN(seq) && seq > max) max = seq;
-                }
-                const n = d.number || 0;
-                if (n > max) max = n;
-            });
-            return max;
-        };
-        let nextNum;
-        if (typeof window.allocSequentialNumber === 'function') {
-            nextNum = await window.allocSequentialNumber('sequence_counters/invoices_' + invYear, _seedInvFromHistory);
-        } else {
-            nextNum = (await _seedInvFromHistory()) + 1;
-        }
-
         // Extraer tickets afectados
         const ticketsIdArray = advGridRows.filter(r => r.ticketId).map(r => r.rawTicketData.id);
         const ticketsDetailArray = advGridRows.filter(r => r.ticketId).map(r => ({
@@ -787,9 +752,12 @@ document.getElementById('btn-adv-save').onclick = async () => {
             }
         } catch(_) {}
 
+        // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
+        const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC', invYear);
+
         const invoiceData = {
-            number: nextNum,
-            invoiceId: `FAC-${invYY}-${nextNum}`,
+            number: _alloc.number,
+            invoiceId: _alloc.invoiceId,
             date: finalDate,           // fecha EXPEDICIÓN
             fechaDevengo: _fechaDevengo, // fecha OPERACIÓN (devengo IVA)
             clientId: advCurrentClient.id,
@@ -958,30 +926,13 @@ if(btnCredit) {
             if(!doc.exists) throw new Error("La factura original ya no existe.");
             const orig = doc.data();
 
-            // Numeración atómica con serie R independiente (Fix legal-sprint1 #2)
-            const aboYear = new Date().getFullYear();
-            const aboYY = String(aboYear).slice(-2);
-            const counterPath = 'sequence_counters/credits_' + aboYear;
-
-            const nextNum = await window.allocSequentialNumber(counterPath, async () => {
-                const yrStart = new Date(aboYear, 0, 1);
-                const yrEnd = new Date(aboYear + 1, 0, 1);
-                const snap = await db.collection('invoices')
-                    .where('date', '>=', yrStart).where('date', '<', yrEnd)
-                    .limit(20000).get();
-                let max = 0;
-                snap.forEach(d => {
-                    const iid = d.data().invoiceId || '';
-                    const m = iid.match(/^R-\d{2}-(\d+)$/);
-                    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
-                });
-                return max;
-            });
+            // Serie R correlativa POR EMPRESA emisora (la del original)
+            const _allocR = await window.allocInvoiceNumber(orig.senderData || {}, 'R');
 
             const abonoData = {
                 ...orig,
-                number: nextNum,
-                invoiceId: `R-${aboYY}-${nextNum}`,
+                number: _allocR.number,
+                invoiceId: _allocR.invoiceId,
                 serie: 'R',
                 date: new Date(),
                 subtotal: -orig.subtotal,

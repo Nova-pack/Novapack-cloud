@@ -288,28 +288,11 @@
         const generated = [];
 
         for (const sede of sedes) {
-            // Reservar nº atómico
-            let nextNum;
-            if (typeof window.allocSequentialNumber === 'function') {
-                nextNum = await window.allocSequentialNumber('sequence_counters/invoices_' + year, async () => {
-                    // Seed: max existente
-                    const seedSnap = await db.collection('invoices')
-                        .where('date', '>=', new Date(year, 0, 1))
-                        .where('date', '<', new Date(year + 1, 0, 1))
-                        .orderBy('date', 'desc').limit(10000).get();
-                    let max = 0;
-                    seedSnap.forEach(doc => {
-                        const m = (doc.data().invoiceId || '').match(/^FAC-\d{2}-(\d+)$/);
-                        if (m) { const s = parseInt(m[1], 10); if (s > max) max = s; }
-                        const n = doc.data().number || 0;
-                        if (n > max) max = n;
-                    });
-                    return max;
-                });
-            } else {
-                nextNum = Date.now() % 100000;
-            }
-            const invoiceId = 'FAC-' + yearShort + '-' + nextNum;
+            // Reserva atómica del siguiente nº de la serie de esta empresa
+            // (Verifactu multi-empresa: numeración correlativa por emisor)
+            const _alloc = await window.allocInvoiceNumber(fiscalSender, 'FAC', year);
+            const nextNum = _alloc.number;
+            const invoiceId = _alloc.invoiceId;
             const subtotal = sede.subtotal;
             const ivaRate = fiscalSender.iva || 21;
             const irpfRate = parent.irpfRate || 0;
@@ -598,29 +581,11 @@
             const btn = document.getElementById('f1-save');
             btn.disabled = true; btn.textContent = 'Guardando…';
             try {
-                // Reservar nº atómico
-                let nextNum;
-                if (typeof window.allocSequentialNumber === 'function') {
-                    nextNum = await window.allocSequentialNumber('sequence_counters/invoices_' + year, async () => {
-                        const seedSnap = await db.collection('invoices')
-                            .where('date', '>=', new Date(year, 0, 1))
-                            .where('date', '<', new Date(year + 1, 0, 1))
-                            .orderBy('date', 'desc').limit(10000).get();
-                        let max = 0;
-                        seedSnap.forEach(doc => {
-                            const m = (doc.data().invoiceId || '').match(/^FAC-\d{2}-(\d+)$/);
-                            if (m) { const s = parseInt(m[1], 10); if (s > max) max = s; }
-                            const n = doc.data().number || 0;
-                            if (n > max) max = n;
-                        });
-                        return max;
-                    });
-                } else {
-                    nextNum = Date.now() % 100000;
-                }
-                const invoiceId = 'FAC-' + yearShort + '-' + nextNum;
+                // Reserva atómica del siguiente nº de la serie de esta empresa
+                const _alloc = await window.allocInvoiceNumber(draft.senderData || {}, 'FAC', year);
+                const invoiceId = _alloc.invoiceId;
                 draft.invoiceId = invoiceId;
-                draft.number = nextNum;
+                draft.number = _alloc.number;
                 if (typeof getOperatorStamp === 'function') Object.assign(draft, getOperatorStamp());
                 const invRef = await db.collection('invoices').add(draft);
                 // Marcar tickets

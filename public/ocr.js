@@ -47,9 +47,11 @@
         var re1 = /\bN[Pp][\s\-_]?(\d{3,8})\b/g;
         var m;
         while ((m = re1.exec(text)) !== null) ids.add('NP-' + m[1]);
-        // FAC-YY-N
+        // FAC-YY-N (legacy) y FAC-SERIE-YY-N (serie por empresa, Verifactu)
         var re2 = /\bF[Aa][Cc][\s\-_]?(\d{2})[\s\-_]?(\d{1,6})\b/g;
         while ((m = re2.exec(text)) !== null) ids.add('FAC-' + m[1] + '-' + m[2]);
+        var re2b = /\bF[Aa][Cc][\s\-_]([A-Za-z0-9]{2,4})[\s\-_](\d{2})[\s\-_](\d{1,6})\b/g;
+        while ((m = re2b.exec(text)) !== null) ids.add('FAC-' + m[1].toUpperCase() + '-' + m[2] + '-' + m[3]);
         // YY-NNN style (year-number business id like 26-001)
         var re3 = /\b(\d{2})[\-_](\d{2,5})\b/g;
         while ((m = re3.exec(text)) !== null) ids.add(m[1] + '-' + m[2]);

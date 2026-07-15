@@ -1311,21 +1311,12 @@ window.contaMarkAsIncobrable = async function(invoiceDocId) {
             if (!confirm('Esta factura está marcada como COBRADA. ¿Seguro que es incobrable?')) return;
         }
 
-        const aboYear = new Date().getFullYear();
-        const aboYY = String(aboYear).slice(-2);
-        const counterPath = 'sequence_counters/credits_' + aboYear;
-        const nextNum = await window.allocSequentialNumber(counterPath, async () => {
-            const yrStart = new Date(aboYear, 0, 1);
-            const yrEnd = new Date(aboYear + 1, 0, 1);
-            const snap = await db.collection('invoices').where('date','>=',yrStart).where('date','<',yrEnd).limit(20000).get();
-            let max = 0;
-            snap.forEach(d => { const iid=d.data().invoiceId||''; const m=iid.match(/^R-\d{2}-(\d+)$/); if(m){const n=parseInt(m[1],10); if(n>max)max=n;} });
-            return max;
-        });
+        // Serie R correlativa POR EMPRESA emisora (la del original)
+        const _allocR = await window.allocInvoiceNumber(orig.senderData || {}, 'R');
 
         const abonoData = Object.assign({}, orig, {
-            number: nextNum,
-            invoiceId: `R-${aboYY}-${nextNum}`,
+            number: _allocR.number,
+            invoiceId: _allocR.invoiceId,
             serie: 'R',
             date: new Date(),
             subtotal: -orig.subtotal,
