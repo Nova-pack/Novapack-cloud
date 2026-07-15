@@ -35,6 +35,7 @@
     <script src="libs/qrcode.min.js?v=20260310_BETA"></script>
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
+    <script src="verifactu.js?v=20260715a"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="phantom-engine.js?v=1" defer></script>
@@ -14773,8 +14774,9 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     </tbody>
                 </table>
 
-                <!-- TOTALS -->
-                <div style="display:flex; justify-content:flex-end; margin-bottom:80px;">
+                <!-- TOTALS + QR TRIBUTARIO (Verifactu) -->
+                <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:80px;">
+                    ${(window.verifactuQRBlock && window.verifactuQRBlock(inv)) || '<div></div>'}
                     <div style="width:280px;">
                         <div style="display:flex; justify-content:space-between; padding:6px 0; color:#999; font-weight:300; font-size:0.85rem;">
                             <span>Base Imponible</span>
@@ -21931,8 +21933,8 @@ window.importTarifas50 = async () => {
 <script src="analytics.js?v=20260504"></script>
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
-<script src="invoice_flatrate_multibranch.js?v=20260514_erp"></script>
-<script src="invoice_per_branch.js?v=20260514_erp"></script>
+<script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
+<script src="invoice_per_branch.js?v=20260715_vf"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>

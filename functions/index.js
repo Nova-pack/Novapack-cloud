@@ -17,10 +17,12 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -318,4 +320,240 @@ exports.updateClientAuth = onCall({
 
     logger.info('updateClientAuth ok', { uid, changedEmail: !!updates.email, changedPassword: !!updates.password, by: request.auth.uid });
     return { success: true, changedEmail: !!updates.email, changedPassword: !!updates.password };
+});
+
+// =============================================================
+// VERIFACTU — FASE 1 (RD 1007/2023 + Orden HAC/1177/2024)
+// =============================================================
+// Cada factura creada en /invoices se sella automáticamente con
+// una huella SHA-256 encadenada a la anterior (registro de alta).
+// Al mover una factura a la papelera (/deleted_invoices) se
+// genera un registro de anulación, también encadenado.
+//
+// - Cadena de huellas: config/verifactu (lastHuella, chainIndex)
+// - Ledger append-only: /verifactu_registros (alta + anulación)
+//   con estadoEnvioAEAT='pendiente' para la FASE 2 (remisión).
+// - El QR tributario del PDF se genera en frontend (verifactu.js)
+//   y NO depende de la huella (solo NIF, nº serie, fecha, importe).
+// =============================================================
+
+function vfRound2(n) {
+    return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+}
+function vfImporte(n) {
+    return vfRound2(n).toFixed(2);
+}
+function vfNif(raw) {
+    return String(raw || '').replace(/[\s.\-]/g, '').toUpperCase();
+}
+function vfSha256(str) {
+    return crypto.createHash('sha256').update(str, 'utf8').digest('hex').toUpperCase();
+}
+
+// ISO 8601 con huso horario de España: 2026-07-15T12:34:56+02:00
+function vfMadridNowISO(d) {
+    const date = d || new Date();
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Madrid',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+    }).formatToParts(date).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
+    const hh = parts.hour === '24' ? '00' : parts.hour;
+    // Offset real Madrid↔UTC en el instante dado (+01:00 invierno, +02:00 verano)
+    const asUTC = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +hh, +parts.minute, +parts.second);
+    const offsetMin = Math.round((asUTC - date.getTime()) / 60000);
+    const sign = offsetMin >= 0 ? '+' : '-';
+    const abs = Math.abs(offsetMin);
+    const oh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const om = String(abs % 60).padStart(2, '0');
+    return `${parts.year}-${parts.month}-${parts.day}T${hh}:${parts.minute}:${parts.second}${sign}${oh}:${om}`;
+}
+
+// dd-mm-yyyy (huso Madrid) desde Timestamp Firestore / Date / string
+function vfFechaExpedicion(v) {
+    let date = null;
+    if (v && typeof v.toDate === 'function') date = v.toDate();
+    else if (v instanceof Date) date = v;
+    else if (v) { const t = new Date(v); if (!isNaN(t.getTime())) date = t; }
+    if (!date) date = new Date();
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(date).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
+    return `${parts.day}-${parts.month}-${parts.year}`;
+}
+
+// F1 estándar; R1-R5 para rectificativas/abonos
+function vfTipoFactura(inv) {
+    if (inv.serie === 'R' || inv.isCredit || inv.isAbono) {
+        const c = String(inv.rectificaCodigo || '').toUpperCase();
+        return ['R1', 'R2', 'R3', 'R4', 'R5'].includes(c) ? c : 'R1';
+    }
+    return 'F1';
+}
+
+// ── Registro de ALTA: se sella cada factura nueva ────────────────
+exports.verifactuStampInvoice = onDocumentCreated({
+    document: 'invoices/{docId}',
+    memory: '256MiB',
+    timeoutSeconds: 60
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const inv = snap.data() || {};
+
+    // Restauración desde papelera: ya tiene huella, no re-sellar
+    if (inv.verifactu && inv.verifactu.huella) {
+        logger.info(`verifactu: ${event.params.docId} ya sellada (restauración) — skip`);
+        return;
+    }
+
+    const headRef = db.collection('config').doc('verifactu');
+    const ledgerRef = db.collection('verifactu_registros').doc();
+
+    try {
+        await db.runTransaction(async (tx) => {
+            const [head, invSnap] = await Promise.all([tx.get(headRef), tx.get(snap.ref)]);
+            if (!invSnap.exists) return;                       // anulada antes de sellar
+            if ((invSnap.data().verifactu || {}).huella) return; // sellada en otro intento
+
+            const prev = (head.exists && head.data().lastHuella) || '';
+            const idx = ((head.exists && head.data().chainIndex) || 0) + 1;
+
+            const nif = vfNif(inv.senderData && inv.senderData.cif);
+            const numSerie = String(inv.invoiceId || event.params.docId);
+            const fechaExp = vfFechaExpedicion(inv.date || inv.createdAt);
+            const tipo = vfTipoFactura(inv);
+            const cuota = vfImporte(inv.iva);
+            // ImporteTotal Verifactu = base + cuota IVA (sin retención IRPF)
+            const importe = vfImporte((Number(inv.subtotal) || 0) + (Number(inv.iva) || 0));
+            const fechaHora = vfMadridNowISO();
+
+            // Cadena de entrada de la huella — orden y formato normativos
+            // (Orden HAC/1177/2024, anexo I, registro de alta)
+            const cadena =
+                'IDEmisorFactura=' + nif +
+                '&NumSerieFactura=' + numSerie +
+                '&FechaExpedicionFactura=' + fechaExp +
+                '&TipoFactura=' + tipo +
+                '&CuotaTotal=' + cuota +
+                '&ImporteTotal=' + importe +
+                '&Huella=' + prev +
+                '&FechaHoraHusoGenRegistro=' + fechaHora;
+            const huella = vfSha256(cadena);
+
+            tx.set(ledgerRef, {
+                tipoRegistro: 'alta',
+                invoiceDocId: event.params.docId,
+                idEmisorFactura: nif,
+                numSerieFactura: numSerie,
+                fechaExpedicionFactura: fechaExp,
+                tipoFactura: tipo,
+                cuotaTotal: cuota,
+                importeTotal: importe,
+                huella,
+                huellaAnterior: prev,
+                fechaHoraHusoGenRegistro: fechaHora,
+                chainIndex: idx,
+                estadoEnvioAEAT: 'pendiente', // FASE 2: remisión a AEAT
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            tx.update(snap.ref, {
+                verifactu: {
+                    huella,
+                    huellaAnterior: prev,
+                    fechaHoraHusoGenRegistro: fechaHora,
+                    tipoFactura: tipo,
+                    chainIndex: idx,
+                    registroId: ledgerRef.id
+                }
+            });
+            tx.set(headRef, {
+                lastHuella: huella,
+                chainIndex: idx,
+                lastNumSerie: numSerie,
+                lastRegistroId: ledgerRef.id,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        });
+        logger.info(`verifactu alta OK → ${event.params.docId}`);
+    } catch (e) {
+        logger.error(`verifactu alta FAILED ${event.params.docId}`, { msg: e.message });
+    }
+});
+
+// ── Registro de ANULACIÓN: factura movida a la papelera ──────────
+exports.verifactuStampAnulacion = onDocumentCreated({
+    document: 'deleted_invoices/{docId}',
+    memory: '256MiB',
+    timeoutSeconds: 60
+}, async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const inv = snap.data() || {};
+    if (!inv.invoiceId) return; // no era una factura real
+    if (inv.verifactuAnulacion && inv.verifactuAnulacion.huella) return;
+
+    const headRef = db.collection('config').doc('verifactu');
+    const ledgerRef = db.collection('verifactu_registros').doc();
+
+    try {
+        await db.runTransaction(async (tx) => {
+            const [head, delSnap] = await Promise.all([tx.get(headRef), tx.get(snap.ref)]);
+
+            const prev = (head.exists && head.data().lastHuella) || '';
+            const idx = ((head.exists && head.data().chainIndex) || 0) + 1;
+
+            const nif = vfNif(inv.senderData && inv.senderData.cif);
+            const numSerie = String(inv.invoiceId);
+            const fechaExp = vfFechaExpedicion(inv.date || inv.createdAt);
+            const fechaHora = vfMadridNowISO();
+
+            // Cadena del registro de anulación (Orden HAC/1177/2024, anexo I)
+            const cadena =
+                'IDEmisorFacturaAnulada=' + nif +
+                '&NumSerieFacturaAnulada=' + numSerie +
+                '&FechaExpedicionFacturaAnulada=' + fechaExp +
+                '&Huella=' + prev +
+                '&FechaHoraHusoGenRegistro=' + fechaHora;
+            const huella = vfSha256(cadena);
+
+            tx.set(ledgerRef, {
+                tipoRegistro: 'anulacion',
+                invoiceDocId: event.params.docId,
+                idEmisorFactura: nif,
+                numSerieFactura: numSerie,
+                fechaExpedicionFactura: fechaExp,
+                huella,
+                huellaAnterior: prev,
+                fechaHoraHusoGenRegistro: fechaHora,
+                chainIndex: idx,
+                estadoEnvioAEAT: 'pendiente', // FASE 2
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            // El registro del ledger es lo esencial; el doc de papelera
+            // puede haber sido purgado en el intervalo
+            if (delSnap.exists) {
+                tx.update(snap.ref, {
+                    verifactuAnulacion: {
+                        huella,
+                        huellaAnterior: prev,
+                        fechaHoraHusoGenRegistro: fechaHora,
+                        chainIndex: idx,
+                        registroId: ledgerRef.id
+                    }
+                });
+            }
+            tx.set(headRef, {
+                lastHuella: huella,
+                chainIndex: idx,
+                lastNumSerie: numSerie,
+                lastRegistroId: ledgerRef.id,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        });
+        logger.info(`verifactu anulación OK → ${event.params.docId}`);
+    } catch (e) {
+        logger.error(`verifactu anulación FAILED ${event.params.docId}`, { msg: e.message });
+    }
 });

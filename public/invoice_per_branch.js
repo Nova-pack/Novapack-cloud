@@ -202,8 +202,9 @@
             + '  <tbody>' + rowsHTML + '</tbody>'
             + '</table>'
 
-            // TOTALS
-            + '<div style="display:flex; justify-content:flex-end; margin-bottom:20px;">'
+            // TOTALS + QR TRIBUTARIO (Verifactu)
+            + '<div style="display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:20px;">'
+            + ((window.verifactuQRBlock && window.verifactuQRBlock(invoice, fiscalSender.cif)) || '<div></div>')
             + '  <div style="width:280px;">'
             + '    <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:0.8rem; color:#888;"><span>Base Imponible</span><span>' + _money(subtotal) + '</span></div>'
             + '    <div style="display:flex; justify-content:space-between; padding:4px 0; font-size:0.8rem; color:#888;"><span>IVA (' + ivaRate + ' %)</span><span>' + _money(iva) + '</span></div>'

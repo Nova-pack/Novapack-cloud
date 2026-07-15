@@ -258,8 +258,9 @@
                     + '</div>'
             })()
 
-            // TOTALS
-            + '<div style="display:flex; justify-content:flex-end; margin-bottom:30px;">'
+            // TOTALS + QR TRIBUTARIO (Verifactu)
+            + '<div style="display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:30px;">'
+            + ((window.verifactuQRBlock && window.verifactuQRBlock(inv, senderBranch.cif)) || '<div></div>')
             + '  <div style="width:300px;">'
             + '    <div style="display:flex; justify-content:space-between; padding:5px 0; color:#888; font-size:0.85rem;"><span>Base Imponible</span><span>' + _money(inv.subtotal) + '</span></div>'
             + '    <div style="display:flex; justify-content:space-between; padding:5px 0; color:#888; font-size:0.85rem;"><span>IVA (' + (inv.ivaRate || 21) + ' %)</span><span>' + _money(inv.iva) + '</span></div>'
