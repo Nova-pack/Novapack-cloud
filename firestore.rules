@@ -332,5 +332,22 @@ service cloud.firestore {
            ]);
       allow delete: if isAdmin();
     }
+
+    // ─── VERIFACTU (ledger fiscal · RD 1007/2023) ───
+    // Los registros los escriben las Cloud Functions (Admin SDK, salta
+    // reglas). El admin solo puede LEER y actualizar el estado de envío
+    // (marcar legacy, re-encolar rechazados). Nunca crear ni borrar:
+    // el ledger es append-only.
+    match /verifactu_registros/{docId} {
+      allow read: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['estadoEnvioAEAT']);
+      allow create, delete: if false;
+    }
+    match /verifactu_chains/{nif} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
   }
 }
