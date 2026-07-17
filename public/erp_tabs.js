@@ -31,7 +31,8 @@
         'erp-tab-tariff-builder',
         'erp-tab-tariff-manager',
         'erp-tab-parent-diagnostic',
-        'erp-tab-invoice-preview'
+        'erp-tab-invoice-preview',
+        'erp-tab-entrada-rapida'
     ];
 
     // --- TAB DEFINITIONS (built-in tabs that map to existing workspaces) ---
@@ -75,6 +76,7 @@
         'tariff-manager':  { wsId: 'erp-tab-tariff-manager',       title: 'Tarifa Cliente',     icon: 'price_change',       closeable: true },
         'parent-diagnostic': { wsId: 'erp-tab-parent-diagnostic',  title: 'Diagnóstico',        icon: 'monitor_heart',      closeable: true },
         'invoice-preview': { wsId: 'erp-tab-invoice-preview',      title: 'Preview Factura',    icon: 'receipt',            closeable: true },
+        'entrada-rapida':  { wsId: 'erp-tab-entrada-rapida',       title: '⚡ Entrada Rápida',   icon: 'bolt',               closeable: true },
     };
 
     // ─── HELPER: abre como ERP tab si está disponible, si no como modal ──

@@ -530,6 +530,15 @@
 
     // ── apertura de la pantalla ──
     window.openEntradaRapida = async function () {
+        try {
+            await _openEntradaRapidaInner();
+        } catch (e) {
+            console.error('[ER] error abriendo Entrada Rápida:', e);
+            alert('Error abriendo Entrada Rápida: ' + (e.message || e) + '\n\nRecarga la página (Ctrl+Shift+R) e inténtalo de nuevo.');
+        }
+    };
+
+    async function _openEntradaRapidaInner() {
         const opener = (typeof window.openWorkspaceOrModal === 'function')
             ? window.openWorkspaceOrModal({
                 tabKey: 'entrada-rapida',
@@ -618,5 +627,7 @@
 
         const first = _addRow(null);
         _focusCol(first, 'cliente');
-    };
+    }
+
+    console.log('[ER] ⚡ Entrada Rápida cargada — window.openEntradaRapida() lista');
 })();
