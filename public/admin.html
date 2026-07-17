@@ -5318,6 +5318,7 @@ window.runPublicTicketsBackfill = async function() {
 
 
 
+        <div id="erp-tab-entrada-rapida" style="display:none; flex:1; overflow:hidden; background:#1e1e1e; color:#d4d4d4;"></div>
         <div id="adv-history-workspace" style="display:none; flex:1; overflow-y:auto; background:#1e1e1e; color:#d4d4d4;">
             <!-- PRO TOOLBAR -->
             <div style="background:#007acc; padding:5px 15px; display:flex; gap:10px; align-items:center;">
@@ -6627,6 +6628,10 @@ window.runPublicTicketsBackfill = async function() {
                     <button class="btn btn-primary" id="btn-admin-view-create"
                         onclick="setAdminTicketSubView('create')">+
                         NUEVO ALBARÁN</button>
+                    <button class="btn btn-primary" id="btn-entrada-rapida" style="background:linear-gradient(135deg,#FF6600,#E65100);"
+                        onclick="if(window.openEntradaRapida) window.openEntradaRapida(); else alert('Módulo no cargado. Recarga la página.');"
+                        title="Rejilla de entrada masiva por teclado: fila = albarán, ENTER = siguiente, sin clicks"><span class="material-symbols-outlined">bolt</span>
+                        ENTRADA RÁPIDA</button>
                     <button class="btn btn-outline" onclick="window.adminScannerMode='form'; showView('qr-scanner-view')"
                         style="border-color:var(--brand-primary); color:var(--brand-primary);"><span class="material-symbols-outlined">qr_code_scanner</span> ESCÁNER</button>
                     <button class="btn btn-outline" id="btn-import-json-alt" style="font-size: 0.6rem; opacity: 0.6;" onclick="if(window.openJSONImport) window.openJSONImport(); else alert('Error: The engine has not started yet. Reload the page.');"><span class="material-symbols-outlined">download</span>
@@ -22248,6 +22253,7 @@ window.importTarifas50 = async () => {
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
 <script src="invoice_per_branch.js?v=20260717_fiscal"></script>
+<script src="entrada_rapida.js?v=20260717a"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>
