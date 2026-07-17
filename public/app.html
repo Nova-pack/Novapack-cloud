@@ -68,7 +68,7 @@
     </script>
 
     <script src="phantom-engine.js?v=1" defer></script>
-    <script src="firebase-app.js?v=20260516_delete_fix" defer></script>
+    <script src="firebase-app.js?v=20260717_onboard" defer></script>
 </head>
 
 <body>
@@ -115,6 +115,8 @@
                     <button id="nav-clients" class="btn btn-sm btn-secondary">👥 CLIENTES</button>
                     <button id="nav-reports" class="btn btn-sm btn-secondary">📊 INFORMES</button>
                     <button id="btn-open-scanner" class="btn btn-sm btn-secondary">📷 ESCÁNER</button>
+                    <button id="btn-change-password" class="btn btn-sm btn-secondary" title="Cambiar mi contraseña"
+                        onclick="window.openChangePasswordModal()">🔑</button>
                     <button id="btn-logout" class="btn btn-sm btn-outline" style="border-color:#FF3B30; color:#FF3B30;"
                         title="Salir" onclick="logout()">🚪 SALIR</button>
 
@@ -406,6 +408,31 @@
                     }
                 });
             </script>
+        </div>
+    </div>
+
+    <!-- Modal: Cambiar mi contraseña -->
+    <div id="modal-change-password" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99998; align-items:center; justify-content:center; padding:20px;">
+        <div style="background:#1a1a1a; border:1px solid #3c3c3c; border-radius:14px; max-width:420px; width:100%; padding:28px; color:#d4d4d4; position:relative;">
+            <button onclick="document.getElementById('modal-change-password').style.display='none'" style="position:absolute; top:12px; right:14px; background:none; border:none; color:#888; font-size:1.1rem; cursor:pointer;">&#x2715;</button>
+            <h2 style="color:#fff; margin:0 0 6px; font-size:1.05rem; letter-spacing:1px;">&#128273; CAMBIAR MI CONTRASE&Ntilde;A</h2>
+            <div style="font-size:0.75rem; color:#888; margin-bottom:18px;">Por seguridad, confirma primero tu contrase&ntilde;a actual.</div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:0.7rem; color:#999; letter-spacing:1px; margin-bottom:5px;">CONTRASE&Ntilde;A ACTUAL</label>
+                <input type="password" id="cp-current" autocomplete="current-password" style="width:100%; padding:11px; background:#2d2d30; border:1px solid #3c3c3c; border-radius:8px; color:#fff; font-size:0.9rem; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:0.7rem; color:#999; letter-spacing:1px; margin-bottom:5px;">NUEVA CONTRASE&Ntilde;A (m&iacute;nimo 6 caracteres)</label>
+                <input type="password" id="cp-new1" autocomplete="new-password" style="width:100%; padding:11px; background:#2d2d30; border:1px solid #3c3c3c; border-radius:8px; color:#fff; font-size:0.9rem; box-sizing:border-box;">
+            </div>
+            <div style="margin-bottom:14px;">
+                <label style="display:block; font-size:0.7rem; color:#999; letter-spacing:1px; margin-bottom:5px;">REPITE LA NUEVA CONTRASE&Ntilde;A</label>
+                <input type="password" id="cp-new2" autocomplete="new-password" style="width:100%; padding:11px; background:#2d2d30; border:1px solid #3c3c3c; border-radius:8px; color:#fff; font-size:0.9rem; box-sizing:border-box;">
+            </div>
+            <div id="cp-error" style="display:none; background:rgba(244,67,54,0.12); border:1px solid rgba(244,67,54,0.4); color:#ff8a80; font-size:0.78rem; padding:9px 12px; border-radius:8px; margin-bottom:14px;"></div>
+            <button id="cp-save-btn" onclick="window.submitPasswordChange()" style="width:100%; padding:13px; background:linear-gradient(135deg, #FF6600, #E65100); border:none; color:#fff; font-size:0.95rem; font-weight:bold; letter-spacing:2px; border-radius:8px; cursor:pointer;">
+                GUARDAR NUEVA CONTRASE&Ntilde;A
+            </button>
         </div>
     </div>
 

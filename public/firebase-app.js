@@ -375,6 +375,24 @@ auth.onAuthStateChanged(async (user) => {
             } catch(e) {}
         }
 
+        // ───── FIX condiciones re-preguntadas en cada login ─────
+        // acceptTerms escribía el flag solo en el clon users/{uid}, pero el
+        // login lee el doc MAESTRO del admin → el modal reaparecía siempre.
+        // Merge del flag histórico desde el clon + sanar el maestro.
+        if (profile && !profile.termsAccepted && profile.id !== user.uid) {
+            try {
+                const cloneDoc = await db.collection('users').doc(user.uid).get();
+                if (cloneDoc.exists && cloneDoc.data().termsAccepted) {
+                    profile.termsAccepted = true;
+                    profile.termsAcceptedAt = cloneDoc.data().termsAcceptedAt || null;
+                    db.collection('users').doc(profile.id).set({
+                        termsAccepted: true,
+                        termsAcceptedAt: profile.termsAcceptedAt || firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true }).catch(() => {});
+                }
+            } catch (e) { /* lectura clon fallida: el modal simplemente se muestra */ }
+        }
+
         userData = profile;
 
         // ───── Acceso bloqueado por admin ─────
@@ -1614,6 +1632,11 @@ async function resetEditor() {
         document.getElementById('ticket-sender-phone').value = userData.senderPhone || '';
     }
 
+    // 4b. Aviso no bloqueante si el remitente está incompleto (dirección
+    // placeholder del alta o teléfono vacío) — el albarán saldría impreso
+    // con "Dirección no definida" como recogida.
+    try { _renderSenderWarning(); } catch (e) {}
+
     // 5. Turno automático y Portes por defecto
     const hour = new Date().getHours();
     document.getElementById('ticket-time-slot').value = (hour >= 8 && hour < 15) ? 'MAÑANA' : 'TARDE';
@@ -1627,6 +1650,42 @@ async function resetEditor() {
     renderTicketsList();
     hideLoading();
     setTimeout(() => window.scrollTo(0, 0), 100);
+}
+
+// ── Remitente incompleto: detección + banner ──
+function _senderAddressInvalid(addr) {
+    var a = String(addr || '').trim();
+    return !a || /^direcci[oó]n no (definida|configurada)$/i.test(a);
+}
+
+function _renderSenderWarning() {
+    var addrEl = document.getElementById('ticket-sender-address');
+    var phoneEl = document.getElementById('ticket-sender-phone');
+    var badAddr = _senderAddressInvalid(addrEl ? addrEl.value : '');
+    var badPhone = !(phoneEl && String(phoneEl.value || '').trim());
+
+    var banner = document.getElementById('sender-incomplete-warning');
+    if (!badAddr && !badPhone) {
+        if (banner) banner.style.display = 'none';
+        return;
+    }
+    var faltan = [];
+    if (badAddr) faltan.push('la dirección de recogida');
+    if (badPhone) faltan.push('el teléfono de contacto');
+    var msg = '⚠️ Falta ' + faltan.join(' y ') + ' de tu empresa. Tus albaranes saldrán impresos sin esos datos.';
+
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'sender-incomplete-warning';
+        banner.style.cssText = 'background:rgba(255,152,0,0.12); border:1px solid rgba(255,152,0,0.5); color:#FFB74D; font-size:0.78rem; padding:10px 14px; border-radius:8px; margin:8px 0; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;';
+        var form = document.getElementById('create-ticket-form');
+        if (form && form.parentNode) form.parentNode.insertBefore(banner, form);
+        else return;
+    }
+    banner.innerHTML = '<span>' + escapeHtml(msg) + '</span>'
+        + '<button type="button" onclick="window.openCompanyManager && window.openCompanyManager()" '
+        + 'style="background:#FF9800; border:none; color:#1a1a1a; font-weight:bold; font-size:0.75rem; padding:7px 12px; border-radius:6px; cursor:pointer; white-space:nowrap;">⚙️ Completar ahora</button>';
+    banner.style.display = 'flex';
 }
 
 async function getNextId() {
@@ -2119,11 +2178,17 @@ function getPackagesData() {
 // --- TERMS ACCEPTANCE ---
 window.acceptTerms = async function() {
     try {
+        const stamp = {
+            termsAccepted: true,
+            termsAcceptedAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
         if (currentUser && currentUser.uid) {
-            await db.collection('users').doc(currentUser.uid).update({
-                termsAccepted: true,
-                termsAcceptedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
+            await db.collection('users').doc(currentUser.uid).set(stamp, { merge: true });
+            // Escribir TAMBIÉN en el doc maestro (el que lee el login) para
+            // que las condiciones no se re-pregunten en cada entrada.
+            if (userData && userData.id && userData.id !== currentUser.uid) {
+                db.collection('users').doc(userData.id).set(stamp, { merge: true }).catch(() => {});
+            }
             if (userData) userData.termsAccepted = true;
         }
         const modal = document.getElementById('modal-terms');
@@ -2131,6 +2196,73 @@ window.acceptTerms = async function() {
     } catch (e) {
         console.error('Error accepting terms:', e);
         alert('Error al guardar. Intentalo de nuevo.');
+    }
+};
+
+// --- CAMBIO DE CONTRASEÑA (cliente autogestionado) ---
+window.openChangePasswordModal = function() {
+    var m = document.getElementById('modal-change-password');
+    if (!m) return;
+    ['cp-current', 'cp-new1', 'cp-new2'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.value = '';
+    });
+    var err = document.getElementById('cp-error');
+    if (err) err.style.display = 'none';
+    m.style.display = 'flex';
+};
+
+window.submitPasswordChange = async function() {
+    var err = document.getElementById('cp-error');
+    var showErr = function(msg) { if (err) { err.innerText = msg; err.style.display = 'block'; } };
+    if (err) err.style.display = 'none';
+
+    var current = (document.getElementById('cp-current').value || '');
+    var new1 = (document.getElementById('cp-new1').value || '');
+    var new2 = (document.getElementById('cp-new2').value || '');
+
+    if (!current) { showErr('Escribe tu contraseña actual.'); return; }
+    if (new1.length < 6) { showErr('La nueva contraseña debe tener al menos 6 caracteres.'); return; }
+    if (new1 !== new2) { showErr('Las dos contraseñas nuevas no coinciden.'); return; }
+    if (new1 === current) { showErr('La nueva contraseña no puede ser igual a la actual.'); return; }
+
+    var btn = document.getElementById('cp-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'GUARDANDO…'; }
+    try {
+        var user = auth.currentUser;
+        if (!user || !user.email) throw new Error('Sesión no válida. Vuelve a entrar.');
+        // Re-autenticación exigida por Firebase antes de updatePassword
+        var cred = firebase.auth.EmailAuthProvider.credential(user.email, current);
+        await user.reauthenticateWithCredential(cred);
+        await user.updatePassword(new1);
+
+        // La clave en claro que guardó el admin ya no es válida → borrarla
+        // (best-effort; clon + maestro) y dejar constancia del cambio.
+        var patch = {
+            loginPasswordPlain: firebase.firestore.FieldValue.delete(),
+            passwordChangedByClientAt: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        try { await db.collection('users').doc(user.uid).update(patch); } catch (e) {}
+        try {
+            if (userData && userData.id && userData.id !== user.uid) {
+                await db.collection('users').doc(userData.id).update(patch);
+            }
+        } catch (e) {}
+
+        document.getElementById('modal-change-password').style.display = 'none';
+        alert('✅ Contraseña cambiada correctamente.\n\nUsa la nueva a partir de tu próximo acceso.');
+    } catch (e) {
+        console.error('Password change error:', e);
+        if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' || e.code === 'auth/invalid-login-credentials') {
+            showErr('La contraseña actual no es correcta.');
+        } else if (e.code === 'auth/weak-password') {
+            showErr('La nueva contraseña es demasiado débil.');
+        } else if (e.code === 'auth/too-many-requests') {
+            showErr('Demasiados intentos. Espera unos minutos.');
+        } else {
+            showErr('No se pudo cambiar: ' + (e.message || e));
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'GUARDAR NUEVA CONTRASEÑA'; }
     }
 };
 
@@ -2288,6 +2420,16 @@ async function handleFormSubmit(e) {
     if (!pkgs[0].size) {
         alert("Debe seleccionar un artículo para el bulto.");
         return;
+    }
+
+    // Remitente sin dirección válida → confirmar (el albarán impreso
+    // saldría con "Dirección no definida" como punto de recogida)
+    const _senderAddr = document.getElementById('ticket-sender-address').value;
+    if (typeof _senderAddressInvalid === 'function' && _senderAddressInvalid(_senderAddr)) {
+        if (!confirm('⚠️ Tu empresa no tiene DIRECCIÓN DE RECOGIDA configurada.\n\nEl albarán se imprimirá sin dirección de remitente válida.\n\n[Aceptar] Crear el albarán igualmente\n[Cancelar] Ir a completarla ahora (⚙️)')) {
+            if (window.openCompanyManager) window.openCompanyManager();
+            return;
+        }
     }
 
     const street = (document.getElementById('ticket-address').value || "").trim();
@@ -5051,14 +5193,23 @@ if (btnCloseNotifications) btnCloseNotifications.onclick = () => showView('dashb
 // Logout is handled by inline onclick in app.html for reliability
 
 // Company Modal
+window.openCompanyManager = async function() {
+    const modal = document.getElementById('company-modal');
+    if (modal) modal.classList.remove('hidden');
+    renderCompanyList();
+    await loadProvinces();
+    // Si la sede activa está incompleta, abrir directamente su edición
+    try {
+        const comp = companies.find(c => c.id === currentCompanyId);
+        if (comp && (typeof _senderAddressInvalid === 'function' && _senderAddressInvalid(comp.address) || !String(comp.phone || '').trim())) {
+            if (typeof editCompanyUI === 'function') editCompanyUI(comp.id);
+        }
+    } catch (e) {}
+};
+
 const btnManageCompanies = document.getElementById('btn-manage-companies');
 if (btnManageCompanies) {
-    btnManageCompanies.onclick = async () => {
-        const modal = document.getElementById('company-modal');
-        if (modal) modal.classList.remove('hidden');
-        renderCompanyList();
-        await loadProvinces(); 
-    };
+    btnManageCompanies.onclick = () => window.openCompanyManager();
 }
 
 const btnCloseCompanyModal = document.getElementById('btn-close-company-modal');

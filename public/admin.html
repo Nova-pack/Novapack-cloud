@@ -1291,15 +1291,113 @@
             return 'c' + idNum + '_' + slug + '_' + rand + '@novapack.com';
         };
 
+        // Detector ÚNICO de logins sintéticos. Tolera ambos formatos
+        // históricos: c{id}_{slug}_{rand}@ (generateLoginEmail) y
+        // c{id}_{rand}@ (fallback antiguo de sucursales, un solo guión bajo).
+        window.isSyntheticEmail = function isSyntheticEmail(e) {
+            return !!e && /^c[0-9a-z]+(?:_[a-z0-9]+)+@novapack\.com$/i.test(String(e).trim());
+        };
+
+        // ═══ CHECKLIST "CLIENTE LISTO" ═══════════════════════════════════
+        // Verifica que el cliente tiene todo lo necesario para trabajar
+        // desde el minuto uno: acceso, datos fiscales, dirección/CP (ruta y
+        // remitente del albarán), tarifa y canal para recibir las claves.
+        // Devuelve { ok, criticos: [], avisos: [] }.
+        window.clientReadinessCheck = async function clientReadinessCheck(c) {
+            const criticos = [];
+            const avisos = [];
+            if (!c) return { ok: false, criticos: ['Cliente no encontrado'], avisos: [] };
+
+            // 1. Acceso online
+            if (!c.authUid) criticos.push('Sin ACCESO activado (botón 🔓) — no podrá entrar en la app');
+
+            // 2. Canal para recibir las claves
+            const realEmail = [c.adminEmail, c.email].map(e => (e || '').trim())
+                .find(e => e && !window.isSyntheticEmail(e)) || '';
+            const phone = ((c.senderPhone || c.phone || '') + '').trim();
+            if (!realEmail && !phone) criticos.push('Sin email real NI teléfono — no hay forma de enviarle las claves');
+            else if (!realEmail) avisos.push('Sin email real (las claves solo podrán ir por WhatsApp)');
+
+            // 3. NIF (sin él la factura es formalmente nula y Verifactu la bloquea)
+            if (!((c.nif || c.cif || '') + '').trim()) criticos.push('Sin NIF/CIF — no se le podrá facturar');
+
+            // 4. Dirección y CP (remitente del albarán + auto-asignación de ruta)
+            const hasAddr = ((c.street || '') + '').trim() || ((c.senderAddress || '') + '').trim();
+            if (!hasAddr) criticos.push('Sin DIRECCIÓN — sus albaranes saldrán sin remitente');
+            if (!((c.cp || '') + '').trim()) criticos.push('Sin CÓDIGO POSTAL — no se le auto-asignará ruta de recogida');
+            if (!((c.localidad || '') + '').trim()) avisos.push('Sin localidad');
+
+            // 5. Teléfono de contacto
+            if (!phone) avisos.push('Sin teléfono de contacto');
+
+            // 6. Tarifa
+            if (!((c.tariffId || '') + '').trim()) {
+                criticos.push('Sin TARIFA asignada — los albaranes no tendrán precio');
+            } else if (window.tariffsCache && Object.keys(window.tariffsCache).length > 0) {
+                const t = window.tariffsCache['GLOBAL_' + c.tariffId] || window.tariffsCache[c.tariffId];
+                if (t && Array.isArray(t.items) && t.items.length === 0) {
+                    avisos.push('La tarifa "' + c.tariffId + '" existe pero está VACÍA');
+                }
+            }
+
+            // 7. Sede operativa comp_main (es lo que precarga el albarán del cliente)
+            try {
+                const compSnap = await db.collection('users').doc(c.id).collection('companies').doc('comp_main').get();
+                if (compSnap.exists) {
+                    const comp = compSnap.data();
+                    const addr = ((comp.address || '') + '').trim();
+                    if (!addr || /^direcci[oó]n no (definida|configurada)$/i.test(addr)) {
+                        criticos.push('La sede operativa (comp_main) tiene la dirección VACÍA — el albarán imprimirá "Dirección no definida"');
+                    }
+                    if (!((comp.phone || '') + '').trim() && !phone) avisos.push('La sede operativa no tiene teléfono');
+                }
+                // Si comp_main no existe, la app la creará del maestro en el
+                // primer login — cubierto por los checks 4/5 de arriba.
+            } catch (e) { /* lectura fallida: no bloquear por esto */ }
+
+            return { ok: criticos.length === 0, criticos, avisos };
+        };
+
+        // Formatea el resultado del checklist para confirm()/alert()
+        window._readinessText = function (r) {
+            let txt = '';
+            if (r.criticos.length) txt += '🔴 CRÍTICO:\n' + r.criticos.map(x => '   ✘ ' + x).join('\n') + '\n';
+            if (r.avisos.length) txt += (txt ? '\n' : '') + '🟠 Avisos:\n' + r.avisos.map(x => '   • ' + x).join('\n') + '\n';
+            return txt;
+        };
+
         // Lookup wrapper for the V4 "Clientes" table — reads the cached
         // client by id and forwards to composeWelcomeEmail. Avoids inlining
         // user data inside an HTML onclick attribute, which would be fragile
         // with quotes/apostrophes.
-        window.advClientWelcome = function advClientWelcome(docId) {
+        window.advClientWelcome = async function advClientWelcome(docId) {
             const c = (window._advClientsCache || []).find(x => x.id === docId)
                    || (window.userMap && window.userMap[docId])
                    || null;
             if (!c) { alert('Cliente no encontrado en cache. Recarga la lista.'); return; }
+
+            // ─── GATE "CLIENTE LISTO" ─────────────────────────────────────────
+            // Antes de mandar las claves, verificar que el cliente puede
+            // trabajar desde el primer minuto. Si falta algo crítico, avisar
+            // con la lista exacta (el admin puede forzar el envío igualmente).
+            try {
+                const ready = await window.clientReadinessCheck(c);
+                if (!ready.ok) {
+                    const goOn = confirm(
+                        '🚦 CLIENTE NO ESTÁ LISTO — "' + (c.name || docId) + '"\n\n' +
+                        window._readinessText(ready) +
+                        '\n¿Enviar las claves IGUALMENTE?\n\n' +
+                        '[Aceptar] Enviar aunque falten datos\n' +
+                        '[Cancelar] Ir a completar la ficha primero'
+                    );
+                    if (!goOn) {
+                        if (typeof window.openFichaCliente === 'function') window.openFichaCliente(docId);
+                        return;
+                    }
+                } else if (ready.avisos.length) {
+                    console.log('[READY] Avisos no críticos para ' + (c.name || docId) + ':', ready.avisos);
+                }
+            } catch (e) { console.warn('readiness check falló:', e); }
 
             // ─── DETECTAR PADRE CON SUCURSALES ACTIVAS ────────────────────────
             // Si este cliente es padre (no tiene parentClientId propio) Y tiene
@@ -1343,7 +1441,7 @@
             //   3. adminEmail del padre (si es sucursal sin email propio).
             //   4. email principal del padre (si es sucursal sin email propio).
             // Nunca usar loginEmail (sintético c{id}_{slug}_{rand}@novapack.com).
-            const isSynthetic = (e) => !!e && /^c[0-9a-z]+_[a-z0-9_]+_[a-z0-9]+@novapack\.com$/i.test(e);
+            const isSynthetic = (e) => window.isSyntheticEmail(e);
             const cleanReal = (e) => {
                 const t = (e || '').trim();
                 return (t && !isSynthetic(t)) ? t : '';
@@ -1377,10 +1475,65 @@
             }
 
             if (!realEmail) {
-                alert('⚠️ No hay email real en la ficha del cliente.\n\n' +
+                // ─── FALLBACK WHATSAPP ─────────────────────────────────
+                // Sin email real no hay correo posible, pero si la ficha
+                // tiene teléfono podemos entregarle las claves por WhatsApp.
+                const waPhone = ((c.senderPhone || c.phone || '') + '').trim();
+                if (waPhone && typeof window.sendWhatsApp === 'function') {
+                    if (!confirm('⚠️ Este cliente no tiene email real en la ficha.\n\n' +
+                          '¿Enviarle las claves por WHATSAPP al ' + waPhone + '?\n\n' +
+                          '[Aceptar] → Abrir WhatsApp con el mensaje preparado\n' +
+                          '[Cancelar] → Nada (rellena Email Administración o Email principal para usar correo)')) return;
+
+                    let waPwd = c.loginPasswordPlain || '';
+                    if (!waPwd) {
+                        waPwd = prompt('Introduce la contraseña a comunicar al cliente\n(no está guardada en la ficha):') || '';
+                        waPwd = waPwd.trim();
+                        if (!waPwd) return;
+                    }
+                    const waUrl = (location.origin || 'https://novapaack.com') + '/index.html';
+                    const waMsg = '👋 Hola' + (c.name ? ' ' + c.name : '') + ', te damos de alta en la plataforma NOVAPACK.\n\n' +
+                        '🔐 TUS DATOS DE ACCESO\n' +
+                        'Usuario: ' + (c.loginEmail || c.email || '') + '\n' +
+                        'Contraseña: ' + waPwd + '\n' +
+                        'Acceso: ' + waUrl + '\n\n' +
+                        'Desde la app puedes crear albaranes, pedir recogidas y seguir tus envíos. ' +
+                        'Te recomendamos cambiar la contraseña tras el primer acceso (botón 🔑 dentro de la app).';
+                    window.sendWhatsApp(waPhone, waMsg);
+
+                    // Marca de envío + ofrecer borrado de la clave en claro
+                    try {
+                        const adminNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
+                        await db.collection('users').doc(docId).set({
+                            welcomeSentAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            welcomeSentBy: adminNow,
+                            welcomeSentTo: 'WhatsApp ' + waPhone,
+                            welcomeSentVia: 'whatsapp'
+                        }, { merge: true });
+                        if (window.userMap && window.userMap[docId]) {
+                            window.userMap[docId].welcomeSentAt = new Date();
+                            window.userMap[docId].welcomeSentVia = 'whatsapp';
+                        }
+                    } catch (e) { console.warn('[welcome whatsapp] marca cliente:', e); }
+                    if (c.loginPasswordPlain) {
+                        setTimeout(function() {
+                            if (confirm('🔒 ¿Borrar la contraseña en claro de la base de datos?\n\nYa va incluida en el WhatsApp que acabas de abrir.\n\n[Aceptar] → borrarla (recomendado, hazlo tras pulsar Enviar en WhatsApp)')) {
+                                db.collection('users').doc(docId).update({ loginPasswordPlain: firebase.firestore.FieldValue.delete() })
+                                    .then(function() {
+                                        if (window.userMap && window.userMap[docId]) delete window.userMap[docId].loginPasswordPlain;
+                                        if (typeof showToast === 'function') showToast('Contraseña borrada de Firestore ✓', 'success');
+                                    }).catch(function(){});
+                            }
+                        }, 800);
+                    }
+                    return;
+                }
+
+                alert('⚠️ No hay email real NI teléfono en la ficha del cliente.\n\n' +
                       'Necesitas rellenar al menos UNO de estos campos en la ficha:\n' +
                       '  • Email Administración\n' +
-                      '  • Email principal\n\n' +
+                      '  • Email principal\n' +
+                      '  • Teléfono (para envío por WhatsApp)\n\n' +
                       'El "Login" sintético es interno y NO sirve como destinatario.');
                 return;
             }
@@ -1489,7 +1642,16 @@
                       || (window._advClientsCache && window._advClientsCache.find(c => c.id === docId))
                       || {};
             if (data.authUid) {
-                if (!confirm('Este cliente ya tiene acceso activado.\n\nPara CAMBIAR el email/clave de login usa el botón 🔄 (es más limpio).\n\nSi continúas aquí, crearemos una SEGUNDA cuenta Auth — la antigua quedará huérfana y deberás borrarla manualmente desde Firebase Console.\n\n¿Seguir adelante?')) return;
+                // Ya tiene cuenta Auth → NUNCA crear una segunda (quedaría
+                // huérfana). El modal "Cambiar acceso" modifica la cuenta
+                // EXISTENTE vía Cloud Function updateClientAuth, sin duplicar.
+                alert('Este cliente YA tiene acceso activado.\n\nTe abro "Cambiar acceso" para modificar su email de login y/o contraseña sobre la MISMA cuenta (sin crear duplicados).');
+                if (typeof window.openChangeLoginModal === 'function') {
+                    window.openChangeLoginModal(docId);
+                } else {
+                    alert('El modal de cambio de acceso no está disponible. Recarga la página.');
+                }
+                return;
             }
             // ★ Por defecto usamos el EMAIL DE LA FICHA como email de login.
             //   Solo si Firebase rechaza con "email-already-in-use" (caso
@@ -1753,7 +1915,7 @@
             //   1. opts.adminEmail (email de administración — PREFERIDO)
             //   2. opts.email (email principal — fallback)
             // IMPORTANTE: NUNCA usar loginEmail (sintético) como destinatario.
-            const _isSynth = (e) => !!e && /^c[0-9a-z]+_[a-z0-9_]+_[a-z0-9]+@novapack\.com$/i.test(e);
+            const _isSynth = (e) => window.isSyntheticEmail(e);
             const _cleanReal = (e) => {
                 const t = (e || '').trim();
                 return (t && !_isSynth(t)) ? t : '';
@@ -1775,12 +1937,9 @@
                 if (pwd === null) return; // cancel
                 pwd = pwd.trim();
             }
-            // If no password supplied, trigger Firebase password reset so the
-            // user receives an official email from Firebase with a working
-            // reset link. NOTE: el reset de Firebase va al email del Auth (que
-            // es loginCredential, el sintético) — no llegará al cliente real.
-            // En este caso el admin tendrá que generar una nueva contraseña.
-            var firebaseResetSent = false;
+            // Sin contraseña no hay bienvenida útil: el reset automático de
+            // Firebase iría al email del Auth (el sintético interno) y no
+            // llegaría al cliente → forzamos que el admin indique una.
             if (!pwd) {
                 alert('⚠️ Sin contraseña — el reset automático de Firebase iría al email sintético interno (no al cliente).\n\nIntroduce una contraseña en el siguiente prompt para que se la podamos comunicar al cliente.');
                 pwd = prompt('Por favor, introduce una contraseña a comunicar al cliente:');
@@ -1811,9 +1970,11 @@
             body += 'Acceso a la plataforma: ' + loginUrl + '\n';
             body += '\n';
             if (pwd) {
-                body += 'Por seguridad te recomendamos cambiar la contraseña tras tu primer acceso.\n\n';
-            } else if (firebaseResetSent) {
-                body += 'Recibirás un segundo email automático de Firebase con un enlace para establecer tu contraseña.\n\n';
+                body += 'Por seguridad te recomendamos cambiar la contraseña tras tu primer acceso: dentro de la app pulsa el botón 🔑 (arriba a la derecha).\n';
+                if (!usingSynthetic) {
+                    body += 'Si algún día la olvidas, usa "¿Olvidaste tu contraseña?" en la pantalla de acceso.\n';
+                }
+                body += '\n';
             } else {
                 body += 'Contacta con administración para recibir tus credenciales.\n\n';
             }
@@ -1887,58 +2048,83 @@
             body += 'Un saludo,\n';
             body += 'Equipo NOVAPACK\n';
 
-            // Robust mailto: open. window.open() puede:
-            //   - ser bloqueado por popup blocker → la página actual queda en
-            //     blanco al intentar navegar a "mailto:..." en su lugar.
-            //   - fallar si el body codificado supera el límite de URL del
-            //     navegador (típicamente 2KB).
-            // Usamos un <a> programático con target="_blank" para que se abra
-            // el cliente de correo en paralelo sin tocar la página actual.
+            // ─── ENVÍO AUTOMÁTICO POR SMTP (motor cloud) ──────────────
+            // El correo se encola en /mailbox con status 'queued' y el motor
+            // SMTP de Cloud Functions lo envía en segundos (flushMailboxNow),
+            // sin depender del cliente de correo del admin. Al confirmarse la
+            // entrega, el servidor marca welcomeDeliveredAt en el cliente y
+            // BORRA su loginPasswordPlain automáticamente.
+            const adminEmailNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
+            const clientDocId = opts.docId || opts.uid || '';
+            let smtpQueued = false;
             try {
-                _openMailto(to, subject, body);
-            } catch(err) {
-                console.error('mailto failed:', err);
-                // Fallback: copia el cuerpo al portapapeles para que admin lo
-                // pegue manualmente en un correo nuevo.
-                _showMailFallbackModal({ to: to, subject: decodeURIComponent(subject), body: body });
-            }
-
-            // ─── REGISTRO EN BUZÓN INTELIGENTE + FICHA CLIENTE ──────
-            // Independientemente de si el mailto: abrió bien o no, dejamos
-            // huella trazable de que el admin INTENTÓ mandar la bienvenida.
-            // Así aparece en Buzón → Salientes y en la fila del cliente.
-            try {
-                const adminEmailNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
-                const docPayload = {
+                await db.collection('mailbox').add({
                     type: 'outgoing_welcome',
-                    status: 'sent_manual', // ← NO 'queued': el envío lo hizo el cliente de correo del admin vía mailto. Si pusimos 'queued', el mail_engine SMTP lo volvía a enviar y el cliente recibía el correo dos (o más) veces.
+                    status: 'queued',
                     to: to,
                     toName: opts.name || '',
                     toUid: opts.uid || opts.docId || '',
-                    clientId: opts.uid || opts.docId || '',
+                    clientId: clientDocId,
+                    clientIds: clientDocId ? [clientDocId] : [],
                     clientIdNum: opts.idNum || '',
                     subject: decodeURIComponent(subject),
                     body: body,
                     direction: 'outgoing',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     createdBy: adminEmailNow,
-                    sentVia: 'mailto_admin',
-                    note: 'Email de bienvenida compuesto desde admin. El envío efectivo lo hizo el admin desde su cliente de correo (mailto:). El motor SMTP NO debe reenviarlo.'
-                };
-                await db.collection('mailbox').add(docPayload);
-            } catch(e) {
-                console.warn('[welcome] no pude registrar en mailbox:', e);
+                    sentVia: 'smtp_auto'
+                });
+                smtpQueued = true;
+                // Empujar el envío inmediato (sin esperar al scheduler de 2 min)
+                try {
+                    const fnRegion = window.npFunctions || firebase.app().functions('europe-west1');
+                    fnRegion.httpsCallable('flushMailboxNow')({}).catch(function(){});
+                } catch (e) { /* el scheduler lo enviará en ≤2 min igualmente */ }
+                if (typeof showToast === 'function') showToast('✉️ Bienvenida en camino a ' + to + ' (envío automático)', 'success');
+                else alert('✉️ Email de bienvenida encolado — se enviará automáticamente a ' + to);
+            } catch (err) {
+                console.error('[welcome] fallo encolando SMTP, uso fallback mailto:', err);
+            }
+
+            if (!smtpQueued) {
+                // FALLBACK (solo si el encolado falló): abrir el cliente de
+                // correo del admin con mailto, como antes.
+                try {
+                    _openMailto(to, subject, body);
+                } catch(err) {
+                    console.error('mailto failed:', err);
+                    _showMailFallbackModal({ to: to, subject: decodeURIComponent(subject), body: body });
+                }
+                try {
+                    await db.collection('mailbox').add({
+                        type: 'outgoing_welcome',
+                        status: 'sent_manual', // el envío lo hace el admin desde su correo; el motor SMTP no debe tocarlo
+                        to: to,
+                        toName: opts.name || '',
+                        toUid: opts.uid || opts.docId || '',
+                        clientId: clientDocId,
+                        clientIdNum: opts.idNum || '',
+                        subject: decodeURIComponent(subject),
+                        body: body,
+                        direction: 'outgoing',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        createdBy: adminEmailNow,
+                        sentVia: 'mailto_admin',
+                        note: 'Fallback mailto: el encolado SMTP falló. Envío manual desde el correo del admin.'
+                    });
+                } catch(e) {
+                    console.warn('[welcome] no pude registrar en mailbox:', e);
+                }
             }
 
             // Actualiza marca en doc del cliente (para chip en listado)
             try {
-                const clientDocId = opts.uid || opts.docId;
                 if (clientDocId) {
-                    const adminEmailNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
                     await db.collection('users').doc(clientDocId).set({
                         welcomeSentAt: firebase.firestore.FieldValue.serverTimestamp(),
                         welcomeSentBy: adminEmailNow,
-                        welcomeSentTo: to
+                        welcomeSentTo: to,
+                        welcomeSentVia: smtpQueued ? 'smtp_auto' : 'mailto_admin'
                     }, { merge: true });
                     if (window.userMap && window.userMap[clientDocId]) {
                         window.userMap[clientDocId].welcomeSentAt = new Date();
@@ -1946,12 +2132,12 @@
                         window.userMap[clientDocId].welcomeSentTo = to;
                     }
 
-                    // ─── Ofrecer borrar loginPasswordPlain ────────────────────
-                    // La contraseña ya está en el email. Guardarla en Firestore
-                    // es innecesario y un riesgo de seguridad: mejor borrarla.
+                    // Con envío SMTP la contraseña en claro la borra el SERVIDOR
+                    // al confirmar la entrega. Solo en el fallback manual (mailto)
+                    // ofrecemos borrarla a mano.
                     const hasPwd = !!(window.userMap && window.userMap[clientDocId] && window.userMap[clientDocId].loginPasswordPlain)
                                 || !!(opts.password);
-                    if (hasPwd) {
+                    if (!smtpQueued && hasPwd) {
                         setTimeout(function() {
                             if (confirm('🔒 Contraseña guardada en Firestore\n\nYa está incluida en el email de bienvenida que acabas de abrir.\n\n¿Borrarla ahora de la base de datos?\n\n[Aceptar] → se borra definitivamente (recomendado).\n[Cancelar] → se queda guardada (solo si todavía no has enviado el correo).')) {
                                 db.collection('users').doc(clientDocId).update({
@@ -1963,7 +2149,6 @@
                                         if (cc) delete cc.loginPasswordPlain;
                                     }
                                     if (typeof showToast === 'function') showToast('Contraseña borrada de Firestore ✓', 'success');
-                                    // Refrescar fila del cliente si está visible
                                     if (typeof loadUsers === 'function') loadUsers('current');
                                 }).catch(function(e) {
                                     if (typeof showToast === 'function') showToast('Error al borrar: ' + e.message, 'error');
@@ -2002,7 +2187,7 @@
                 const parent = { id: parentDoc.id, ...parentDoc.data() };
 
                 // 2. Email destino: adminEmail primero, luego email principal
-                const _isSynth = (e) => !!e && /^c[0-9a-z]+_[a-z0-9_]+_[a-z0-9]+@novapack\.com$/i.test(e);
+                const _isSynth = (e) => window.isSyntheticEmail(e);
                 let to = (parent.adminEmail || '').trim();
                 if (_isSynth(to)) to = '';
                 if (!to) {
@@ -2086,22 +2271,20 @@
                 body += 'Si necesitáis ayuda escribe a administracion@novapack.info.\n\n';
                 body += 'Un saludo,\nEquipo NOVAPACK\n';
 
-                // 6. Enviar (mailto + registro en buzón)
+                // 6. Enviar — SMTP automático (fallback mailto si el encolado falla)
+                const adminEmailNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
+                // Todos los docs implicados (padre + sucursales del email):
+                // el servidor borrará su loginPasswordPlain al confirmar entrega
+                const allIds = [parent.id].concat(branches.map(function(b){ return b.id; }));
+                let smtpQueued = false;
                 try {
-                    _openMailto(to, subject, body);
-                } catch(err) {
-                    _showMailFallbackModal({ to: to, subject: decodeURIComponent(subject), body: body });
-                }
-
-                // Registro en /mailbox para trazabilidad
-                try {
-                    const adminEmailNow = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
                     await db.collection('mailbox').add({
                         type: 'outgoing_welcome',
-                        status: 'sent_manual', // ← NO 'queued': el envío lo hizo el admin vía mailto. Con 'queued' el motor SMTP lo reenviaría duplicando el correo.
+                        status: 'queued',
                         to: to,
                         toName: parent.name || '',
                         clientId: parent.id,
+                        clientIds: allIds,
                         clientIdNum: parent.idNum || '',
                         subject: decodeURIComponent(subject),
                         body: body,
@@ -2110,15 +2293,51 @@
                         accessCount: accesos.length,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                         createdBy: adminEmailNow,
-                        sentVia: 'mailto_admin'
+                        sentVia: 'smtp_auto'
                     });
+                    smtpQueued = true;
+                    try {
+                        const fnRegion = window.npFunctions || firebase.app().functions('europe-west1');
+                        fnRegion.httpsCallable('flushMailboxNow')({}).catch(function(){});
+                    } catch (e) { /* scheduler ≤2 min */ }
+                    if (typeof showToast === 'function') showToast('✉️ Email consolidado (' + accesos.length + ' accesos) en camino a ' + to, 'success');
+                } catch (err) {
+                    console.error('[consolidated welcome] fallo encolando SMTP, fallback mailto:', err);
+                    try {
+                        _openMailto(to, subject, body);
+                    } catch(e2) {
+                        _showMailFallbackModal({ to: to, subject: decodeURIComponent(subject), body: body });
+                    }
+                    try {
+                        await db.collection('mailbox').add({
+                            type: 'outgoing_welcome',
+                            status: 'sent_manual',
+                            to: to,
+                            toName: parent.name || '',
+                            clientId: parent.id,
+                            clientIdNum: parent.idNum || '',
+                            subject: decodeURIComponent(subject),
+                            body: body,
+                            direction: 'outgoing',
+                            consolidatedAccess: true,
+                            accessCount: accesos.length,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            createdBy: adminEmailNow,
+                            sentVia: 'mailto_admin',
+                            note: 'Fallback mailto: el encolado SMTP falló.'
+                        });
+                    } catch(e3) { console.warn('[consolidated welcome] registro mailbox:', e3); }
+                }
+
+                try {
                     await db.collection('users').doc(parent.id).set({
                         welcomeSentAt: firebase.firestore.FieldValue.serverTimestamp(),
                         welcomeSentBy: adminEmailNow,
                         welcomeSentTo: to,
-                        welcomeConsolidated: true
+                        welcomeConsolidated: true,
+                        welcomeSentVia: smtpQueued ? 'smtp_auto' : 'mailto_admin'
                     }, { merge: true });
-                } catch(e) { console.warn('[consolidated welcome] registro mailbox:', e); }
+                } catch(e) { console.warn('[consolidated welcome] marca cliente:', e); }
 
                 if (sinPass.length > 0) {
                     alert('📧 Email consolidado preparado para ' + to + ' con ' + accesos.length + ' accesos.\n\n'
@@ -2126,32 +2345,35 @@
                         + 'Son cuentas creadas antes de esta función. Para ellas, usa 🔄 (Cambiar login) que regenera y guarda la contraseña, o el email saldrá con un aviso para esa cuenta.');
                 }
 
-                // ─── Ofrecer borrar loginPasswordPlain en batch ──────────────
-                const conPass = [parent, ...branches].filter(function(u){ return !!u.loginPasswordPlain; });
-                if (conPass.length > 0) {
-                    setTimeout(function() {
-                        if (confirm('🔒 Contraseñas guardadas en Firestore\n\nEl email consolidado ya las incluye para ' + conPass.length + ' cuenta(s):\n' + conPass.map(function(u){ return '  • ' + (u.name || u.id); }).join('\n') + '\n\n¿Borrarlas ahora de la base de datos?\n\n[Aceptar] → se borran definitivamente (recomendado).\n[Cancelar] → se mantienen.')) {
-                            var batch = db.batch();
-                            conPass.forEach(function(u) {
-                                batch.update(db.collection('users').doc(u.id), {
-                                    loginPasswordPlain: firebase.firestore.FieldValue.delete()
-                                });
-                            });
-                            batch.commit().then(function() {
+                // Con SMTP el borrado de contraseñas lo hace el SERVIDOR al
+                // confirmar la entrega. Solo en fallback manual ofrecemos batch.
+                if (!smtpQueued) {
+                    const conPass = [parent, ...branches].filter(function(u){ return !!u.loginPasswordPlain; });
+                    if (conPass.length > 0) {
+                        setTimeout(function() {
+                            if (confirm('🔒 Contraseñas guardadas en Firestore\n\nEl email consolidado ya las incluye para ' + conPass.length + ' cuenta(s):\n' + conPass.map(function(u){ return '  • ' + (u.name || u.id); }).join('\n') + '\n\n¿Borrarlas ahora de la base de datos?\n\n[Aceptar] → se borran definitivamente (recomendado).\n[Cancelar] → se mantienen.')) {
+                                var batch = db.batch();
                                 conPass.forEach(function(u) {
-                                    if (window.userMap && window.userMap[u.id]) delete window.userMap[u.id].loginPasswordPlain;
-                                    if (window._advClientsCache) {
-                                        const cc = window._advClientsCache.find(function(x){ return x.id === u.id; });
-                                        if (cc) delete cc.loginPasswordPlain;
-                                    }
+                                    batch.update(db.collection('users').doc(u.id), {
+                                        loginPasswordPlain: firebase.firestore.FieldValue.delete()
+                                    });
                                 });
-                                if (typeof showToast === 'function') showToast('Contraseñas borradas de Firestore (' + conPass.length + ' cuentas) ✓', 'success');
-                                if (typeof loadUsers === 'function') loadUsers('current');
-                            }).catch(function(e) {
-                                if (typeof showToast === 'function') showToast('Error al borrar: ' + e.message, 'error');
-                            });
-                        }
-                    }, 600);
+                                batch.commit().then(function() {
+                                    conPass.forEach(function(u) {
+                                        if (window.userMap && window.userMap[u.id]) delete window.userMap[u.id].loginPasswordPlain;
+                                        if (window._advClientsCache) {
+                                            const cc = window._advClientsCache.find(function(x){ return x.id === u.id; });
+                                            if (cc) delete cc.loginPasswordPlain;
+                                        }
+                                    });
+                                    if (typeof showToast === 'function') showToast('Contraseñas borradas de Firestore (' + conPass.length + ' cuentas) ✓', 'success');
+                                    if (typeof loadUsers === 'function') loadUsers('current');
+                                }).catch(function(e) {
+                                    if (typeof showToast === 'function') showToast('Error al borrar: ' + e.message, 'error');
+                                });
+                            }
+                        }, 600);
+                    }
                 }
             } catch(e) {
                 if (typeof hideLoading === 'function') hideLoading();
@@ -9309,9 +9531,9 @@ window.runPublicTicketsBackfill = async function() {
                         // Sólo en creación (no edición). El admin elige si
                         // quiere mandar las credenciales por correo ahora.
                         if (!userId && email && password) {
-                            const sendWelcome = confirm('✅ Cliente creado con éxito.\n\n¿Quieres enviarle un email de bienvenida con sus credenciales y el link de acceso?\n\n[Aceptar] abrirá tu cliente de correo con un mensaje pre-rellenado.\n[Cancelar] guardará sin enviar — podrás comunicar manualmente.');
+                            const sendWelcome = confirm('✅ Cliente creado con éxito.\n\n¿Quieres enviarle AHORA el email de bienvenida con sus credenciales y el link de acceso?\n\n[Aceptar] se envía automáticamente (motor SMTP).\n[Cancelar] guardar sin enviar — podrás mandarlo después con el botón ✉️.');
                             if (sendWelcome && typeof window.composeWelcomeEmail === 'function') {
-                                window.composeWelcomeEmail({ email: email, adminEmail: adminEmail, password: password, name: name, idNum: idNumStr });
+                                window.composeWelcomeEmail({ email: email, adminEmail: adminEmail, password: password, name: name, idNum: idNumStr, docId: targetDocId, uid: targetDocId });
                             }
                         } else {
                             alert(userId ? "✅ Cliente actualizado correctamente." : "✅ Cliente creado con éxito en la nube.");
@@ -19822,8 +20044,18 @@ window.importTarifas50 = async () => {
             } else if (isBranch) {
                 nameChip = ' <span style="background:rgba(93,173,226,0.15); color:#5DADE2; padding:1px 6px; border-radius:8px; font-size:0.62rem; font-weight:600; margin-left:4px;">🏢 sucursal</span>';
             }
-            // Chip de bienvenida enviada (visible para padres y sucursales con authUid)
-            if (!isGlobal && c.welcomeSentAt) {
+            // Chip de bienvenida (visible para padres y sucursales con authUid)
+            //   verde  = ENTREGADA (confirmación SMTP del servidor)
+            //   amarillo = enviada/en cola pero sin confirmación de entrega
+            //   naranja = con acceso pero sin bienvenida
+            if (!isGlobal && c.welcomeDeliveredAt) {
+                let whenD = '';
+                try {
+                    const tsD = c.welcomeDeliveredAt.toDate ? c.welcomeDeliveredAt.toDate() : new Date(c.welcomeDeliveredAt);
+                    if (!isNaN(tsD.getTime())) whenD = tsD.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                } catch(_) {}
+                nameChip += ' <span style="background:rgba(52,199,89,0.15); color:#34C759; padding:1px 6px; border-radius:8px; font-size:0.6rem; font-weight:600; margin-left:4px;" title="Bienvenida ENTREGADA por el motor SMTP el ' + (whenD || '?') + (c.welcomeSentTo ? ' a ' + c.welcomeSentTo : '') + '">✉️✓ ' + (whenD || 'entregada') + '</span>';
+            } else if (!isGlobal && c.welcomeSentAt) {
                 let when = '';
                 try {
                     const ts = c.welcomeSentAt.toDate ? c.welcomeSentAt.toDate() : new Date(c.welcomeSentAt);
@@ -19831,7 +20063,10 @@ window.importTarifas50 = async () => {
                         when = ts.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' });
                     }
                 } catch(_) {}
-                nameChip += ' <span style="background:rgba(52,199,89,0.15); color:#34C759; padding:1px 6px; border-radius:8px; font-size:0.6rem; font-weight:600; margin-left:4px;" title="Email de bienvenida compuesto el ' + (when || '?') + ' por ' + (c.welcomeSentBy || 'admin') + '">✉️ ' + (when || 'enviada') + '</span>';
+                const viaTxt = c.welcomeSentVia === 'smtp_auto' ? 'encolada en el motor SMTP (pendiente de confirmación de entrega)'
+                             : c.welcomeSentVia === 'whatsapp' ? 'enviada por WhatsApp'
+                             : 'compuesta vía mailto (el envío dependió del correo del admin)';
+                nameChip += ' <span style="background:rgba(255,214,10,0.12); color:#FFD60A; padding:1px 6px; border-radius:8px; font-size:0.6rem; font-weight:600; margin-left:4px;" title="Bienvenida ' + viaTxt + ' el ' + (when || '?') + ' por ' + (c.welcomeSentBy || 'admin') + '">✉️ ' + (when || 'enviada') + '</span>';
             } else if (!isGlobal && c.authUid) {
                 // Tiene cuenta auth pero no welcome enviado → invitar
                 nameChip += ' <span style="background:rgba(255,159,10,0.10); color:#FF9F0A; padding:1px 6px; border-radius:8px; font-size:0.6rem; font-weight:600; margin-left:4px;" title="Cliente con acceso activado pero sin registro de envío de bienvenida">✉️ sin bienvenida</span>';
@@ -21887,7 +22122,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260516_email_auto"></script>
+<script src="ficha_cliente.js?v=20260717_onboard"></script>
 <script src="albaranes_central.js?v=20260402"></script>
 <script src="facturas_central.js?v=20260715_series"></script>
 <script src="monthly_billing_flow.js?v=20260715_series"></script>

@@ -240,6 +240,9 @@
                 <input type="password" id="password" placeholder="••••••••" required>
             </div>
             <button type="submit" class="btn">INICIAR SESIÓN</button>
+            <div style="text-align:center; margin-top:12px;">
+                <a href="#" id="forgot-password-link" style="color:#888; font-size:0.78rem; text-decoration:underline;">&iquest;Olvidaste tu contrase&ntilde;a?</a>
+            </div>
             <div id="error-msg"></div>
             <div class="loader" id="loader">
                 <div class="loader-dots"></div>
@@ -301,6 +304,40 @@
                     errorMsg.innerText = 'Error: ' + error.message;
                 }
                 loader.style.display = 'none';
+            }
+        });
+
+        // ── Recuperación de contraseña ──
+        // Los logins sintéticos (c123_xxx@novapack.com) no tienen buzón real:
+        // el reset de Firebase no les llegaría nunca → avisar que contacten.
+        const SYNTHETIC_RE = /^c[0-9a-z]+(?:_[a-z0-9]+)+@novapack\.com$/i;
+        document.getElementById('forgot-password-link').addEventListener('click', async (e) => {
+            e.preventDefault();
+            errorMsg.style.color = '';
+            const email = (document.getElementById('email').value || '').trim().toLowerCase();
+            if (!email) {
+                errorMsg.innerText = 'Escribe tu usuario/email arriba y vuelve a pulsar "¿Olvidaste tu contraseña?"';
+                return;
+            }
+            if (SYNTHETIC_RE.test(email)) {
+                errorMsg.innerText = 'Tu usuario es un identificador interno (no un buzón real). Contacta con NOVAPACK para restablecer tu clave.';
+                return;
+            }
+            try {
+                await auth.sendPasswordResetEmail(email);
+                errorMsg.style.color = '#4CAF50';
+                errorMsg.innerText = 'Te hemos enviado un email para restablecer tu contraseña. Revisa tu bandeja (y el spam).';
+            } catch (error) {
+                console.error('Reset password error:', error);
+                if (error.code === 'auth/user-not-found') {
+                    errorMsg.innerText = 'No existe ninguna cuenta con ese email.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMsg.innerText = 'El email no tiene un formato válido.';
+                } else if (error.code === 'auth/too-many-requests') {
+                    errorMsg.innerText = 'Demasiados intentos. Espera unos minutos y vuelve a probar.';
+                } else {
+                    errorMsg.innerText = 'No se pudo enviar el email: ' + error.message;
+                }
             }
         });
 

@@ -182,7 +182,22 @@ async function processQueue() {
 
             // Tracking de tipos especiales
             try {
-                if (doc.clientId && (doc.type === 'outgoing_welcome' || doc.type === 'outgoing_pod')) {
+                if (doc.type === 'outgoing_welcome') {
+                    // Bienvenida ENTREGADA → marcar entrega y BORRAR la
+                    // contraseña en claro de todos los clientes del email
+                    // (clientIds en el consolidado; clientId en el individual).
+                    const ids = (Array.isArray(doc.clientIds) && doc.clientIds.length > 0)
+                        ? doc.clientIds
+                        : (doc.clientId ? [doc.clientId] : []);
+                    for (const cid of ids) {
+                        await db.collection('users').doc(String(cid)).set({
+                            welcomeDeliveredAt: admin.firestore.FieldValue.serverTimestamp(),
+                            loginPasswordPlain: admin.firestore.FieldValue.delete()
+                        }, { merge: true }).catch(e => {
+                            logger.warn(`welcome delivered: no pude actualizar users/${cid}`, { msg: e.message });
+                        });
+                    }
+                } else if (doc.clientId && doc.type === 'outgoing_pod') {
                     await db.collection('users').doc(doc.clientId).set({
                         welcomeDeliveredAt: admin.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });

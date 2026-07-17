@@ -874,6 +874,9 @@
             <div id="fc-access-label" style="color:#aaa;">Cargando estado…</div>
             <div id="fc-access-actions" style="display:flex; gap:5px; flex-wrap:wrap;"></div>
         </div>
+        <div style="margin-bottom:8px;">
+            <button type="button" onclick="window.fichaReadinessCheck('${d.id}')" style="background:transparent; border:1px solid #FF9800; color:#FF9800; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Comprueba que el cliente tiene TODO lo necesario para trabajar desde el primer día: acceso, NIF, dirección+CP, tarifa, sede operativa y canal para recibir las claves">🚦 ¿Listo para trabajar?</button>
+        </div>
         <div id="fc-access-loginline" style="display:none; font-size:0.7rem; color:#888; font-family:monospace; word-break:break-all; margin-bottom:8px;"></div>
         <div style="display:grid; grid-template-columns: 200px 1fr 1fr 1fr; gap:6px; margin-bottom:6px;">
             <div style="min-width:auto; display:flex; align-items:center; gap:6px; padding-top:18px;">
@@ -1307,6 +1310,34 @@
     //  y qué hay que arreglar para que la facturación mensual salga
     //  correctamente.
     // ============================================================
+    // ── 🚦 Checklist "cliente listo" desde la ficha ──
+    // Lee la ficha FRESCA de Firestore (no cache) y ejecuta el checklist
+    // compartido window.clientReadinessCheck (definido en admin.html).
+    window.fichaReadinessCheck = async function(clientId) {
+        if (typeof window.clientReadinessCheck !== 'function') {
+            alert('El verificador no está disponible. Recarga la página.');
+            return;
+        }
+        if (typeof showLoading === 'function') showLoading();
+        try {
+            const snap = await db.collection('users').doc(clientId).get();
+            if (!snap.exists) { alert('Cliente no encontrado.'); return; }
+            const c = { id: snap.id, ...snap.data() };
+            const r = await window.clientReadinessCheck(c);
+            if (r.ok && r.avisos.length === 0) {
+                alert('✅ "' + (c.name || clientId) + '" está LISTO para trabajar.\n\nAcceso, NIF, dirección+CP, tarifa y sede operativa: todo correcto. Puedes enviarle las claves (✉️).');
+            } else if (r.ok) {
+                alert('🟢 "' + (c.name || clientId) + '" puede trabajar, con avisos menores:\n\n' + window._readinessText(r));
+            } else {
+                alert('🚦 "' + (c.name || clientId) + '" NO está listo:\n\n' + window._readinessText(r) + '\nCompleta los puntos críticos en la ficha y vuelve a comprobar.');
+            }
+        } catch (e) {
+            alert('Error verificando: ' + e.message);
+        } finally {
+            if (typeof hideLoading === 'function') hideLoading();
+        }
+    };
+
     window.openParentDiagnostic = async function(parentId) {
         if (!parentId) return;
         const _esc = (s) => (typeof escapeHtml === 'function')
