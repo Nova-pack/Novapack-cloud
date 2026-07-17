@@ -664,7 +664,7 @@
             const _allocR = await window.allocInvoiceNumber(_facAbonoOriginal.senderData || {}, 'R');
             const nextNum = _allocR.number;
 
-            const subtotal = selectedLines.reduce((s, l) => s + l.total, 0);
+            const subtotal = Math.round(selectedLines.reduce((s, l) => s + l.total, 0) * 100) / 100;
             const ivaRate = _facAbonoOriginal.ivaRate || 21;
             const ivaAmount = Math.round(subtotal * (ivaRate / 100) * 100) / 100;
             const irpfRate = _facAbonoOriginal.irpfRate || 0;

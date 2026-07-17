@@ -401,11 +401,15 @@ function vfFechaExpedicion(v) {
     return `${parts.day}-${parts.month}-${parts.year}`;
 }
 
-// F1 estándar; R1-R5 para rectificativas/abonos
+// F1 estándar; R1-R5 para rectificativas/abonos.
+// Catálogo AEAT: R1 error fundado/80.1-2-6 · R2 concurso (80.3) ·
+// R3 incobrable (80.4) · R4 resto · R5 rectif. de simplificada.
+// Los códigos internos R6/R7 ("otros motivos" del selector) → R4.
 function vfTipoFactura(inv) {
     if (inv.serie === 'R' || inv.isCredit || inv.isAbono) {
         const c = String(inv.rectificaCodigo || inv.motivoRectificacion || '').toUpperCase();
-        return ['R1', 'R2', 'R3', 'R4', 'R5'].includes(c) ? c : 'R1';
+        if (['R1', 'R2', 'R3', 'R4', 'R5'].includes(c)) return c;
+        return 'R4';
     }
     return 'F1';
 }
@@ -499,6 +503,16 @@ exports.verifactuStampInvoice = onDocumentCreated({
                 '&FechaHoraHusoGenRegistro=' + fechaHora;
             const huella = vfSha256(cadena);
 
+            // Rectificativas: referencia a la factura rectificada (AEAT exige
+            // FacturasRectificadas en R1-R5). rectificaA = invoiceId original.
+            let facturaRectificada = null;
+            if (/^R[1-5]$/.test(tipo) && (inv.rectificaA || inv.originalInvoice)) {
+                facturaRectificada = {
+                    numSerie: String(inv.rectificaA || inv.originalInvoice),
+                    fechaExpedicion: vfFechaExpedicion(inv.rectificaDate || inv.date || inv.createdAt)
+                };
+            }
+
             tx.set(ledgerRef, {
                 tipoRegistro: 'alta',
                 invoiceDocId: event.params.docId,
@@ -507,6 +521,7 @@ exports.verifactuStampInvoice = onDocumentCreated({
                 numSerieFactura: numSerie,
                 fechaExpedicionFactura: fechaExp,
                 tipoFactura: tipo,
+                facturaRectificada: facturaRectificada,
                 // Desglose para el XML de remisión (FASE 2)
                 baseImponible: vfImporte(inv.subtotal),
                 tipoImpositivo: Number(inv.ivaRate) || 21,
@@ -721,6 +736,13 @@ function vfXmlRegistroAlta(reg, prevReg, sif) {
         + '<sum1:NombreRazonEmisor>' + vfXml(reg.nombreRazonEmisor || '') + '</sum1:NombreRazonEmisor>'
         + '<sum1:TipoFactura>' + vfXml(reg.tipoFactura || 'F1') + '</sum1:TipoFactura>'
         + (esRectificativa ? '<sum1:TipoRectificativa>I</sum1:TipoRectificativa>' : '')
+        + (esRectificativa && reg.facturaRectificada && reg.facturaRectificada.numSerie
+            ? '<sum1:FacturasRectificadas><sum1:IDFacturaRectificada>'
+              + '<sum1:IDEmisorFactura>' + vfXml(reg.idEmisorFactura) + '</sum1:IDEmisorFactura>'
+              + '<sum1:NumSerieFactura>' + vfXml(reg.facturaRectificada.numSerie) + '</sum1:NumSerieFactura>'
+              + '<sum1:FechaExpedicionFactura>' + vfXml(reg.facturaRectificada.fechaExpedicion) + '</sum1:FechaExpedicionFactura>'
+              + '</sum1:IDFacturaRectificada></sum1:FacturasRectificadas>'
+            : '')
         + '<sum1:DescripcionOperacion>' + vfXml(reg.descripcionOperacion || 'Servicios de transporte y logística') + '</sum1:DescripcionOperacion>'
         + destinatarios
         + '<sum1:Desglose><sum1:DetalleDesglose>'
@@ -876,10 +898,53 @@ async function vfProcessPending(triggeredBy) {
         return { error: 'certs_invalidos' };
     }
 
-    // Registros pendientes, agrupados por empresa y ordenados por cadena
-    const pendSnap = await db.collection('verifactu_registros')
-        .where('estadoEnvioAEAT', '==', 'pendiente')
-        .limit(500).get();
+    // AUTO-REPARACIÓN: registros bloqueados por falta de NIF del destinatario
+    // — si el admin ya completó el NIF en la ficha del cliente, re-resolver
+    // y re-encolar automáticamente.
+    try {
+        const blockedSnap = await db.collection('verifactu_registros')
+            .where('estadoEnvioAEAT', '==', 'bloqueado_sin_nif_destinatario')
+            .limit(50).get();
+        for (const bDoc of blockedSnap.docs) {
+            const b = bDoc.data();
+            let invDoc = null;
+            if (b.invoiceDocId) {
+                invDoc = await db.collection('invoices').doc(b.invoiceDocId).get();
+                if (!invDoc.exists) invDoc = await db.collection('deleted_invoices').doc(b.invoiceDocId).get();
+            }
+            if (invDoc && invDoc.exists) {
+                const dest = await vfResolveDestinatario(invDoc.data());
+                if (dest.nif) {
+                    await bDoc.ref.update({
+                        destinatarioNombre: dest.nombre,
+                        destinatarioNif: dest.nif,
+                        estadoEnvioAEAT: 'pendiente',
+                        desbloqueadoAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    logger.info(`verifactu: ${b.numSerieFactura} desbloqueado (NIF destinatario resuelto)`);
+                }
+            }
+        }
+    } catch (e) {
+        logger.warn('verifactu: auto-reparación de bloqueados falló', { msg: e.message });
+    }
+
+    // Registros pendientes, agrupados por empresa y ordenados por cadena.
+    // orderBy chainIndex: con backlog >500 evita enviar índices posteriores
+    // antes que sus anteriores (AEAT rechazaría el encadenamiento).
+    let pendSnap;
+    try {
+        pendSnap = await db.collection('verifactu_registros')
+            .where('estadoEnvioAEAT', '==', 'pendiente')
+            .orderBy('chainIndex', 'asc')
+            .limit(500).get();
+    } catch (e) {
+        // Índice compuesto aún no creado → fallback sin orden (backlogs
+        // pequeños siguen siendo correctos porque se ordena por grupo abajo)
+        pendSnap = await db.collection('verifactu_registros')
+            .where('estadoEnvioAEAT', '==', 'pendiente')
+            .limit(500).get();
+    }
     if (pendSnap.empty) return { sent: 0, reason: 'sin_pendientes' };
 
     const porNif = {};
@@ -909,10 +974,13 @@ async function vfProcessPending(triggeredBy) {
             continue;
         }
 
-        // F1 sin NIF de destinatario → bloquear (AEAT lo rechazaría)
+        // Alta F1 o rectificativa R1-R4 sin NIF de destinatario → bloquear
+        // (AEAT las rechazaría; R5 = rectif. de simplificada, sin destinatario)
         const enviables = [];
         for (const r of grupo) {
-            if (r.tipoRegistro === 'alta' && r.tipoFactura === 'F1' && !r.destinatarioNif) {
+            const necesitaDest = r.tipoRegistro === 'alta'
+                && /^(F1|R[1-4])$/.test(r.tipoFactura || '');
+            if (necesitaDest && !r.destinatarioNif) {
                 await r._ref.update({
                     estadoEnvioAEAT: 'bloqueado_sin_nif_destinatario',
                     bloqueadoAt: admin.firestore.FieldValue.serverTimestamp()
@@ -953,13 +1021,28 @@ async function vfProcessPending(triggeredBy) {
             continue;
         }
 
-        // Procesar respuesta línea a línea (mismo orden que el envío)
+        // Procesar respuesta — matching robusto: primero por Nº DE SERIE (con
+        // consumo, tolera reordenación de la AEAT); el índice posicional solo
+        // se usa si el recuento de líneas coincide exactamente con lo enviado.
         const parsed = vfParseRespuesta(resp.body);
         ultimoTiempoEspera = parsed.tiempoEspera || 60;
+        const consumidas = new Set();
+        const mismaLongitud = parsed.lineas.length === enviables.length;
         let ok = 0, ko = 0;
         for (let i = 0; i < enviables.length; i++) {
             const r = enviables[i];
-            const linea = parsed.lineas[i] || parsed.lineas.find(l => l.numSerieFactura === r.numSerieFactura) || {};
+            let linea = null;
+            // 1) match por numSerie no consumida (fiable ante reordenación)
+            for (let j = 0; j < parsed.lineas.length; j++) {
+                if (!consumidas.has(j) && parsed.lineas[j].numSerieFactura === r.numSerieFactura) {
+                    linea = parsed.lineas[j]; consumidas.add(j); break;
+                }
+            }
+            // 2) fallback posicional SOLO si nº de líneas == nº enviados
+            if (!linea && mismaLongitud && !consumidas.has(i)) {
+                linea = parsed.lineas[i]; consumidas.add(i);
+            }
+            linea = linea || {};
             const estado = (linea.estadoRegistro || '').toLowerCase();
             const update = {
                 envioEntorno: entorno,
@@ -967,7 +1050,8 @@ async function vfProcessPending(triggeredBy) {
                 envioCsv: parsed.csv || null,
                 envioEstadoLinea: linea.estadoRegistro || '',
                 envioCodigoError: linea.codigoError || '',
-                envioDescripcionError: linea.descripcionError || ''
+                envioDescripcionError: linea.descripcionError || '',
+                envioIntentos: (r.envioIntentos || 0) + 1
             };
             if (estado === 'correcto') {
                 update.estadoEnvioAEAT = 'enviado'; ok++;
@@ -975,6 +1059,11 @@ async function vfProcessPending(triggeredBy) {
                 update.estadoEnvioAEAT = 'aceptado_con_errores'; ok++;
             } else if (estado) {
                 update.estadoEnvioAEAT = 'rechazado'; ko++;
+            } else if ((r.envioIntentos || 0) + 1 >= 10) {
+                // Tope de reintentos: la AEAT nunca devuelve línea para este
+                // registro → sacar de la cola y dejar rastro para revisión
+                update.estadoEnvioAEAT = 'error_sin_respuesta';
+                logger.error(`verifactu: ${r.numSerieFactura} sin línea de respuesta tras 10 intentos — marcado error_sin_respuesta`);
             } else {
                 // sin línea identificable: conservar pendiente para reintento
                 update.estadoEnvioAEAT = 'pendiente';

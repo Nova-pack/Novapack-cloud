@@ -123,6 +123,25 @@ async function main() {
         console.log('✔ Envío DESACTIVADO');
     }
 
+    else if (cmd === 'requeue') {
+        // Re-encola registros: rechazado / bloqueado_* / error_sin_respuesta → pendiente
+        const estado = process.argv[3];
+        const validos = ['rechazado', 'bloqueado_sin_nif_destinatario', 'bloqueado_sin_nif_emisor', 'error_sin_respuesta'];
+        if (!validos.includes(estado)) {
+            console.error('Uso: requeue <' + validos.join('|') + '>');
+            process.exit(1);
+        }
+        const snap = await db.collection('verifactu_registros')
+            .where('estadoEnvioAEAT', '==', estado).limit(200).get();
+        let n = 0;
+        for (const d of snap.docs) {
+            await d.ref.update({ estadoEnvioAEAT: 'pendiente' });
+            console.log('   re-encolado: ' + d.data().numSerieFactura);
+            n++;
+        }
+        console.log(`✔ ${n} registros re-encolados (${estado} → pendiente)`);
+    }
+
     else if (cmd === 'send') {
         const fn = firebase.app().functions('europe-west1').httpsCallable('verifactuSendNow');
         const res = await fn({});

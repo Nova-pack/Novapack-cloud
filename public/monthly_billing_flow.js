@@ -530,6 +530,9 @@
             const currentYear = new Date().getFullYear();
             const currentYY = String(currentYear).slice(-2);
 
+            // GUARD: sin CIF de emisora no se emite NADA del lote (Verifactu)
+            if (!window.requireEmitterCif(_mbSenderData, 'facturación mensual')) return;
+
             // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa).
             const ivaRate = window.invCompanyData ? (window.invCompanyData.iva || 21) : 21;
             const invoiceDate = new Date();
@@ -619,15 +622,17 @@
                     invoiceId: invoiceIdStr,
                     date: invoiceDate,           // fecha EXPEDICIÓN (cuándo se emite)
                     fechaDevengo: fechaDevengo,  // fecha OPERACIÓN (cuándo se devenga IVA)
+                    dueDate: window.calcDueDate(invoiceDate, client.paymentTerms || 'contado'),
+                    paymentTerms: client.paymentTerms || 'contado',
                     clientId: client.id,
                     clientName: client.name || 'Sin nombre',
                     clientCIF: clientFiscalId,
-                    subtotal: group.subtotal,
-                    iva: group.iva,
+                    subtotal: window.round2(group.subtotal),
+                    iva: window.round2(group.iva),
                     ivaRate: ivaRate,
-                    irpf: group.irpf,
+                    irpf: window.round2(group.irpf),
                     irpfRate: irpfRate,
-                    total: group.total,
+                    total: window.round2(group.total),
                     tickets: ticketsIdArray,
                     ticketsDetail: ticketsDetailArray,
                     senderData: _mbSenderData,

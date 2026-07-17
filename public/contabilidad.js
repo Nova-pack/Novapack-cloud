@@ -29,6 +29,79 @@ const PGC = {
 };
 
 // ============================================================
+//  HELPERS FISCALES COMPARTIDOS (multi-empresa + devengo + abonos)
+// ============================================================
+
+// Normalizador de NIF
+function _contaNifNorm(s) { return String(s || '').replace(/[\s.\-]/g, '').toUpperCase(); }
+
+// Empresa emisora seleccionada para los modelos ('' = TODAS)
+window._contaEmisoraNif = window._contaEmisoraNif || '';
+
+// Carga (una vez) las empresas emisoras de billing_companies
+window._contaEmisorasCache = window._contaEmisorasCache || null;
+async function _contaLoadEmisoras() {
+    if (window._contaEmisorasCache) return window._contaEmisorasCache;
+    const list = [];
+    try {
+        const snap = await db.collection('billing_companies').get();
+        snap.forEach(d => {
+            const c = d.data();
+            const nif = _contaNifNorm(c.nif || c.cif);
+            if (nif) list.push({ nif, name: c.name || nif });
+        });
+    } catch (e) { console.warn('[CONTA] emisoras:', e); }
+    window._contaEmisorasCache = list;
+    return list;
+}
+
+// HTML del selector de emisora. reloadFn = nombre de la función global a
+// relanzar al cambiar. Los modelos 303/390/347/111/115 son POR NIF EMISOR:
+// "TODAS" solo sirve de vistazo rápido y se marca como NO presentable.
+async function _contaEmisoraSelectorHtml(reloadFn) {
+    const emisoras = await _contaLoadEmisoras();
+    const sel = window._contaEmisoraNif;
+    let opts = '<option value="">— TODAS (solo vista, NO presentable) —</option>';
+    emisoras.forEach(e => {
+        opts += `<option value="${e.nif}" ${e.nif === sel ? 'selected' : ''}>${e.name} (${e.nif})</option>`;
+    });
+    return `<select onchange="window._contaEmisoraNif=this.value; window.${reloadFn}();" title="Los modelos fiscales se presentan POR EMPRESA (NIF emisor)"
+        style="background:#2d2d30; border:1px solid #FF6600; color:#fff; padding:4px 10px; border-radius:4px; font-size:0.78rem; max-width:280px;">${opts}</select>`;
+}
+
+// ¿La factura pertenece a la emisora seleccionada?
+function _contaMatchEmisora(inv) {
+    if (!window._contaEmisoraNif) return true; // TODAS
+    return _contaNifNorm(inv && inv.senderData && inv.senderData.cif) === window._contaEmisoraNif;
+}
+// ¿El gasto pertenece a la emisora seleccionada? (expenses.companyNif)
+function _contaMatchEmisoraGasto(e) {
+    if (!window._contaEmisoraNif) return true;
+    return _contaNifNorm(e && e.companyNif) === window._contaEmisoraNif;
+}
+
+// Fecha FISCAL de una factura: devengo si existe, si no expedición.
+// (El IVA se imputa al periodo de DEVENGO — RD 1624/1992.)
+function _contaFechaFiscal(inv) {
+    const v = inv.fechaDevengo || inv.date || inv.createdAt;
+    if (!v) return null;
+    const d = v.toDate ? v.toDate() : new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// Valor con signo seguro para abonos. Los abonos modernos guardan
+// importes NEGATIVOS (no tocar); los ABO legacy de admin guardaban el
+// grid en POSITIVO → negar. Regla: si es abono y el valor viene
+// positivo, se niega; si ya viene negativo, se respeta.
+function _contaEsAbono(inv) {
+    return !!(inv && (inv.isAbono || inv.isCredit || inv.serie === 'R'));
+}
+function _contaAbonoVal(inv, rawVal) {
+    const v = parseFloat(rawVal) || 0;
+    return (_contaEsAbono(inv) && v > 0) ? -v : v;
+}
+
+// ============================================================
 //  GENERADOR DE ASIENTOS CONTABLES
 // ============================================================
 
@@ -882,59 +955,84 @@ window.contaLoadModelo303 = async function() {
     container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Calculando Modelo 303...</div>';
     
     try {
-        const year = new Date().getFullYear();
+        const year = (window._conta303Year || new Date().getFullYear()) - 0;
         const quarters = [
             { name: '1T (Ene-Mar)', start: new Date(year, 0, 1), end: new Date(year, 2, 31, 23, 59, 59) },
             { name: '2T (Abr-Jun)', start: new Date(year, 3, 1), end: new Date(year, 5, 30, 23, 59, 59) },
             { name: '3T (Jul-Sep)', start: new Date(year, 6, 1), end: new Date(year, 8, 30, 23, 59, 59) },
             { name: '4T (Oct-Dic)', start: new Date(year, 9, 1), end: new Date(year, 11, 31, 23, 59, 59) }
         ];
-        
-        // Get all journal entries for invoices this year
-        const snap = await db.collection('journal')
-            .where('type', '==', 'invoice')
-            .orderBy('date', 'asc')
-            .limit(5000)
-            .get();
-        
-        // Get expense journal entries for IVA Soportado
-        const expSnap = await db.collection('journal')
-            .where('type', '==', 'expense')
-            .orderBy('date', 'asc')
-            .limit(5000)
-            .get();
-        
+
+        // FUENTE DIRECTA: invoices + expenses (no el journal, que depende de
+        // que la consola estuviera abierta al emitirse cada factura).
+        // Imputación por fecha de DEVENGO (fechaDevengo || date).
+        const [invSnap, expSnap] = await Promise.all([
+            db.collection('invoices')
+                .where('date', '>=', new Date(year, 0, 1))
+                .where('date', '<=', new Date(year, 11, 31, 23, 59, 59))
+                .limit(20000).get(),
+            db.collection('expenses')
+                .where('date', '>=', new Date(year, 0, 1))
+                .where('date', '<=', new Date(year, 11, 31, 23, 59, 59))
+                .limit(20000).get().catch(() => ({ forEach: () => {} }))
+        ]);
+
         const quarterData = quarters.map(q => ({ ...q, baseImponible: 0, ivaRepercutido: 0, baseGastos: 0, ivaSoportado: 0, countInv: 0, countExp: 0 }));
-        
-        snap.forEach(doc => {
-            const j = doc.data();
-            const date = j.date && j.date.toDate ? j.date.toDate() : new Date(j.date);
+        let gastosSinEmisora = 0;
+
+        invSnap.forEach(doc => {
+            const inv = doc.data();
+            if (!_contaMatchEmisora(inv)) return;
+            const date = _contaFechaFiscal(inv);
+            if (!date) return;
             for (let qi = 0; qi < 4; qi++) {
                 if (date >= quarters[qi].start && date <= quarters[qi].end) {
-                    quarterData[qi].baseImponible += j.subtotal || 0;
-                    quarterData[qi].ivaRepercutido += j.ivaAmount || 0;
+                    quarterData[qi].baseImponible += _contaAbonoVal(inv, inv.subtotal);
+                    quarterData[qi].ivaRepercutido += _contaAbonoVal(inv, inv.iva);
                     quarterData[qi].countInv++;
                     break;
                 }
             }
         });
-        
+
         expSnap.forEach(doc => {
-            const j = doc.data();
-            const date = j.date && j.date.toDate ? j.date.toDate() : new Date(j.date);
+            const e = doc.data();
+            if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(e)) {
+                if (!_contaNifNorm(e.companyNif)) gastosSinEmisora++;
+                return;
+            }
+            const date = e.date && e.date.toDate ? e.date.toDate() : new Date(e.date);
+            if (isNaN(date.getTime())) return;
             for (let qi = 0; qi < 4; qi++) {
                 if (date >= quarters[qi].start && date <= quarters[qi].end) {
-                    quarterData[qi].baseGastos += j.subtotal || 0;
-                    quarterData[qi].ivaSoportado += j.ivaAmount || 0;
+                    quarterData[qi].baseGastos += parseFloat(e.base || e.subtotal || 0) || 0;
+                    quarterData[qi].ivaSoportado += parseFloat(e.ivaAmount || 0) || 0;
                     quarterData[qi].countExp++;
                     break;
                 }
             }
         });
-        
+
+        const emisoraSel = await _contaEmisoraSelectorHtml('contaLoadModelo303');
+        let yearOpts303 = '';
+        for (let y = new Date().getFullYear(); y >= new Date().getFullYear() - 4; y--) {
+            yearOpts303 += `<option value="${y}" ${y === year ? 'selected' : ''}>${y}</option>`;
+        }
+
         let html = `
-        <div style="color:#00BCD4; font-size:0.85rem; font-weight:bold; margin-bottom:20px;">🏛️ MODELO 303 — Autoliquidación IVA Trimestral — ${year}</div>
-        
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px;">
+            <div style="color:#00BCD4; font-size:0.85rem; font-weight:bold;">🏛️ MODELO 303 — Autoliquidación IVA Trimestral — ${year}</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                ${emisoraSel}
+                <select onchange="window._conta303Year=parseInt(this.value); window.contaLoadModelo303();" style="background:#2d2d30; border:1px solid #555; color:#fff; padding:4px 10px; border-radius:4px; font-size:0.78rem;">${yearOpts303}</select>
+            </div>
+        </div>
+        <div style="color:#888; font-size:0.7rem; margin-bottom:14px;">
+            Fuente: facturas y gastos reales (no el diario). Imputación por fecha de <b>devengo</b> (fechaDevengo si existe, si no fecha de expedición). Abonos restan.
+            ${!window._contaEmisoraNif ? '<span style="color:#FF9800;"> ⚠️ Vista TODAS las empresas mezcladas — el 303 se presenta POR NIF emisor: selecciona una empresa antes de usar estas cifras.</span>' : ''}
+            ${gastosSinEmisora > 0 ? '<span style="color:#FF9800;"> ⚠️ ' + gastosSinEmisora + ' gasto(s) sin empresa asignada excluidos — asígnales empresa en Gastos.</span>' : ''}
+        </div>
+
         <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:15px; margin-bottom:25px;">`;
         
         let yearBaseVentas = 0, yearIVARep = 0, yearBaseGastos = 0, yearIVASop = 0;
@@ -1022,7 +1120,7 @@ window.contaLoadModelo347 = async function() {
     container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Calculando Modelo 347...</div>';
     
     try {
-        const year = new Date().getFullYear();
+        const year = (window._conta347Year || new Date().getFullYear()) - 0;
         const UMBRAL = 3005.06;
 
         // Cargar EN PARALELO invoices y expenses (Sprint 2 — corrige §1.3)
@@ -1045,11 +1143,13 @@ window.contaLoadModelo347 = async function() {
 
         invSnap.forEach(doc => {
             const inv = doc.data();
+            if (!_contaMatchEmisora(inv)) return; // el 347 se declara POR empresa
             // Excluir abonos del cómputo (se suman/restan automáticamente con su signo)
             const cNIF = _normNif(inv.clientCIF);
             if (!cNIF || cNIF === 'NA' || cNIF === '-') return;  // sin NIF → no declarable
             const cName = inv.clientName || 'Desconocido';
-            const date = inv.date && inv.date.toDate ? inv.date.toDate() : new Date(inv.date);
+            const date = _contaFechaFiscal(inv) || new Date(NaN);
+            if (isNaN(date.getTime()) || date.getFullYear() !== year) return;
             const quarter = Math.floor(date.getMonth() / 3) + 1;
             const key = 'C|' + cNIF;
             if (!ops[key]) ops[key] = { side: 'C', sideLabel: 'Cliente', nif: cNIF, name: cName, total: 0, q1: 0, q2: 0, q3: 0, q4: 0, n: 0 };
@@ -1062,6 +1162,7 @@ window.contaLoadModelo347 = async function() {
         // Lado proveedores (gastos)
         expSnap.forEach(doc => {
             const exp = doc.data();
+            if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(exp)) return;
             const pNIF = _normNif(exp.providerNif || exp.providerCIF || exp.nif);
             if (!pNIF) return;  // gastos sin NIF de proveedor no se pueden declarar
             const pName = exp.provider || exp.providerName || 'Proveedor';
@@ -1085,7 +1186,14 @@ window.contaLoadModelo347 = async function() {
         const totalProveedores = declarables.filter(d => d.side === 'P').length;
 
         let html = `
-        <div style="color:#FF9800; font-size:0.85rem; font-weight:bold; margin-bottom:5px;">📄 MODELO 347 — Operaciones con Terceros — ${year}</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;">
+            <div style="color:#FF9800; font-size:0.85rem; font-weight:bold;">📄 MODELO 347 — Operaciones con Terceros — ${year}</div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                ${await _contaEmisoraSelectorHtml('contaLoadModelo347')}
+                <select onchange="window._conta347Year=parseInt(this.value); window.contaLoadModelo347();" style="background:#2d2d30; border:1px solid #555; color:#fff; padding:4px 10px; border-radius:4px; font-size:0.78rem;">${[0,1,2,3,4].map(i => { const y = new Date().getFullYear() - i; return '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '</option>'; }).join('')}</select>
+            </div>
+        </div>
+        ${!window._contaEmisoraNif ? '<div style="color:#FF9800; font-size:0.7rem; margin-bottom:6px;">⚠️ Vista TODAS las empresas mezcladas — el 347 se presenta POR NIF declarante: selecciona una empresa.</div>' : ''}
         <div style="color:#888; font-size:0.75rem; margin-bottom:20px;">Clientes y proveedores con operaciones anuales ≥ ${UMBRAL.toFixed(2)}€ (IVA incluido). Agrupado por NIF.</div>`;
 
         if (declarables.length === 0) {
@@ -1160,28 +1268,42 @@ window.contaExportModelo303CSV = async function(year, quarter) {
     quarter = quarter || (Math.floor(new Date().getMonth() / 3) + 1);
     const qStart = new Date(year, (quarter-1)*3, 1);
     const qEnd = new Date(year, quarter*3, 0, 23, 59, 59);
+    // Facturas: traer el AÑO completo por fecha de expedición y clasificar
+    // por fecha FISCAL (devengo || expedición) — así una factura emitida en
+    // julio por servicios de junio cae en el 2T, no en el 3T.
     const [invSnap, expSnap] = await Promise.all([
-        db.collection('invoices').where('date','>=',qStart).where('date','<=',qEnd).limit(20000).get(),
+        db.collection('invoices').where('date','>=',new Date(year,0,1)).where('date','<=',new Date(year,11,31,23,59,59)).limit(20000).get(),
         db.collection('expenses').where('date','>=',qStart).where('date','<=',qEnd).limit(20000).get().catch(()=>({forEach:()=>{}}))
     ]);
     let csv = 'CASILLA;DESCRIPCION;BASE;TIPO;CUOTA\n';
     // Agregar por tipo IVA
     const ventas = { 4:{b:0,c:0}, 10:{b:0,c:0}, 21:{b:0,c:0} };
     const compras = { 4:{b:0,c:0}, 10:{b:0,c:0}, 21:{b:0,c:0} };
+    let gastosSinEmisora = 0;
     invSnap.forEach(d => {
         const i = d.data();
-        const sign = i.isAbono ? -1 : 1;
-        const grid = Array.isArray(i.advancedGrid) ? i.advancedGrid : [{ total: i.subtotal, iva: i.ivaRate || 21 }];
+        if (!_contaMatchEmisora(i)) return;
+        const f = _contaFechaFiscal(i);
+        if (!f || f < qStart || f > qEnd) return;
+        const grid = (Array.isArray(i.advancedGrid) && i.advancedGrid.length > 0)
+            ? i.advancedGrid : [{ total: i.subtotal, iva: i.ivaRate || 21 }];
         grid.forEach(row => {
-            const base = parseFloat(row.total) || 0;
-            const ivaR = parseFloat(row.iva) || 21;
+            // Signo seguro: los abonos modernos ya guardan negativos; los ABO
+            // legacy guardaban el grid en positivo → _contaAbonoVal lo niega.
+            const base = _contaAbonoVal(i, row.total);
+            const rawIva = parseFloat(row.iva);
+            const ivaR = isNaN(rawIva) ? 21 : rawIva; // 0% es válido (exento)
             const tipo = ivaR <= 5 ? 4 : (ivaR <= 14 ? 10 : 21);
-            ventas[tipo].b += sign * base;
-            ventas[tipo].c += sign * Math.round(base * tipo/100 * 100)/100;
+            ventas[tipo].b += base;
+            ventas[tipo].c += Math.round(base * tipo/100 * 100)/100;
         });
     });
     expSnap.forEach(d => {
         const e = d.data();
+        if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(e)) {
+            if (!_contaNifNorm(e.companyNif)) gastosSinEmisora++;
+            return;
+        }
         const base = parseFloat(e.base || 0);
         const cuota = parseFloat(e.ivaAmount || 0);
         const ivaR = base > 0 ? Math.round((cuota/base)*100) : 21;
@@ -1200,7 +1322,10 @@ window.contaExportModelo303CSV = async function(year, quarter) {
     csv += `45;TOTAL CUOTA SOPORTADA DEDUCIBLE;;;${(compras[4].c+compras[10].c+compras[21].c).toFixed(2)}\n`;
     const liq = (ventas[4].c+ventas[10].c+ventas[21].c) - (compras[4].c+compras[10].c+compras[21].c);
     csv += `46;RESULTADO LIQUIDACION;;;${liq.toFixed(2)}\n`;
-    csv += `\nMETADATA;Periodo;${quarter}T-${year};Generado;${new Date().toISOString().split('T')[0]}\n`;
+    const _emisoraMeta = window._contaEmisoraNif || 'TODAS-LAS-EMPRESAS (NO PRESENTABLE: el 303 es por NIF emisor)';
+    csv += `\nMETADATA;Emisor;${_emisoraMeta};Imputacion;devengo\n`;
+    if (gastosSinEmisora > 0) csv += `METADATA;AVISO;${gastosSinEmisora} gastos sin empresa asignada EXCLUIDOS;;\n`;
+    csv += `METADATA;Periodo;${quarter}T-${year};Generado;${new Date().toISOString().split('T')[0]}\n`;
     const blob = new Blob(['﻿'+csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = `modelo303_${year}_${quarter}T.csv`; a.click();
@@ -1328,12 +1453,21 @@ window.contaMarkAsIncobrable = async function(invoiceDocId) {
             rectificaA: orig.invoiceId,
             rectificaDocId: invoiceDocId,
             rectificaDate: orig.date || null,
-            motivoRectificacion: 'R5',
-            motivoRectificacionTexto: 'Impago / Incobrable — art. 80.4 LIVA',
+            // R3 = crédito incobrable (art. 80.4 LIVA) en el catálogo AEAT.
+            // (Antes 'R5', que para AEAT significa rectificativa de factura
+            // SIMPLIFICADA — habría viajado mal a Verifactu.)
+            motivoRectificacion: 'R3',
+            motivoRectificacionTexto: 'Impago / Crédito incobrable — art. 80.4 LIVA',
             paid: false,
+            paidDate: null,
             advancedGrid: (orig.advancedGrid || []).map(r => ({...r, qty: -r.qty, total: -r.total})),
+            ticketsDetail: (orig.ticketsDetail || []).map(t => ({...t, price: -(t.price || 0)})),
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
+        // El sello Verifactu del abono es SUYO — nunca heredar el del original
+        // (el trigger vería huella existente y NO sellaría el abono)
+        delete abonoData.verifactu;
+        delete abonoData.verifactuAnulacion;
 
         await db.collection('invoices').add(abonoData);
         // Marcar factura original como incobrable (sin tocar campos fiscales — solo metadata)
@@ -1380,31 +1514,34 @@ window.contaLoadModelo390 = async function() {
         const compras = {};
         types.forEach(t => { ventas[t] = { base: 0, cuota: 0, n: 0 }; compras[t] = { base: 0, cuota: 0, n: 0 }; });
 
+        let gastosSinEmisora390 = 0;
         invSnap.forEach(doc => {
             const inv = doc.data();
-            const isAbono = !!inv.isAbono;
+            if (!_contaMatchEmisora(inv)) return;
+            // Imputación por devengo: si el devengo cae fuera del año, fuera
+            const f = _contaFechaFiscal(inv);
+            if (!f || f.getFullYear() !== year) return;
             const grid = Array.isArray(inv.advancedGrid) ? inv.advancedGrid : [];
             if (grid.length > 0) {
                 grid.forEach(row => {
-                    const base = parseFloat(row.total) || 0;
-                    const ivaR = parseFloat(row.iva) || 0;
-                    // Encajar a tipo más cercano
+                    // Signo seguro (abonos modernos negativos; ABO legacy positivos)
+                    const base = _contaAbonoVal(inv, row.total);
+                    const rawIva = parseFloat(row.iva);
+                    const ivaR = isNaN(rawIva) ? 0 : rawIva;
                     const t = types.reduce((best, t) => Math.abs(ivaR-t) < Math.abs(ivaR-best) ? t : best, types[0]);
                     const cuota = Math.round(base * (t/100) * 100) / 100;
-                    const sign = isAbono ? -1 : 1;
-                    ventas[t].base += sign * base;
-                    ventas[t].cuota += sign * cuota;
+                    ventas[t].base += base;
+                    ventas[t].cuota += cuota;
                     ventas[t].n++;
                 });
             } else {
                 // Fallback: usar subtotal + ivaRate del header
-                const base = parseFloat(inv.subtotal) || 0;
+                const base = _contaAbonoVal(inv, inv.subtotal);
                 const ivaR = parseFloat(inv.ivaRate || 21);
                 const t = types.reduce((best, t) => Math.abs(ivaR-t) < Math.abs(ivaR-best) ? t : best, types[0]);
                 const cuota = Math.round(base * (t/100) * 100) / 100;
-                const sign = isAbono ? -1 : 1;
-                ventas[t].base += sign * base;
-                ventas[t].cuota += sign * cuota;
+                ventas[t].base += base;
+                ventas[t].cuota += cuota;
                 ventas[t].n++;
             }
         });
@@ -1412,6 +1549,10 @@ window.contaLoadModelo390 = async function() {
         // Compras (lado IVA soportado deducible)
         expSnap.forEach(doc => {
             const e = doc.data();
+            if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(e)) {
+                if (!_contaNifNorm(e.companyNif)) gastosSinEmisora390++;
+                return;
+            }
             const base = parseFloat(e.base || e.subtotal || 0);
             const cuota = parseFloat(e.ivaAmount || 0);
             const ivaR = base > 0 ? Math.round((cuota/base)*100) : 21;
@@ -1434,12 +1575,19 @@ window.contaLoadModelo390 = async function() {
             yearOpts += `<option value="${y}" ${y===year?'selected':''}>${y}</option>`;
         }
 
+        const emisoraSel390 = await _contaEmisoraSelectorHtml('contaLoadModelo390');
         let html = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;">
             <div style="color:#9C27B0; font-size:0.85rem; font-weight:bold;">📊 MODELO 390 — Declaración Anual Resumen IVA — ${year}</div>
-            <select onchange="window._conta390Year=parseInt(this.value); window.contaLoadModelo390();" style="background:#2d2d30; border:1px solid #555; color:#fff; padding:4px 10px; border-radius:4px; font-size:0.78rem;">${yearOpts}</select>
+            <div style="display:flex; gap:8px; align-items:center;">
+                ${emisoraSel390}
+                <select onchange="window._conta390Year=parseInt(this.value); window.contaLoadModelo390();" style="background:#2d2d30; border:1px solid #555; color:#fff; padding:4px 10px; border-radius:4px; font-size:0.78rem;">${yearOpts}</select>
+            </div>
         </div>
-        <div style="color:#888; font-size:0.72rem; margin-bottom:18px;">Resumen anual obligatorio para sujetos en régimen general (LIVA art. 164). Desglose por tipo IVA leído de invoices.advancedGrid.</div>
+        <div style="color:#888; font-size:0.72rem; margin-bottom:18px;">Resumen anual obligatorio para sujetos en régimen general (LIVA art. 164). Desglose por tipo IVA leído de invoices.advancedGrid. Imputación por devengo. Abonos restan.
+            ${!window._contaEmisoraNif ? '<span style="color:#FF9800;"> ⚠️ Vista TODAS mezcladas — el 390 es por NIF emisor.</span>' : ''}
+            ${gastosSinEmisora390 > 0 ? '<span style="color:#FF9800;"> ⚠️ ' + gastosSinEmisora390 + ' gasto(s) sin empresa excluidos.</span>' : ''}
+        </div>
 
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px;">
             <div>
@@ -1559,6 +1707,7 @@ window.contaLoadModelo111 = async function() {
 
         expSnap.forEach(doc => {
             const e = doc.data();
+            if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(e)) return; // 111 es por empresa retenedora
             const retIrpf = parseFloat(e.retencionIrpf || 0);
             if (retIrpf <= 0) return;  // sin retención → no aplica
             // Excluir alquileres (van al modelo 115)
@@ -1586,8 +1735,11 @@ window.contaLoadModelo111 = async function() {
         const totalRet = Object.values(quarters).reduce((s,q) => s+q.ret, 0);
 
         let html = `
-        <div style="color:#FF9800; font-size:0.85rem; font-weight:bold; margin-bottom:5px;">📋 MODELO 111 — Retenciones IRPF practicadas a profesionales/empleados — ${year}</div>
-        <div style="color:#888; font-size:0.75rem; margin-bottom:20px;">Trimestral. Excluye alquileres (van al modelo 115).</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;">
+            <div style="color:#FF9800; font-size:0.85rem; font-weight:bold;">📋 MODELO 111 — Retenciones IRPF practicadas a profesionales/empleados — ${year}</div>
+            ${await _contaEmisoraSelectorHtml('contaLoadModelo111')}
+        </div>
+        <div style="color:#888; font-size:0.75rem; margin-bottom:20px;">Trimestral. Excluye alquileres (van al modelo 115).${!window._contaEmisoraNif ? ' <span style="color:#FF9800;">⚠️ Vista TODAS mezcladas — se presenta por empresa retenedora.</span>' : ''}</div>
 
         <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px;">
             ${[1,2,3,4].map(q => `
@@ -1646,6 +1798,7 @@ window.contaLoadModelo115 = async function() {
 
         expSnap.forEach(doc => {
             const e = doc.data();
+            if (window._contaEmisoraNif && !_contaMatchEmisoraGasto(e)) return; // 115 es por empresa retenedora
             // Solo alquileres
             if ((e.category || '').toLowerCase().indexOf('alquiler') === -1) return;
             const retIrpf = parseFloat(e.retencionIrpf || 0);
@@ -1671,8 +1824,11 @@ window.contaLoadModelo115 = async function() {
         const totalBase = Object.values(quarters).reduce((s,q) => s+q.base, 0);
 
         let html = `
-        <div style="color:#FF9800; font-size:0.85rem; font-weight:bold; margin-bottom:5px;">🏢 MODELO 115 — Retenciones IRPF por alquileres de inmuebles urbanos — ${year}</div>
-        <div style="color:#888; font-size:0.75rem; margin-bottom:20px;">Trimestral. Retención del 19% sobre rentas de alquiler (LIRPF art. 101).</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:5px;">
+            <div style="color:#FF9800; font-size:0.85rem; font-weight:bold;">🏢 MODELO 115 — Retenciones IRPF por alquileres de inmuebles urbanos — ${year}</div>
+            ${await _contaEmisoraSelectorHtml('contaLoadModelo115')}
+        </div>
+        <div style="color:#888; font-size:0.75rem; margin-bottom:20px;">Trimestral. Retención del 19% sobre rentas de alquiler (LIRPF art. 101).${!window._contaEmisoraNif ? ' <span style="color:#FF9800;">⚠️ Vista TODAS mezcladas — se presenta por empresa retenedora.</span>' : ''}</div>
 
         <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px;">
             ${[1,2,3,4].map(q => `
@@ -1720,11 +1876,12 @@ window.contaLoadGastos = async function() {
     if (!container) return;
     
     container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Cargando gastos...</div>';
-    
+
     try {
         const year = new Date().getFullYear();
         const startOfYear = new Date(year, 0, 1);
-        
+        await _contaLoadEmisoras(); // para el selector EMPRESA del formulario
+
         const snap = await db.collection('expenses')
             .where('date', '>=', startOfYear)
             .orderBy('date', 'desc')
@@ -1776,6 +1933,25 @@ window.contaLoadGastos = async function() {
                     <label style="color:#888; font-size:0.65rem; display:block; margin-bottom:4px;">Nº FACTURA</label>
                     <input type="text" id="gasto-ref" placeholder="Ref. proveedor" style="background:#3c3c3c; border:1px solid #555; color:#fff; padding:6px 8px; font-size:0.8rem; width:100%; box-sizing:border-box; outline:none;">
                 </div>
+                <div></div>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap:10px; align-items:end; margin-top:10px;">
+                <div>
+                    <label style="color:#FF6600; font-size:0.65rem; display:block; margin-bottom:4px; font-weight:700;">EMPRESA (obligatorio — modelos por NIF)</label>
+                    <select id="gasto-empresa" style="background:#3c3c3c; border:1px solid #FF6600; color:#fff; padding:6px 8px; font-size:0.8rem; width:100%; box-sizing:border-box; outline:none;">
+                        <option value="">— Selecciona empresa —</option>
+                        ${(window._contaEmisorasCache || []).map(em => '<option value="' + em.nif + '">' + em.name + ' (' + em.nif + ')</option>').join('')}
+                    </select>
+                </div>
+                <div>
+                    <label style="color:#888; font-size:0.65rem; display:block; margin-bottom:4px;">NIF PROVEEDOR <span style="color:#666;">(para 347/111/115)</span></label>
+                    <input type="text" id="gasto-provider-nif" placeholder="B12345678" style="background:#3c3c3c; border:1px solid #555; color:#fff; padding:6px 8px; font-size:0.8rem; width:100%; box-sizing:border-box; outline:none; text-transform:uppercase;">
+                </div>
+                <div>
+                    <label style="color:#888; font-size:0.65rem; display:block; margin-bottom:4px;">RETENCIÓN IRPF € <span style="color:#666;">(profesionales/alquiler)</span></label>
+                    <input type="number" id="gasto-ret-irpf" step="0.01" min="0" placeholder="0.00" style="background:#3c3c3c; border:1px solid #555; color:#fff; padding:6px 8px; font-size:0.8rem; width:100%; box-sizing:border-box; outline:none;">
+                </div>
+                <div></div>
                 <div></div>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap:10px; align-items:end; margin-top:10px;">
@@ -1879,20 +2055,27 @@ window.contaSaveGasto = async function() {
     const provider = document.getElementById('gasto-provider').value.trim();
     const reference = document.getElementById('gasto-ref').value.trim();
     const concept = document.getElementById('gasto-concept').value.trim() || category;
-    
+    const companyNif = _contaNifNorm((document.getElementById('gasto-empresa') || {}).value || '');
+    const providerNif = _contaNifNorm((document.getElementById('gasto-provider-nif') || {}).value || '');
+    const retIrpf = parseFloat((document.getElementById('gasto-ret-irpf') || {}).value) || 0;
+
     if (!provider) { alert('Introduce el nombre del proveedor.'); return; }
-    
+    if (!companyNif) { alert('Selecciona la EMPRESA a la que pertenece el gasto.\n\nLos modelos fiscales (303/347/111/115) se presentan por NIF: un gasto sin empresa queda fuera de todos.'); return; }
+
     try {
         // 1. Save expense document
         const expData = {
             date: date,
             category: category,
             provider: provider,
+            providerNif: providerNif,
             reference: reference,
             concept: concept,
+            companyNif: companyNif,
             base: base,
             ivaRate: ivaRate,
             ivaAmount: ivaAmount,
+            retencionIrpf: retIrpf, // informativa para 111/115; el total sigue siendo base+IVA
             total: total,
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
         };

@@ -63,6 +63,14 @@
         { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "verifactu_registros",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "estadoEnvioAEAT", "order": "ASCENDING" },
+        { "fieldPath": "chainIndex", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

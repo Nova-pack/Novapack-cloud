@@ -41,6 +41,38 @@ if (typeof window.allocSequentialNumber !== 'function') {
     };
 }
 
+// ── Helpers económicos compartidos por TODOS los flujos de emisión ──
+
+// Redondeo fiscal a 2 decimales (evita persistir 12.340000000002)
+window.round2 = window.round2 || function round2(n) {
+    return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
+};
+
+// Vencimiento según condiciones de pago del cliente
+window.calcDueDate = window.calcDueDate || function calcDueDate(baseDate, paymentTerms) {
+    var DAYS = { contado: 0, transferencia: 30, recibo_sepa: 30, dias15: 15, dias30: 30, dias45: 45, dias60: 60, dias90: 90 };
+    var d = baseDate instanceof Date ? new Date(baseDate.getTime()) : new Date();
+    var key = String(paymentTerms || 'contado').toLowerCase();
+    var days = DAYS[key] !== undefined ? DAYS[key] : (parseInt(key.replace(/\D/g, ''), 10) || 0);
+    d.setDate(d.getDate() + days);
+    return d;
+};
+
+// Guard de emisora: sin CIF del emisor la factura entra en la cadena
+// Verifactu basura 'SIN_NIF', se imprime SIN QR y queda bloqueada en el
+// envío a AEAT. Devuelve el NIF normalizado o null (con alert).
+window.requireEmitterCif = function requireEmitterCif(senderData, contexto) {
+    var nif = String((senderData && (senderData.cif || senderData.nif)) || '').replace(/[\s.\-]/g, '').toUpperCase();
+    if (!nif) {
+        alert('🔒 NO SE PUEDE EMITIR' + (contexto ? ' (' + contexto + ')' : '') + '\n\n' +
+              'La EMPRESA EMISORA seleccionada no tiene CIF/NIF configurado.\n\n' +
+              'Sin él, la factura no llevaría QR tributario y quedaría fuera de Verifactu.\n' +
+              'Configúralo en Facturación → Empresas emisoras y vuelve a intentarlo.');
+        return null;
+    }
+    return nif;
+};
+
 window._billingCompaniesCache = window._billingCompaniesCache || null;
 
 window.billingSerieCode = async function billingSerieCode(nifRaw) {

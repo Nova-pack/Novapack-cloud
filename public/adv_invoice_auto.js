@@ -107,6 +107,12 @@ window.advInvoiceAllPending = async () => {
             if(filial.legal) finalSenderData.legal = filial.legal;
         }
 
+        // GUARD: sin CIF de emisora no se emite NADA del lote (Verifactu)
+        if (!window.requireEmitterCif(finalSenderData, 'facturación masiva')) {
+            if (typeof hideLoading === 'function') hideLoading();
+            return;
+        }
+
         // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa).
         // Cada factura del lote reserva su número transaccionalmente.
         const invoiceDate = new Date(); // Fecha de emisión
@@ -175,19 +181,34 @@ window.advInvoiceAllPending = async () => {
             const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC');
             const invoiceIdStr = _alloc.invoiceId;
 
+            // Devengo IVA = fecha del último albarán del grupo (si la hay)
+            let fechaDevengo = invoiceDate;
+            try {
+                let maxTs = 0;
+                tkts.forEach(t => {
+                    const d = t.createdAt && t.createdAt.toDate ? t.createdAt.toDate() : (t.date ? new Date(t.date) : null);
+                    if (d && !isNaN(d.getTime()) && d.getTime() > maxTs) maxTs = d.getTime();
+                });
+                if (maxTs > 0) fechaDevengo = new Date(maxTs);
+            } catch(_) {}
+
             const invoiceData = {
                 number: _alloc.number,
                 invoiceId: invoiceIdStr,
                 date: invoiceDate,
+                fechaDevengo: fechaDevengo,
+                dueDate: window.calcDueDate(invoiceDate, client.paymentTerms || 'contado'),
+                paymentTerms: client.paymentTerms || 'contado',
                 clientId: client.id,
                 clientName: client.name || 'Sin nombre',
-                clientCIF: client.idNum || client.nif || 'N/A',
-                subtotal: subtotal,
-                iva: ivaAmount,
+                // NIF FISCAL primero (facturación/Verifactu); nº interno solo como último recurso
+                clientCIF: client.nif || client.cif || client.idNum || 'N/A',
+                subtotal: window.round2(subtotal),
+                iva: window.round2(ivaAmount),
                 ivaRate: ivaRate,
-                irpf: irpfAmount,
+                irpf: window.round2(irpfAmount),
                 irpfRate: irpfRate,
-                total: totalAmount,
+                total: window.round2(totalAmount),
                 tickets: ticketsIdArray,
                 ticketsDetail: ticketsDetailArray,
                 senderData: finalSenderData,

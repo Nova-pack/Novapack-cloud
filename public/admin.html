@@ -35,8 +35,8 @@
     <script src="libs/qrcode.min.js?v=20260310_BETA"></script>
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
-    <script src="verifactu.js?v=20260715a"></script>
-    <script src="billing_series.js?v=20260715a"></script>
+    <script src="verifactu.js?v=20260717_fiscal"></script>
+    <script src="billing_series.js?v=20260717_fiscal"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="phantom-engine.js?v=1" defer></script>
@@ -7512,7 +7512,13 @@ window.runPublicTicketsBackfill = async function() {
             const linkedSnap = await db.collection('tickets').where('invoiceId', '==', docId).get();
             const linkedTicketIds = [];
             linkedSnap.forEach(function(t) { linkedTicketIds.push(t.id); });
-            await db.collection('deleted_invoices').doc(docId).set({
+
+            // ATÓMICO: copia a papelera + borrado del original en el MISMO batch.
+            // Antes la copia se escribía primero por separado: si el delete
+            // fallaba, quedaba la factura viva CON el registro de anulación
+            // Verifactu ya asentado (la copia en deleted_invoices lo dispara).
+            const coreBatch = db.batch();
+            coreBatch.set(db.collection('deleted_invoices').doc(docId), {
                 ...data,
                 _deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
                 _deletedBy: 'admin',
@@ -7521,16 +7527,20 @@ window.runPublicTicketsBackfill = async function() {
                 _originalDocId: docId,
                 _linkedTicketIds: linkedTicketIds
             });
-            // Unlink tickets
-            const batch = db.batch();
-            linkedSnap.forEach(function(tDoc) {
+            coreBatch.delete(docRef);
+            await coreBatch.commit();
+
+            // Desvincular tickets (idempotente, en lotes aparte de ≤450)
+            let batch = db.batch();
+            let ops = 0;
+            for (const tDoc of linkedSnap.docs) {
                 batch.update(tDoc.ref, {
                     invoiceId: firebase.firestore.FieldValue.delete(),
                     invoiceNum: firebase.firestore.FieldValue.delete()
                 });
-            });
-            batch.delete(docRef);
-            await batch.commit();
+                if (++ops >= 450) { await batch.commit(); batch = db.batch(); ops = 0; }
+            }
+            if (ops > 0) await batch.commit();
         };
 
         // --- PAPELERA: Move abono to trash ---
@@ -13874,20 +13884,24 @@ window.runPublicTicketsBackfill = async function() {
                 try {
                     // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
                     const _alloc = await window.allocInvoiceNumber(invCompanyData, 'FAC');
+                    const _invDate = new Date();
 
                     const invoiceData = {
                         number: _alloc.number,
                         invoiceId: _alloc.invoiceId,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
+                        fechaDevengo: _invDate,
+                        dueDate: window.calcDueDate(_invDate, (clientData && clientData.paymentTerms) || 'contado'),
+                        paymentTerms: (clientData && clientData.paymentTerms) || 'contado',
                         clientId: uid,
                         clientName: clientData.name,
-                        clientCIF: clientData.idNum || 'N/A',
-                        subtotal: invoiceCalculations.subtotal,
-                        iva: invoiceCalculations.iva,
+                        clientCIF: clientData.nif || clientData.cif || clientData.idNum || 'N/A',
+                        subtotal: window.round2(invoiceCalculations.subtotal),
+                        iva: window.round2(invoiceCalculations.iva),
                         ivaRate: invoiceCalculations.ivaRate,
-                        irpf: invoiceCalculations.irpf,
+                        irpf: window.round2(invoiceCalculations.irpf),
                         irpfRate: invoiceCalculations.irpfRate,
-                        total: invoiceCalculations.total,
+                        total: window.round2(invoiceCalculations.total),
                         tickets: selectedTickets.map(t => t.id),
                         ticketsDetail: selectedTickets.map(t => ({
                             id: t.id,
@@ -13932,19 +13946,32 @@ window.runPublicTicketsBackfill = async function() {
                         invoicesPage--;
                     }
 
-                    // 2. Build Query
-                    let query = db.collection('invoices').orderBy('number', 'desc');
-                    
+                    // 2. Build Query — orden por FECHA. (Antes por 'number', pero
+                    // con numeración por empresa el nº ya no es único global:
+                    // cada emisora tiene su propio 1, 2, 3…)
+                    let query = db.collection('invoices').orderBy('date', 'desc');
+
                     const fromNum = parseInt(document.getElementById('issued-search-from') ? document.getElementById('issued-search-from').value : '');
                     const toNum = parseInt(document.getElementById('issued-search-to') ? document.getElementById('issued-search-to').value : '');
-                    if (!isNaN(toNum)) query = query.where('number', '<=', toNum);
-                    if (!isNaN(fromNum)) query = query.where('number', '>=', fromNum);
+                    const _numFilterActive = !isNaN(fromNum) || !isNaN(toNum);
 
                     const currentCursor = invoicesPage > 1 ? invoicesCursors[invoicesPage - 1] : null;
                     if (currentCursor) query = query.startAfter(currentCursor);
-                    query = query.limit(invoicesLimit);
+                    // Con filtro de nº activo traemos más y filtramos en cliente
+                    // (el nº se repite entre empresas; el rango es orientativo)
+                    query = query.limit(_numFilterActive ? 500 : invoicesLimit);
 
-                    const snap = await query.get();
+                    let snap = await query.get();
+                    if (_numFilterActive) {
+                        const filteredDocs = snap.docs.filter(d => {
+                            const n = d.data().number;
+                            if (typeof n !== 'number') return false;
+                            if (!isNaN(fromNum) && n < fromNum) return false;
+                            if (!isNaN(toNum) && n > toNum) return false;
+                            return true;
+                        });
+                        snap = { empty: filteredDocs.length === 0, docs: filteredDocs, forEach: (fn) => filteredDocs.forEach(fn) };
+                    }
                     tbody.innerHTML = '';
 
                     let stats303 = {};
@@ -14610,6 +14637,19 @@ window.runPublicTicketsBackfill = async function() {
 
             window.createCreditInvoice = async (id) => {
                 if (!confirm("¿Desea crear una factura de abono (rectificativa) para esta factura? El importe será negativo.")) return;
+
+                // Motivo legal de la rectificación (RD 1619/2012 art. 15)
+                const _motivo = prompt(
+                    'Motivo de la rectificación:\n\n' +
+                    '  R1 — Error fundado en derecho / art. 80.1, 80.2 y 80.6 LIVA\n' +
+                    '  R2 — Concurso de acreedores (art. 80.3)\n' +
+                    '  R3 — Crédito incobrable (art. 80.4)\n' +
+                    '  R4 — Resto de causas (devolución, descuento...)\n\n' +
+                    'Escribe R1, R2, R3 o R4:', 'R4');
+                if (_motivo === null) return;
+                const motivoCod = ['R1', 'R2', 'R3', 'R4'].includes((_motivo || '').trim().toUpperCase())
+                    ? _motivo.trim().toUpperCase() : 'R4';
+
                 showLoading();
                 try {
                     const doc = await db.collection('invoices').doc(id).get();
@@ -14623,19 +14663,34 @@ window.runPublicTicketsBackfill = async function() {
                         ...inv,
                         number: _allocAbo.number,
                         invoiceId: creditId,
+                        serie: 'R',
                         isCredit: true,
+                        isAbono: true, // los KPIs/filtros de abonos usan este flag
                         date: firebase.firestore.FieldValue.serverTimestamp(),
                         subtotal: -inv.subtotal,
                         iva: -inv.iva,
-                        irpf: -inv.irpf,
+                        irpf: -(inv.irpf || 0),
                         total: -inv.total,
+                        // Las LÍNEAS también en negativo (antes quedaban en positivo
+                        // y el PDF mostraba líneas + con cabecera −)
+                        advancedGrid: (inv.advancedGrid || []).map(r => ({ ...r, qty: -(r.qty || 0), total: -(r.total || 0) })),
+                        ticketsDetail: (inv.ticketsDetail || []).map(t => ({ ...t, price: -(t.price || 0) })),
+                        paid: false, // pendiente de devolver/compensar (no heredar del original)
+                        paidDate: null,
+                        motivoRectificacion: motivoCod,
+                        motivoRectificacionTexto: 'Rectificativa íntegra de ' + (inv.invoiceId || id),
+                        rectificaA: inv.invoiceId || '',
+                        rectificaDocId: id,
+                        rectificaDate: inv.date || null,
                         originalInvoice: inv.invoiceId,
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     };
+                    delete creditData.verifactu; // el sello fiscal del abono es SUYO (lo pone el trigger al crearse)
+                    delete creditData.welcomeSentAt;
 
                     await db.collection('invoices').doc(creditId).set(creditData);
 
-                    alert(`Factura de abono ${creditId} generada con éxito.`);
+                    alert(`Factura de abono ${creditId} (${motivoCod}) generada con éxito.`);
                     loadInvoices();
                 } catch (e) { alert("Error al crear abono: " + e.message); }
                 finally { hideLoading(); }
@@ -15036,17 +15091,40 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                 showLoading();
                 try {
-                    const snap = await db.collection('invoices').get();
+                    // Fecha FISCAL: devengo si existe, si no expedición, si no alta.
+                    // (Antes filtraba por createdAt, que las facturas nuevas NO
+                    // escriben → se quedaban fuera de los totales.)
+                    const _fechaFiscal = (inv) => {
+                        const v = inv.fechaDevengo || inv.date || inv.createdAt;
+                        if (!v) return null;
+                        const d = v.toDate ? v.toDate() : new Date(v);
+                        return isNaN(d.getTime()) ? null : d;
+                    };
+                    const _matchEmisora = (inv) => (typeof _contaMatchEmisora === 'function') ? _contaMatchEmisora(inv) : true;
+                    // Abonos modernos guardan negativos; ABO legacy positivos → negar
+                    const _esAbono = (inv) => !!(inv.isAbono || inv.isCredit || inv.serie === 'R');
+                    const _val = (inv, raw) => {
+                        const v = parseFloat(raw) || 0;
+                        return (_esAbono(inv) && v > 0) ? -v : v;
+                    };
+
+                    const [snap, expSnap] = await Promise.all([
+                        db.collection('invoices').get(),
+                        db.collection('expenses')
+                            .where('date', '>=', new Date(year, 0, 1))
+                            .where('date', '<=', new Date(year, 11, 31, 23, 59, 59))
+                            .limit(20000).get().catch(() => ({ forEach: () => {} }))
+                    ]);
                     let filteredInvoices = [];
+                    const trimesters = { "1": [1, 2, 3], "2": [4, 5, 6], "3": [7, 8, 9], "4": [10, 11, 12] };
 
                     snap.forEach(doc => {
                         const inv = doc.data();
-                        const d = (inv.createdAt && inv.createdAt.toDate) ? inv.createdAt.toDate() : new Date(inv.createdAt);
-                        if (d.getFullYear() !== year) return;
-
+                        if (!_matchEmisora(inv)) return;
+                        const d = _fechaFiscal(inv);
+                        if (!d || d.getFullYear() !== year) return;
                         if (period !== "ALL") {
                             const month = d.getMonth() + 1; // 1-12
-                            const trimesters = { "1": [1, 2, 3], "2": [4, 5, 6], "3": [7, 8, 9], "4": [10, 11, 12] };
                             if (!trimesters[period].includes(month)) return;
                         }
                         filteredInvoices.push(inv);
@@ -15058,27 +15136,52 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     let totalNum = filteredInvoices.length;
 
                     filteredInvoices.forEach(inv => {
-                        totalBase += (inv.subtotal || 0);
-                        totalIva += (inv.iva || 0);
-                        totalIrpf += (inv.irpf || 0);
+                        totalBase += _val(inv, inv.subtotal);
+                        totalIva += _val(inv, inv.iva);
+                        totalIrpf += _val(inv, inv.irpf);
                     });
 
+                    // IVA SOPORTADO del periodo (gastos) — sin él la etiqueta
+                    // "IVA a liquidar" era engañosa (solo repercutido)
+                    let totalIvaSoportado = 0;
+                    expSnap.forEach(doc => {
+                        const e = doc.data();
+                        if (window._contaEmisoraNif && typeof _contaMatchEmisoraGasto === 'function' && !_contaMatchEmisoraGasto(e)) return;
+                        const d = e.date && e.date.toDate ? e.date.toDate() : new Date(e.date);
+                        if (isNaN(d.getTime()) || d.getFullYear() !== year) return;
+                        if (period !== "ALL") {
+                            const month = d.getMonth() + 1;
+                            if (!trimesters[period].includes(month)) return;
+                        }
+                        totalIvaSoportado += parseFloat(e.ivaAmount || 0) || 0;
+                    });
+                    const ivaALiquidar = totalIva - totalIvaSoportado;
+
                     currentTaxData = { base: totalBase, iva: totalIva, irpf: totalIrpf, total: totalBase + totalIva - totalIrpf, count: totalNum };
+
+                    const emisoraNota = (window._contaEmisoraNif)
+                        ? ''
+                        : '<div style="color:#FF9800; font-size:0.72rem; margin-bottom:8px;">⚠️ Totales de TODAS las empresas mezcladas — los modelos se presentan POR NIF emisor. Usa Contabilidad → Modelo 303 con el selector de empresa para cifras presentables.</div>';
 
                     // Update UI
                     const full303 = document.getElementById('full-summary-303');
                     if (full303) {
                         full303.innerHTML = `
+                    ${emisoraNota}
                     <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
-                        <span>Base Imponible Gravada (Ingresos):</span>
+                        <span>Base Imponible Gravada (Ingresos, abonos restados):</span>
                         <span style="text-align:right; font-weight:bold;">${totalBase.toFixed(2)}€</span>
                     </div>
                     <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
-                        <span>IVA Repercutido (21%):</span>
+                        <span>IVA Repercutido:</span>
                         <span style="text-align:right; font-weight:bold; color:#4CAF50;">+ ${totalIva.toFixed(2)}€</span>
                     </div>
-                    <div style="margin-top:15px; text-align:right; font-size:1.1rem; color:#4CAF50;">
-                        IVA A LIQUIDAR: <strong>${totalIva.toFixed(2)}€</strong>
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:10px; border-bottom:1px solid #333; padding:10px 0;">
+                        <span>IVA Soportado (gastos del periodo):</span>
+                        <span style="text-align:right; font-weight:bold; color:#ef5350;">− ${totalIvaSoportado.toFixed(2)}€</span>
+                    </div>
+                    <div style="margin-top:15px; text-align:right; font-size:1.1rem; color:${ivaALiquidar >= 0 ? '#4CAF50' : '#4FC3F7'};">
+                        ${ivaALiquidar >= 0 ? 'IVA A INGRESAR' : 'IVA A COMPENSAR'}: <strong>${ivaALiquidar.toFixed(2)}€</strong>
                     </div>
                 `;
                     }
@@ -16640,9 +16743,14 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 const clientData = userMap[adminTicketUID];
                 const ivaRate = parseFloat(document.getElementById('fiscal-iva').value) || 21;
                 const irpfRate = parseFloat(document.getElementById('fiscal-irpf').value) || 0;
-                const iva = subtotal * (ivaRate / 100);
-                const irpf = subtotal * (irpfRate / 100);
-                const total = subtotal + iva - irpf;
+                const _sub = window.round2(subtotal);
+                const iva = window.round2(_sub * (ivaRate / 100));
+                const irpf = window.round2(_sub * (irpfRate / 100));
+                const total = window.round2(_sub + iva - irpf);
+
+                // GUARD: sin CIF de emisora no se emite (Verifactu) — cubre
+                // también la rama filial, que antes no validaba
+                if (!window.requireEmitterCif(finalSenderData, 'facturación de albaranes')) return;
 
                 if (!confirm(`¿Generar factura por ${total.toFixed(2)}€ emitida por ${finalSenderData.name} (${selectedTickets.length} albaranes)?`)) return;
 
@@ -16650,16 +16758,20 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 try {
                     // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
                     const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC');
+                    const _invDate2 = new Date();
 
                     const invoiceData = {
                         number: _alloc.number,
                         invoiceId: _alloc.invoiceId,
                         date: firebase.firestore.FieldValue.serverTimestamp(),
+                        fechaDevengo: _invDate2,
+                        dueDate: window.calcDueDate(_invDate2, (clientData && clientData.paymentTerms) || 'contado'),
+                        paymentTerms: (clientData && clientData.paymentTerms) || 'contado',
                         clientId: adminTicketUID,
                         clientName: clientData.name,
-                        clientCIF: clientData.idNum || 'N/A',
+                        clientCIF: clientData.nif || clientData.cif || clientData.idNum || 'N/A',
                         billingEntityId: chosenEntityId === 'DEFAULT' ? null : chosenEntityId,
-                        subtotal, iva, ivaRate, irpf, irpfRate, total,
+                        subtotal: _sub, iva, ivaRate, irpf, irpfRate, total,
                         tickets: selectedTickets.map(t => t.id),
                         ticketsDetail: selectedTickets.map(t => ({ id: t.id, compName: t.compName || "", price: t.calculatedPrice || 0, childBranch: t._childBranch || null })),
                         senderData: finalSenderData
@@ -18705,7 +18817,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             </div>
         </div>
 
-        <script src="billing_adv_v4.js?v=20260715_series"></script>
+        <script src="billing_adv_v4.js?v=20260717_fiscal"></script>
     
     <!-- MODAL REASIGNAR REPARTIDOR -->
     <div id="modal-ticket-reassign" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:102070; justify-content:center; align-items:center; padding:20px; overflow-y:auto;">
@@ -19703,12 +19815,12 @@ window.importTarifas50 = async () => {
 </script>
 
 <!-- Facturación Avanzada Utils -->
-<script src="adv_invoice_auto.js?v=20260715_series"></script>
+<script src="adv_invoice_auto.js?v=20260717_fiscal"></script>
 <!-- Modal de Asignación de Debidos -->
 
 
 <script src="debidos_manager.js"></script>
-<script src="contabilidad.js?v=20260715_series"></script>
+<script src="contabilidad.js?v=20260717_fiscal"></script>
 
 <!-- Contabilidad Workspace (inside adv-billing, hidden by default) -->
 <script>
@@ -22124,8 +22236,8 @@ window.importTarifas50 = async () => {
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
 <script src="ficha_cliente.js?v=20260717_onboard"></script>
 <script src="albaranes_central.js?v=20260402"></script>
-<script src="facturas_central.js?v=20260715_series"></script>
-<script src="monthly_billing_flow.js?v=20260715_series"></script>
+<script src="facturas_central.js?v=20260717_fiscal"></script>
+<script src="monthly_billing_flow.js?v=20260717_fiscal"></script>
 <script src="comunicaciones.js?v=20260404"></script>
 <script src="nif_enrichment.js?v=20260404"></script>
 <script src="erp_tabs.js?v=20260516_prealb"></script>
@@ -22135,7 +22247,7 @@ window.importTarifas50 = async () => {
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
-<script src="invoice_per_branch.js?v=20260715_series"></script>
+<script src="invoice_per_branch.js?v=20260717_fiscal"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>

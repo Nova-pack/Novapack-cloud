@@ -101,7 +101,11 @@ service cloud.firestore {
               'rectificaA', 'isAbono', 'tipoRectificacion', 'motivoRectificacion',
               'createdAt', 'createdBy'
             ]);
-      allow delete: if false;
+      // Borrado = mover a papelera (anulación fiscal). Solo admin: la copia
+      // en /deleted_invoices dispara el registro de anulación Verifactu, así
+      // que el flujo es legal — pero debe poder completarse (antes delete:false
+      // rompía moveInvoiceToTrash dejando la factura viva con anulación asentada).
+      allow delete: if isAdmin();
     }
 
     // ─── TARIFFS, ARTICLES, BILLING COMPANIES (admin-only write) ───

@@ -31,16 +31,27 @@
         return Math.round(((Number(n) || 0) + Number.EPSILON) * 100) / 100;
     }
 
-    // dd-mm-yyyy a partir de Timestamp Firestore / Date / string
+    // dd-mm-yyyy a partir de Timestamp Firestore / Date / string.
+    // SIEMPRE en huso Europe/Madrid: el registro fiscal (huella/ledger) se
+    // sella en servidor con fecha Madrid — si el navegador estuviera en otro
+    // huso (Canarias, viaje...) el QR divergiría del registro en los bordes
+    // de medianoche.
     function _fechaDDMMYYYY(v) {
         var d = null;
         if (v && typeof v.toDate === 'function') d = v.toDate();
         else if (v instanceof Date) d = v;
         else if (v) { var t = new Date(v); if (!isNaN(t.getTime())) d = t; }
         if (!d) d = new Date();
-        var dd = String(d.getDate()).padStart(2, '0');
-        var mm = String(d.getMonth() + 1).padStart(2, '0');
-        return dd + '-' + mm + '-' + d.getFullYear();
+        try {
+            var parts = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).formatToParts(d).reduce(function (o, p) { o[p.type] = p.value; return o; }, {});
+            return parts.day + '-' + parts.month + '-' + parts.year;
+        } catch (e) {
+            var dd = String(d.getDate()).padStart(2, '0');
+            var mm = String(d.getMonth() + 1).padStart(2, '0');
+            return dd + '-' + mm + '-' + d.getFullYear();
+        }
     }
 
     // URL de cotejo AEAT (Orden HAC/1177/2024, anexo II)

@@ -752,6 +752,12 @@ document.getElementById('btn-adv-save').onclick = async () => {
             }
         } catch(_) {}
 
+        // GUARD: sin CIF de emisora no se emite (Verifactu)
+        if (!window.requireEmitterCif(finalSenderData, 'factura manual')) {
+            if (typeof hideLoading === 'function') hideLoading();
+            return;
+        }
+
         // Numeración correlativa POR EMPRESA emisora (Verifactu multi-empresa)
         const _alloc = await window.allocInvoiceNumber(finalSenderData, 'FAC', invYear);
 
@@ -763,12 +769,12 @@ document.getElementById('btn-adv-save').onclick = async () => {
             clientId: advCurrentClient.id,
             clientName: advCurrentClient.name,
             clientCIF: _clientFiscalId,
-            subtotal: advCurrentCalculations.subtotal,
-            iva: advCurrentCalculations.iva,
+            subtotal: window.round2(advCurrentCalculations.subtotal),
+            iva: window.round2(advCurrentCalculations.iva),
             ivaRate: advGridRows.length > 0 ? advGridRows[0].iva : 21, // Simplified avg if mixed
-            irpf: advCurrentCalculations.irpf,
+            irpf: window.round2(advCurrentCalculations.irpf),
             irpfRate: advCurrentCalculations.irpfRate,
-            total: advCurrentCalculations.total,
+            total: window.round2(advCurrentCalculations.total),
             paid: false,
             paymentTerms: advCurrentClient.paymentTerms || 'contado',
             dueDate: _calcDueDate(finalDate, advCurrentClient.paymentTerms || 'contado'),
@@ -953,6 +959,11 @@ if(btnCredit) {
             if (abonoData.ticketsDetail) {
                 abonoData.ticketsDetail = abonoData.ticketsDetail.map(t => ({...t, price: -t.price}));
             }
+            // El sello Verifactu del abono es SUYO — nunca heredar el del
+            // original (el trigger vería huella y no sellaría el abono)
+            delete abonoData.verifactu;
+            delete abonoData.verifactuAnulacion;
+            abonoData.paidDate = null;
             if (typeof getOperatorStamp === 'function') Object.assign(abonoData, getOperatorStamp());
 
             const abonoDoc = await db.collection('invoices').add(abonoData);

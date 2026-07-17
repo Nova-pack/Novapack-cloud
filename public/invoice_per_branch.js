@@ -287,23 +287,32 @@
         const yearShort = String(year).slice(-2);
         const generated = [];
 
+        // GUARD: sin CIF de emisora no se emite (Verifactu)
+        if (!window.requireEmitterCif(fiscalSender, 'facturación por sucursal')) return [];
+
         for (const sede of sedes) {
             // Reserva atómica del siguiente nº de la serie de esta empresa
             // (Verifactu multi-empresa: numeración correlativa por emisor)
             const _alloc = await window.allocInvoiceNumber(fiscalSender, 'FAC', year);
             const nextNum = _alloc.number;
             const invoiceId = _alloc.invoiceId;
-            const subtotal = sede.subtotal;
+            const subtotal = window.round2(sede.subtotal);
             const ivaRate = fiscalSender.iva || 21;
-            const irpfRate = parent.irpfRate || 0;
-            const iva = subtotal * (ivaRate / 100);
-            const irpf = subtotal * (irpfRate / 100);
-            const total = subtotal + iva - irpf;
+            const irpfRate = parent.irpfRate || parseFloat(parent.irpf) || 0;
+            const iva = window.round2(subtotal * (ivaRate / 100));
+            const irpf = window.round2(subtotal * (irpfRate / 100));
+            const total = window.round2(subtotal + iva - irpf);
+            const _invDate = new Date(year, month - 1, new Date().getDate());
+            // Devengo = fin del periodo facturado (último día del mes)
+            const _devengo = new Date(year, month, 0, 12, 0, 0);
 
             const invoiceData = {
                 number: nextNum,
                 invoiceId: invoiceId,
-                date: new Date(year, month - 1, new Date().getDate()),
+                fechaDevengo: _devengo,
+                dueDate: window.calcDueDate(_invDate, parent.paymentTerms || 'contado'),
+                paymentTerms: parent.paymentTerms || 'contado',
+                date: _invDate,
                 clientId: parent.id,
                 clientName: parent.name,
                 clientCIF: parent.nif || '',
@@ -507,21 +516,27 @@
             if (!confirm('⚠️ El cliente padre NO tiene cuota plana configurada (ni en flatRateAmount legacy ni en items flat_monthly v2).\n\nEdita su ficha o su tarifa antes de emitir.\n\n¿Continuar con preview a 0 € de todos modos?')) return;
         }
         const fiscalSender = (typeof window.invCompanyData === 'object' && window.invCompanyData) ? window.invCompanyData : {};
+        // GUARD: sin CIF de emisora no se emite (Verifactu)
+        if (!window.requireEmitterCif(fiscalSender, 'factura consolidada F1')) return;
         const ivaRate = fiscalSender.iva || 21;
-        const irpfRate = parent.irpfRate || 0;
-        const iva = flatAmount * (ivaRate / 100);
-        const irpf = flatAmount * (irpfRate / 100);
-        const total = flatAmount + iva - irpf;
+        const irpfRate = parent.irpfRate || parseFloat(parent.irpf) || 0;
+        const _f1Sub = window.round2(flatAmount);
+        const iva = window.round2(_f1Sub * (ivaRate / 100));
+        const irpf = window.round2(_f1Sub * (irpfRate / 100));
+        const total = window.round2(_f1Sub + iva - irpf);
         const yearShort = String(year).slice(-2);
+        const _f1Date = new Date(year, month - 1, new Date().getDate());
 
         const draft = {
             invoiceId: '(preview · FAC-' + yearShort + '-XXX)',
-            date: new Date(year, month - 1, new Date().getDate()),
-            dueDate: null,
+            date: _f1Date,
+            fechaDevengo: new Date(year, month, 0, 12, 0, 0), // fin del periodo facturado
+            dueDate: window.calcDueDate(_f1Date, parent.paymentTerms || 'contado'),
+            paymentTerms: parent.paymentTerms || 'contado',
             clientId: parent.id,
             clientName: parent.name,
             clientCIF: parent.nif || '',
-            subtotal: flatAmount, iva: iva, ivaRate: ivaRate, irpf: irpf, irpfRate: irpfRate,
+            subtotal: _f1Sub, iva: iva, ivaRate: ivaRate, irpf: irpf, irpfRate: irpfRate,
             total: total,
             tickets: allTicketsDetail.map(t => t.id),
             ticketsDetail: allTicketsDetail,
