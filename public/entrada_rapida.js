@@ -1,37 +1,35 @@
 // =============================================================
-// ⚡ ENTRADA RÁPIDA DE ALBARANES — rejilla CRM por teclado
+// ⚡ ENTRADA RÁPIDA DE ALBARANES — ventana CRM clásica
 // =============================================================
-// Pantalla de entrada masiva para el admin: cada FILA es un
-// albarán. Flujo 100% teclado, "a la antigua usanza":
-//   - ENTER / TAB → siguiente celda
-//   - ENTER en la última celda → valida la fila y abre otra
-//     (cliente y sede se heredan de la fila anterior)
-//   - Autocompletado de cliente y destinatario con ↑ ↓ + ENTER
-//   - CP rellena la provincia solo; destinatario conocido rellena
-//     dirección/teléfono completos
-//   - Ctrl+S → guarda TODO el lote
+// Ventana modal (estilo Windows) de alta velocidad por teclado:
+//   - CLIENTE con buscador (al enfocar YA muestra la lista;
+//     escribir filtra por nombre o nº)
+//   - DESTINATARIO con buscador doble: destinos conocidos del
+//     cliente (sus últimos albaranes) + DIRECTORIO GLOBAL 🌐
+//     (6.315 registros gesco) — elegir rellena dirección, CP,
+//     localidad, provincia y teléfono de golpe
+//   - PROVINCIA como desplegable (teclado nativo) y auto por CP
+//   - ARTÍCULO con buscador del catálogo
+//   - ENTER avanza; en el último campo GUARDA y limpia el
+//     destino manteniendo el cliente → siguiente albarán del taco
+//   - Los creados van apareciendo abajo con su número y botón 🖨️
 //
-// Crea los albaranes con el MISMO esquema que el flujo manual del
-// admin (docId {idNum}_{compId}_{businessId}, auto-ruta por CP) y
-// numeración ATÓMICA vía ticket_counters (como la app cliente),
-// para que no colisione con albaranes creados por el cliente.
-//
-// Dependencias (admin.html): db, firebase, window.userMap,
-// window.openWorkspaceOrModal (erp_tabs.js).
+// El guardado usa el MISMO esquema que el flujo manual del admin
+// (docId {idNum}_{compId}_{businessId}, auto-ruta por CP) y
+// numeración ATÓMICA vía ticket_counters (como la app cliente).
 // =============================================================
 (function () {
     'use strict';
 
-    // ── estado del módulo ──
-    let _rows = [];
-    let _routes = null;        // [{label(lower), phone}]
-    let _articles = null;      // [nombres]
-    let _clientsIndex = null;  // [{id, idNum, name, search}]
-    let _compsCache = {};      // clientId → [{id, name, prefix, ...}]
-    let _destCache = {};       // clientId → [{receiver, street, number, localidad, cp, province, phone}]
-    let _container = null;
-    let _closeFn = null;
-    let _seq = 0;
+    let _routes = null;
+    let _articles = null;
+    let _clientsIndex = null;
+    let _compsCache = {};
+    let _destCache = {};
+    let _win = null;
+    let _client = null;      // {id, idNum, name}
+    let _comps = null;
+    let _createdCount = 0;
 
     const PROV_BY_CP = {
         '01': 'Álava', '02': 'Albacete', '03': 'Alicante', '04': 'Almería', '05': 'Ávila',
@@ -46,13 +44,14 @@
         '46': 'Valencia', '47': 'Valladolid', '48': 'Vizcaya', '49': 'Zamora', '50': 'Zaragoza',
         '51': 'Ceuta', '52': 'Melilla'
     };
+    const PROVINCES = Object.values(PROV_BY_CP).sort((a, b) => a.localeCompare(b));
 
     function _esc(s) {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
-    // ── cargas iniciales (una vez por sesión) ──
+    // ── datos ──
     async function _loadRoutes() {
         if (_routes) return _routes;
         _routes = [];
@@ -106,13 +105,11 @@
             snap.forEach(d => comps.push(Object.assign({ id: d.id }, d.data())));
         } catch (e) { console.warn('[ER] comps:', e); }
         if (comps.length === 0) comps.push({ id: 'comp_main', name: '', prefix: 'NP' });
-        // comp_main primero
         comps.sort((a, b) => (a.id === 'comp_main' ? -1 : b.id === 'comp_main' ? 1 : 0));
         _compsCache[clientId] = comps;
         return comps;
     }
 
-    // Destinatarios conocidos = últimos albaranes del cliente (repite el 90%)
     async function _loadDests(clientId, idNum) {
         if (_destCache[clientId]) return _destCache[clientId];
         const seen = {};
@@ -131,7 +128,8 @@
                     receiver: key,
                     street: t.street || '', number: t.number || '',
                     localidad: t.localidad || '', cp: t.cp || '',
-                    province: t.province || '', phone: t.phone || ''
+                    province: t.province || '', phone: t.phone || '',
+                    fuente: 'cliente'
                 });
             });
         } catch (e) { console.warn('[ER] destinos:', e); }
@@ -139,14 +137,13 @@
         return out;
     }
 
-    // ── dropdown de autocompletado (uno global, reutilizado) ──
+    // ── dropdown buscador (uno global) ──
     const _dd = { el: null, items: [], sel: -1, onPick: null, anchor: null };
 
     function _ddEnsure() {
         if (_dd.el) return;
         _dd.el = document.createElement('div');
-        _dd.el.id = 'er-dropdown';
-        _dd.el.style.cssText = 'position:fixed; z-index:100001; background:#252526; border:1px solid #FF6600; border-radius:6px; max-height:240px; overflow-y:auto; display:none; min-width:220px; box-shadow:0 6px 18px rgba(0,0,0,0.6); font-size:0.78rem;';
+        _dd.el.style.cssText = 'position:fixed; z-index:100010; background:#2b2b2e; border:1px solid #FF6600; border-radius:6px; max-height:260px; overflow-y:auto; display:none; box-shadow:0 8px 22px rgba(0,0,0,0.65); font-size:0.8rem;';
         document.body.appendChild(_dd.el);
         _dd.el.addEventListener('mousedown', function (e) {
             const item = e.target.closest('[data-idx]');
@@ -156,17 +153,17 @@
 
     function _ddShow(anchor, items, onPick) {
         _ddEnsure();
-        _dd.items = items; _dd.onPick = onPick; _dd.anchor = anchor; _dd.sel = items.length ? 0 : -1;
         if (!items.length) { _ddHide(); return; }
+        _dd.items = items; _dd.onPick = onPick; _dd.anchor = anchor; _dd.sel = 0;
         _dd.el.innerHTML = items.map((it, i) =>
-            '<div data-idx="' + i + '" style="padding:6px 10px; cursor:pointer; ' + (i === 0 ? 'background:#FF6600; color:#000;' : 'color:#ddd;') + '">'
-            + '<div style="font-weight:600;">' + _esc(it.label) + '</div>'
-            + (it.sub ? '<div style="font-size:0.68rem; opacity:0.75;">' + _esc(it.sub) + '</div>' : '')
+            '<div data-idx="' + i + '" style="padding:7px 12px; cursor:pointer; ' + (i === 0 ? 'background:#FF6600; color:#000;' : 'color:#ddd;') + '">'
+            + '<div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + it.label + '</div>'
+            + (it.sub ? '<div style="font-size:0.68rem; opacity:0.75; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + _esc(it.sub) + '</div>' : '')
             + '</div>').join('');
         const r = anchor.getBoundingClientRect();
         _dd.el.style.left = r.left + 'px';
         _dd.el.style.top = (r.bottom + 2) + 'px';
-        _dd.el.style.minWidth = Math.max(220, r.width) + 'px';
+        _dd.el.style.width = Math.max(280, r.width) + 'px';
         _dd.el.style.display = 'block';
     }
 
@@ -191,217 +188,94 @@
     function _ddHide() { if (_dd.el) _dd.el.style.display = 'none'; _dd.items = []; _dd.sel = -1; _dd.onPick = null; _dd.anchor = null; }
     function _ddOpen() { return _dd.el && _dd.el.style.display === 'block' && _dd.items.length > 0; }
 
-    // ── filas ──
-    const COLS = ['cliente', 'sede', 'receiver', 'street', 'number', 'localidad', 'cp', 'province', 'phone', 'qty', 'articulo', 'timeslot', 'shipping'];
+    // ── campos y navegación ──
+    const FIELDS = ['er-cliente', 'er-sede', 'er-receiver', 'er-street', 'er-number', 'er-cp', 'er-localidad', 'er-provincia', 'er-phone', 'er-qty', 'er-articulo', 'er-timeslot', 'er-shipping'];
 
-    function _rowTemplate(rid) {
-        const hour = new Date().getHours();
-        const slot = (hour >= 8 && hour < 15) ? 'MAÑANA' : 'TARDE';
-        return '<tr id="er-row-' + rid + '" style="border-bottom:1px solid #2d2d30;">'
-            + '<td class="er-st" style="width:34px; text-align:center; font-size:0.85rem; color:#666;">—</td>'
-            + '<td><input data-col="cliente" placeholder="cliente / nº" style="width:130px;" autocomplete="off"></td>'
-            + '<td><select data-col="sede" style="width:92px;"><option value="comp_main">Principal</option></select></td>'
-            + '<td><input data-col="receiver" placeholder="destinatario" style="width:150px; text-transform:uppercase;" autocomplete="off"></td>'
-            + '<td><input data-col="street" placeholder="calle" style="width:150px;" autocomplete="off"></td>'
-            + '<td><input data-col="number" placeholder="nº" style="width:42px;" autocomplete="off"></td>'
-            + '<td><input data-col="localidad" placeholder="localidad" style="width:110px;" autocomplete="off"></td>'
-            + '<td><input data-col="cp" placeholder="CP" maxlength="5" style="width:52px;" autocomplete="off"></td>'
-            + '<td><input data-col="province" placeholder="provincia" style="width:95px;" autocomplete="off"></td>'
-            + '<td><input data-col="phone" placeholder="teléfono" style="width:88px;" autocomplete="off"></td>'
-            + '<td><input data-col="qty" type="number" min="1" value="1" style="width:44px; text-align:center;"></td>'
-            + '<td><input data-col="articulo" placeholder="artículo" list="er-articles" style="width:110px;" autocomplete="off"></td>'
-            + '<td><select data-col="timeslot" style="width:64px;"><option' + (slot === 'MAÑANA' ? ' selected' : '') + '>MAÑANA</option><option' + (slot === 'TARDE' ? ' selected' : '') + '>TARDE</option></select></td>'
-            + '<td><select data-col="shipping" style="width:70px;"><option value="Pagados">Pagados</option><option value="Debidos">Debidos</option></select></td>'
-            + '<td style="width:26px;"><button class="er-del" title="Quitar fila" style="background:none; border:none; color:#f44; cursor:pointer;">✕</button></td>'
-            + '</tr>';
+    function $(id) { return _win ? _win.querySelector('#' + id) : null; }
+
+    function _focus(id) { const el = $(id); if (el) { el.focus(); if (el.select) el.select(); } }
+
+    function _nextField(id) { const i = FIELDS.indexOf(id); return i >= 0 && i < FIELDS.length - 1 ? FIELDS[i + 1] : null; }
+
+    // ── buscadores ──
+    function _searchClients(q) {
+        if (!_clientsIndex || !_clientsIndex.length) _buildClientsIndex();
+        q = (q || '').trim().toLowerCase();
+        const list = q ? _clientsIndex.filter(c => c.search.indexOf(q) !== -1) : _clientsIndex;
+        return list.slice(0, 10).map(c => ({ label: _esc(c.name), sub: 'Cliente nº ' + c.idNum, _c: c }));
     }
 
-    function _addRow(inherit) {
-        const rid = ++_seq;
-        const tbody = _container.querySelector('#er-tbody');
-        tbody.insertAdjacentHTML('beforeend', _rowTemplate(rid));
-        const tr = document.getElementById('er-row-' + rid);
-        const row = { rid: rid, tr: tr, client: null, comps: null, status: 'edit', savedId: '' };
-        _rows.push(row);
-
-        // Heredar cliente + sede de la fila anterior (stack del mismo cliente)
-        if (inherit && inherit.client) {
-            row.client = inherit.client;
-            row.comps = inherit.comps;
-            const cInp = tr.querySelector('[data-col="cliente"]');
-            cInp.value = inherit.client.name;
-            cInp.style.color = '#4CAF50';
-            _fillSedeSelect(row, inherit.tr.querySelector('[data-col="sede"]').value);
+    function _searchDests(q) {
+        q = (q || '').trim().toUpperCase();
+        const propios = (_client && _destCache[_client.id]) || [];
+        let items = (q ? propios.filter(d => d.receiver.indexOf(q) !== -1) : propios).slice(0, 7)
+            .map(d => ({ label: '📦 ' + _esc(d.receiver), sub: [d.street, d.localidad, d.cp].filter(Boolean).join(', '), _d: d }));
+        // Directorio global 🌐 (gesco, 6.315 registros) a partir de 3 letras
+        if (q.length >= 3 && typeof window.searchPhantomDirectory === 'function') {
+            const seen = {};
+            items.forEach(i => { if (i._d) seen[i._d.receiver] = true; });
+            window.searchPhantomDirectory(q).forEach(g => {
+                const key = String(g.name || '').toUpperCase();
+                if (!key || seen[key]) return;
+                items.push({
+                    label: '🌐 ' + _esc(key),
+                    sub: [g.street, g.localidad, g.cp].filter(Boolean).join(', '),
+                    _d: {
+                        receiver: key, street: g.street || '', number: '',
+                        localidad: g.localidad || '', cp: g.cp || '',
+                        province: PROV_BY_CP[String(g.cp || '').substring(0, 2)] || '',
+                        phone: g.senderPhone || '', fuente: 'global'
+                    }
+                });
+            });
         }
-
-        _wireRow(row);
-        return row;
+        return items.slice(0, 12);
     }
 
-    function _fillSedeSelect(row, selectedId) {
-        const sel = row.tr.querySelector('[data-col="sede"]');
-        const comps = row.comps || [{ id: 'comp_main', name: '' }];
-        sel.innerHTML = comps.map(c =>
-            '<option value="' + _esc(c.id) + '"' + (c.id === (selectedId || 'comp_main') ? ' selected' : '') + '>'
-            + _esc(c.id === 'comp_main' ? (c.name || 'Principal') : (c.name || c.id)) + '</option>').join('');
+    function _searchArticles(q) {
+        const arts = _articles || [];
+        q = (q || '').trim().toLowerCase();
+        const list = q ? arts.filter(a => a.toLowerCase().indexOf(q) !== -1) : arts;
+        return list.slice(0, 12).map(a => ({ label: _esc(a), _a: a }));
     }
 
-    function _inp(row, col) { return row.tr.querySelector('[data-col="' + col + '"]'); }
-
-    function _focusCol(row, col) {
-        const el = _inp(row, col);
-        if (el) { el.focus(); if (el.select) el.select(); }
+    function _pickDest(d) {
+        $('er-receiver').value = d.receiver;
+        $('er-street').value = d.street;
+        $('er-number').value = d.number;
+        $('er-cp').value = d.cp;
+        $('er-localidad').value = d.localidad;
+        if (d.province) $('er-provincia').value = d.province;
+        else if (d.cp) { const p = PROV_BY_CP[String(d.cp).substring(0, 2)]; if (p) $('er-provincia').value = p; }
+        $('er-phone').value = d.phone;
+        _setStatus('Destino cargado' + (d.fuente === 'global' ? ' del directorio global 🌐' : ' de los envíos del cliente 📦') + ' — revisa y ENTER', '#4CAF50');
+        _focus('er-qty');
     }
 
-    function _nextCol(col) { const i = COLS.indexOf(col); return i >= 0 && i < COLS.length - 1 ? COLS[i + 1] : null; }
-    function _prevCol(col) { const i = COLS.indexOf(col); return i > 0 ? COLS[i - 1] : null; }
-
-    function _wireRow(row) {
-        const tr = row.tr;
-
-        tr.querySelector('.er-del').addEventListener('click', function () {
-            if (row.status === 'saved') return;
-            _rows = _rows.filter(r => r !== row);
-            tr.remove();
-            _updateCounter();
+    async function _pickClient(c) {
+        _client = c;
+        const inp = $('er-cliente');
+        inp.value = c.name;
+        inp.style.borderColor = '#4CAF50';
+        $('er-cliente-num').textContent = 'nº ' + c.idNum;
+        _comps = await _loadComps(c.id);
+        const sel = $('er-sede');
+        sel.innerHTML = _comps.map(cp =>
+            '<option value="' + _esc(cp.id) + '">' + _esc(cp.id === 'comp_main' ? (cp.name || 'Principal') : (cp.name || cp.id)) + '</option>').join('');
+        // Sede única → saltar directo a destinatario
+        _loadDests(c.id, c.idNum).then(d => {
+            _setStatus(d.length ? d.length + ' destinos conocidos de este cliente — enfoca Destinatario y aparecen' : 'Cliente sin envíos previos — el buscador 🌐 global sigue disponible', '#5DADE2');
         });
-
-        COLS.forEach(col => {
-            const el = _inp(row, col);
-            if (!el) return;
-
-            el.addEventListener('keydown', function (e) {
-                // Dropdown activo: ↑↓ navegan, ENTER/TAB pican
-                if (_ddOpen() && _dd.anchor === el) {
-                    if (e.key === 'ArrowDown') { e.preventDefault(); _ddMove(1); return; }
-                    if (e.key === 'ArrowUp') { e.preventDefault(); _ddMove(-1); return; }
-                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); _ddPick(-1); return; }
-                    if (e.key === 'Escape') { _ddHide(); return; }
-                }
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const nx = _nextCol(col);
-                    if (nx) { _focusCol(row, nx); }
-                    else { _commitRow(row); }
-                    return;
-                }
-                // ↑↓ sin dropdown: moverse entre filas en la misma columna
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                    if (el.tagName === 'SELECT') return; // los select usan ↑↓ para opciones
-                    e.preventDefault();
-                    const idx = _rows.indexOf(row);
-                    const target = _rows[idx + (e.key === 'ArrowDown' ? 1 : -1)];
-                    if (target && target.status !== 'saved') _focusCol(target, col);
-                    return;
-                }
-            });
-
-            el.addEventListener('blur', function () { setTimeout(() => { if (_dd.anchor === el) _ddHide(); }, 150); });
-        });
-
-        // ── autocompletado CLIENTE ──
-        const cliInp = _inp(row, 'cliente');
-        cliInp.addEventListener('input', function () {
-            row.client = null; row.comps = null;
-            cliInp.style.color = '';
-            // userMap puede tardar en poblarse tras el login → reintentar índice
-            if (!_clientsIndex || !_clientsIndex.length) _buildClientsIndex();
-            const q = cliInp.value.trim().toLowerCase();
-            if (q.length < 2) { _ddHide(); return; }
-            const matches = _clientsIndex.filter(c => c.search.indexOf(q) !== -1).slice(0, 8);
-            _ddShow(cliInp, matches.map(c => ({ label: c.name, sub: '#' + c.idNum, _c: c })), function (it) {
-                _setRowClient(row, it._c);
-            });
-        });
-
-        // ── autocompletado DESTINATARIO ──
-        const recInp = _inp(row, 'receiver');
-        recInp.addEventListener('input', function () {
-            if (!row.client) { _ddHide(); return; }
-            const q = recInp.value.trim().toUpperCase();
-            const dests = _destCache[row.client.id] || [];
-            if (q.length < 2 || !dests.length) { _ddHide(); return; }
-            const matches = dests.filter(d => d.receiver.indexOf(q) !== -1).slice(0, 8);
-            _ddShow(recInp, matches.map(d => ({
-                label: d.receiver,
-                sub: [d.street, d.localidad, d.cp].filter(Boolean).join(', '),
-                _d: d
-            })), function (it) {
-                const d = it._d;
-                recInp.value = d.receiver;
-                _inp(row, 'street').value = d.street;
-                _inp(row, 'number').value = d.number;
-                _inp(row, 'localidad').value = d.localidad;
-                _inp(row, 'cp').value = d.cp;
-                _inp(row, 'province').value = d.province;
-                _inp(row, 'phone').value = d.phone;
-                // Con todo relleno, saltar directo a bultos
-                _focusCol(row, 'qty');
-            });
-        });
-
-        // ── CP → provincia automática ──
-        const cpInp = _inp(row, 'cp');
-        cpInp.addEventListener('input', function () {
-            const cp = cpInp.value.trim();
-            if (cp.length >= 2) {
-                const prov = PROV_BY_CP[cp.substring(0, 2)];
-                const provInp = _inp(row, 'province');
-                if (prov && !provInp.value.trim()) provInp.value = prov;
-                if (prov) provInp.value = prov;
-            }
-        });
+        if (_comps.length <= 1) _focus('er-receiver');
+        else _focus('er-sede');
     }
 
-    async function _setRowClient(row, c) {
-        const cliInp = _inp(row, 'cliente');
-        cliInp.value = c.name;
-        cliInp.style.color = '#4CAF50';
-        row.client = c;
-        _focusCol(row, 'receiver');
-        // Cargas en segundo plano: sedes + destinatarios conocidos
-        _loadComps(c.id).then(comps => { row.comps = comps; _fillSedeSelect(row); });
-        _loadDests(c.id, c.idNum);
+    function _setStatus(msg, color) {
+        const el = $('er-status');
+        if (el) { el.textContent = msg; el.style.color = color || '#888'; }
     }
 
-    // ── validación + commit de fila (ENTER en la última celda) ──
-    function _validateRow(row) {
-        const errs = [];
-        if (!row.client || !row.client.idNum) errs.push('cliente');
-        if (!_inp(row, 'receiver').value.trim()) errs.push('destinatario');
-        if (!(parseInt(_inp(row, 'qty').value, 10) >= 1)) errs.push('bultos');
-        if (!_inp(row, 'articulo').value.trim()) errs.push('artículo');
-        return errs;
-    }
-
-    function _commitRow(row) {
-        const errs = _validateRow(row);
-        const st = row.tr.querySelector('.er-st');
-        if (errs.length) {
-            st.textContent = '⚠';
-            st.style.color = '#FF9800';
-            st.title = 'Falta: ' + errs.join(', ');
-            _focusCol(row, errs[0] === 'cliente' ? 'cliente' : errs[0] === 'destinatario' ? 'receiver' : errs[0] === 'bultos' ? 'qty' : 'articulo');
-            return;
-        }
-        st.textContent = '✓';
-        st.style.color = '#4CAF50';
-        st.title = 'Lista para guardar';
-        row.status = 'ready';
-        _updateCounter();
-        const nr = _addRow(row);
-        _focusCol(nr, 'receiver');
-    }
-
-    function _updateCounter() {
-        const el = _container.querySelector('#er-counter');
-        if (!el) return;
-        const ready = _rows.filter(r => r.status === 'ready').length;
-        const saved = _rows.filter(r => r.status === 'saved').length;
-        el.innerHTML = '<b style="color:#4CAF50;">' + ready + '</b> listas · <b style="color:#5DADE2;">' + saved + '</b> guardadas';
-    }
-
-    // ── numeración atómica (misma que la app cliente) ──
+    // ── guardado ──
     async function _nextTicketId(idNum, compId, comp) {
         const prefix = (comp && comp.prefix) || 'NP';
         const YY = String(new Date().getFullYear()).slice(-2);
@@ -411,7 +285,6 @@
         let seed = 0;
         const cSnap = await counterRef.get();
         if (!cSnap.exists) {
-            // Primera vez: sembrar con el máximo histórico de este cliente+sede
             try {
                 const snap = await db.collection('tickets').where('clientIdNum', '==', String(idNum)).get();
                 snap.forEach(d => {
@@ -436,198 +309,261 @@
         return yearPrefix + next;
     }
 
-    // ── guardado del lote ──
-    async function _saveAll() {
-        const pending = _rows.filter(r => (r.status === 'ready' || r.status === 'edit') && _validateRow(r).length === 0);
-        if (!pending.length) { alert('No hay filas completas que guardar.\n\nRellena al menos: cliente, destinatario, bultos y artículo.'); return; }
-
-        const btn = _container.querySelector('#er-save-btn');
-        btn.disabled = true; btn.textContent = 'GUARDANDO…';
-        await _loadRoutes();
-
-        let ok = 0, ko = 0;
-        for (const row of pending) {
-            const st = row.tr.querySelector('.er-st');
-            try {
-                st.textContent = '⏳'; st.style.color = '#FFD700';
-                const c = row.client;
-                const compId = _inp(row, 'sede').value || 'comp_main';
-                const comp = (row.comps || []).find(x => x.id === compId) || { id: compId, prefix: 'NP' };
-                const uData = (window.userMap || {})[c.id] || {};
-
-                const businessId = await _nextTicketId(c.idNum, compId, comp);
-
-                const street = _inp(row, 'street').value.trim();
-                const number = _inp(row, 'number').value.trim();
-                const locality = _inp(row, 'localidad').value.trim();
-                const cp = _inp(row, 'cp').value.trim();
-
-                // Auto-ruta: etiqueta de ruta == CP o localidad
-                let driverPhone = '';
-                for (const r of _routes) {
-                    if (r.label === cp || (locality && r.label === locality.toLowerCase())) { driverPhone = r.phone; break; }
-                }
-
-                const addrParts = [];
-                if (street) addrParts.push(street);
-                if (number) addrParts.push('Nº ' + number);
-                if (locality) addrParts.push(locality);
-                if (cp) addrParts.push('(CP ' + cp + ')');
-
-                const qty = parseInt(_inp(row, 'qty').value, 10) || 1;
-                const ticketData = {
-                    id: businessId,
-                    sender: comp.name || uData.name || 'NOVAPACK',
-                    senderAddress: comp.address || uData.senderAddress || '',
-                    senderPhone: comp.phone || uData.senderPhone || '',
-                    receiver: _inp(row, 'receiver').value.trim().toUpperCase(),
-                    phone: _inp(row, 'phone').value.trim(),
-                    driverPhone: driverPhone,
-                    address: addrParts.join(', '),
-                    street: street,
-                    number: number,
-                    localidad: locality,
-                    cp: cp,
-                    province: _inp(row, 'province').value.trim(),
-                    timeSlot: _inp(row, 'timeslot').value,
-                    shippingType: _inp(row, 'shipping').value,
-                    cod: 0,
-                    packagesList: [{ qty: qty, weight: '', size: _inp(row, 'articulo').value.trim() }],
-                    uid: uData.authUid || uData.id || c.id,
-                    compId: compId,
-                    subTariffId: comp.subTariffId || null,
-                    clientIdNum: String(c.idNum),
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                    adminCreated: true,
-                    entryMode: 'rapida',
-                    printed: false
-                };
-
-                const docId = String(c.idNum) + '_' + compId + '_' + businessId;
-                await db.collection('tickets').doc(docId).set(ticketData);
-
-                row.status = 'saved';
-                row.savedId = businessId;
-                st.textContent = '✓'; st.style.color = '#5DADE2'; st.title = 'Guardado: ' + businessId;
-                // Congelar la fila y mostrar el nº asignado
-                COLS.forEach(col => { const el = _inp(row, col); if (el) el.disabled = true; });
-                _inp(row, 'cliente').value = c.name + '  →  ' + businessId;
-                ok++;
-            } catch (e) {
-                console.error('[ER] guardar fila:', e);
-                st.textContent = '✗'; st.style.color = '#f44'; st.title = 'Error: ' + e.message;
-                ko++;
-            }
-            _updateCounter();
-        }
-
-        btn.disabled = false; btn.textContent = '💾 GUARDAR TODO (Ctrl+S)';
-        const msg = '✅ ' + ok + ' albarán(es) creados' + (ko ? ' · ❌ ' + ko + ' con error' : '') + '.\n\nYa aparecen en el listado normal — imprímelos desde allí como siempre.';
-        if (typeof showToast === 'function' && !ko) showToast(ok + ' albaranes creados ✓', 'success');
-        else alert(msg);
+    function _validate() {
+        if (!_client) { _setStatus('⚠ Elige un CLIENTE del buscador (enfoca el campo y aparece la lista)', '#FF9800'); _focus('er-cliente'); return false; }
+        if (!$('er-receiver').value.trim()) { _setStatus('⚠ Falta el DESTINATARIO', '#FF9800'); _focus('er-receiver'); return false; }
+        if (!(parseInt($('er-qty').value, 10) >= 1)) { _setStatus('⚠ Bultos debe ser 1 o más', '#FF9800'); _focus('er-qty'); return false; }
+        if (!$('er-articulo').value.trim()) { _setStatus('⚠ Falta el ARTÍCULO (enfoca el campo y elige del catálogo)', '#FF9800'); _focus('er-articulo'); return false; }
+        return true;
     }
 
-    // ── apertura de la pantalla ──
-    window.openEntradaRapida = async function () {
+    async function _save() {
+        if (!_validate()) return;
+        const btn = $('er-save-btn');
+        btn.disabled = true; btn.textContent = '⏳ GUARDANDO…';
         try {
-            await _openEntradaRapidaInner();
+            await _loadRoutes();
+            const c = _client;
+            const compId = $('er-sede').value || 'comp_main';
+            const comp = (_comps || []).find(x => x.id === compId) || { id: compId, prefix: 'NP' };
+            const uData = (window.userMap || {})[c.id] || {};
+
+            const businessId = await _nextTicketId(c.idNum, compId, comp);
+
+            const street = $('er-street').value.trim();
+            const number = $('er-number').value.trim();
+            const locality = $('er-localidad').value.trim();
+            const cp = $('er-cp').value.trim();
+
+            let driverPhone = '';
+            for (const r of _routes) {
+                if (r.label === cp || (locality && r.label === locality.toLowerCase())) { driverPhone = r.phone; break; }
+            }
+
+            const addrParts = [];
+            if (street) addrParts.push(street);
+            if (number) addrParts.push('Nº ' + number);
+            if (locality) addrParts.push(locality);
+            if (cp) addrParts.push('(CP ' + cp + ')');
+
+            const qty = parseInt($('er-qty').value, 10) || 1;
+            const ticketData = {
+                id: businessId,
+                sender: comp.name || uData.name || 'NOVAPACK',
+                senderAddress: comp.address || uData.senderAddress || '',
+                senderPhone: comp.phone || uData.senderPhone || '',
+                receiver: $('er-receiver').value.trim().toUpperCase(),
+                phone: $('er-phone').value.trim(),
+                driverPhone: driverPhone,
+                address: addrParts.join(', '),
+                street: street,
+                number: number,
+                localidad: locality,
+                cp: cp,
+                province: $('er-provincia').value || '',
+                timeSlot: $('er-timeslot').value,
+                shippingType: $('er-shipping').value,
+                cod: 0,
+                packagesList: [{ qty: qty, weight: '', size: $('er-articulo').value.trim() }],
+                uid: uData.authUid || uData.id || c.id,
+                compId: compId,
+                subTariffId: comp.subTariffId || null,
+                clientIdNum: String(c.idNum),
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                adminCreated: true,
+                entryMode: 'rapida',
+                printed: false
+            };
+
+            const docId = String(c.idNum) + '_' + compId + '_' + businessId;
+            await db.collection('tickets').doc(docId).set(ticketData);
+
+            _createdCount++;
+            $('er-count').textContent = _createdCount;
+            const list = $('er-created-list');
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 10px; border-bottom:1px solid #2d2d30; font-size:0.8rem;';
+            row.innerHTML = '<span style="color:#4CAF50; font-weight:900; font-family:monospace;">' + _esc(businessId) + '</span>'
+                + '<span style="color:#ddd; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + _esc(ticketData.receiver) + '</span>'
+                + '<span style="color:#888;">' + _esc(locality || cp || '') + '</span>'
+                + '<button data-print style="background:#333; border:1px solid #4CAF50; color:#4CAF50; padding:2px 8px; font-size:0.72rem; cursor:pointer; border-radius:3px;">🖨️</button>';
+            row.querySelector('[data-print]').addEventListener('click', function () {
+                if (typeof printTicketFromAdmin === 'function') printTicketFromAdmin(c.id, compId, docId);
+                else alert('Impresión no disponible en esta vista. Imprime desde Albaranes Centralizados.');
+            });
+            list.insertBefore(row, list.firstChild);
+
+            // Limpiar SOLO destino y mercancía — el cliente se mantiene (taco)
+            ['er-receiver', 'er-street', 'er-number', 'er-cp', 'er-localidad', 'er-phone'].forEach(id => { $(id).value = ''; });
+            $('er-provincia').value = '';
+            $('er-qty').value = '1';
+            $('er-articulo').value = '';
+            _setStatus('✅ ' + businessId + ' creado — siguiente destinatario', '#4CAF50');
+            _focus('er-receiver');
         } catch (e) {
-            console.error('[ER] error abriendo Entrada Rápida:', e);
-            alert('Error abriendo Entrada Rápida: ' + (e.message || e) + '\n\nRecarga la página (Ctrl+Shift+R) e inténtalo de nuevo.');
+            console.error('[ER] guardar:', e);
+            _setStatus('❌ Error: ' + (e.message || e), '#f44336');
+        } finally {
+            btn.disabled = false; btn.textContent = '💾 GUARDAR Y SIGUIENTE  (Enter)';
+        }
+    }
+
+    // ── ventana ──
+    function _inputStyle(extra) {
+        return 'background:#2d2d30; border:1px solid #4a4a4e; color:#fff; padding:9px 10px; border-radius:5px; font-size:0.88rem; outline:none; box-sizing:border-box; width:100%; ' + (extra || '');
+    }
+
+    window.openEntradaRapida = function () {
+        try { _openInner(); } catch (e) {
+            console.error('[ER] error abriendo:', e);
+            alert('Error abriendo Entrada Rápida: ' + (e.message || e));
         }
     };
 
-    async function _openEntradaRapidaInner() {
-        const opener = (typeof window.openWorkspaceOrModal === 'function')
-            ? window.openWorkspaceOrModal({
-                tabKey: 'entrada-rapida',
-                tabTitle: '⚡ Entrada Rápida',
-                tabIcon: 'bolt',
-                modalId: 'er-modal',
-                modalStyle: 'position:fixed; inset:0; background:#1e1e1e; z-index:99990; display:flex; flex-direction:column; overflow:hidden;'
-            })
-            : (function () {
-                const old = document.getElementById('er-modal');
-                if (old) old.remove();
-                const m = document.createElement('div');
-                m.id = 'er-modal';
-                m.style.cssText = 'position:fixed; inset:0; background:#1e1e1e; z-index:99990; display:flex; flex-direction:column; overflow:hidden;';
-                document.body.appendChild(m);
-                return { container: m, close: () => m.remove(), useERP: false };
-            })();
+    function _openInner() {
+        const old = document.getElementById('er-window-overlay');
+        if (old) old.remove();
+        _client = null; _comps = null; _createdCount = 0;
 
-        _container = opener.container;
-        _closeFn = opener.close;
-        _rows = [];
-        _seq = 0;
+        const overlay = document.createElement('div');
+        overlay.id = 'er-window-overlay';
+        overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.72); z-index:99995; display:flex; align-items:center; justify-content:center; padding:16px;';
+        overlay.innerHTML = ''
+            + '<div id="er-window" style="background:#1f1f22; border:1px solid #FF6600; border-radius:10px; width:100%; max-width:820px; max-height:94vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,0.8); overflow:hidden;">'
 
-        _container.innerHTML = ''
-            + '<div style="display:flex; flex-direction:column; height:100%; min-height:0; width:100%;">'
-            + '<div style="padding:12px 18px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border-bottom:1px solid #333; background:#252526;">'
-            + '  <div>'
-            + '    <span style="color:#FF6600; font-weight:900; letter-spacing:1px;">⚡ ENTRADA RÁPIDA DE ALBARANES</span>'
-            + '    <span id="er-counter" style="margin-left:14px; font-size:0.78rem; color:#888;">0 listas · 0 guardadas</span>'
+            // barra de título estilo ventana
+            + '  <div style="background:linear-gradient(135deg,#2a2a2e,#232326); padding:10px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #FF6600;">'
+            + '    <div style="color:#FF6600; font-weight:900; letter-spacing:1px; font-size:0.95rem;">⚡ ENTRADA RÁPIDA DE ALBARANES</div>'
+            + '    <button id="er-close" title="Cerrar (Esc)" style="background:none; border:none; color:#aaa; font-size:1.15rem; cursor:pointer; padding:2px 8px;">✕</button>'
             + '  </div>'
-            + '  <div style="display:flex; gap:8px; align-items:center;">'
-            + '    <button id="er-add-btn" style="background:transparent; border:1px solid #555; color:#ccc; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:0.78rem;">+ Fila</button>'
-            + '    <button id="er-save-btn" style="background:linear-gradient(135deg,#FF6600,#E65100); border:0; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer; font-weight:900; font-size:0.8rem;">💾 GUARDAR TODO (Ctrl+S)</button>'
-            + (opener.useERP ? '' : '    <button id="er-close-btn" style="background:#333; border:1px solid #555; color:#fff; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:0.78rem;">Cerrar</button>')
+
+            // cuerpo del formulario
+            + '  <div style="padding:14px 18px 6px; overflow-y:auto;">'
+
+            + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">CLIENTE (REMITENTE)</div>'
+            + '    <div style="display:grid; grid-template-columns: 1fr 170px; gap:10px; margin-bottom:14px;">'
+            + '      <div style="position:relative;">'
+            + '        <input id="er-cliente" placeholder="🔍 Enfoca aquí y elige — o escribe nombre / nº de cliente" style="' + _inputStyle('border-color:#FF6600;') + '" autocomplete="off">'
+            + '        <span id="er-cliente-num" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#4CAF50; font-size:0.7rem; font-weight:700;"></span>'
+            + '      </div>'
+            + '      <select id="er-sede" title="Sede del cliente" style="' + _inputStyle() + '"><option value="comp_main">Principal</option></select>'
+            + '    </div>'
+
+            + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">DESTINO</div>'
+            + '    <div style="margin-bottom:10px;">'
+            + '      <input id="er-receiver" placeholder="🔍 Destinatario — enfoca y salen los habituales del cliente · 3 letras busca en el directorio global 🌐" style="' + _inputStyle('text-transform:uppercase;') + '" autocomplete="off">'
+            + '    </div>'
+            + '    <div style="display:grid; grid-template-columns: 1fr 90px; gap:10px; margin-bottom:10px;">'
+            + '      <input id="er-street" placeholder="Calle / dirección" style="' + _inputStyle() + '" autocomplete="off">'
+            + '      <input id="er-number" placeholder="Nº" style="' + _inputStyle() + '" autocomplete="off">'
+            + '    </div>'
+            + '    <div style="display:grid; grid-template-columns: 90px 1fr 200px 150px; gap:10px; margin-bottom:14px;">'
+            + '      <input id="er-cp" placeholder="CP" maxlength="5" style="' + _inputStyle() + '" autocomplete="off">'
+            + '      <input id="er-localidad" placeholder="Localidad" style="' + _inputStyle() + '" autocomplete="off">'
+            + '      <select id="er-provincia" style="' + _inputStyle() + '">'
+            + '        <option value="">Provincia…</option>'
+            + PROVINCES.map(p => '<option value="' + _esc(p) + '">' + _esc(p) + '</option>').join('')
+            + '      </select>'
+            + '      <input id="er-phone" placeholder="Teléfono" style="' + _inputStyle() + '" autocomplete="off">'
+            + '    </div>'
+
+            + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">MERCANCÍA</div>'
+            + '    <div style="display:grid; grid-template-columns: 90px 1fr 130px 130px; gap:10px; margin-bottom:14px;">'
+            + '      <input id="er-qty" type="number" min="1" value="1" title="Bultos" style="' + _inputStyle('text-align:center; font-weight:700;') + '">'
+            + '      <input id="er-articulo" placeholder="🔍 Artículo — enfoca y sale el catálogo" style="' + _inputStyle() + '" autocomplete="off">'
+            + '      <select id="er-timeslot" style="' + _inputStyle() + '"><option>MAÑANA</option><option>TARDE</option></select>'
+            + '      <select id="er-shipping" style="' + _inputStyle() + '"><option value="Pagados">Pagados</option><option value="Debidos">Debidos</option></select>'
+            + '    </div>'
+
+            + '    <div id="er-status" style="min-height:18px; font-size:0.75rem; color:#888; margin-bottom:8px;">Enfoca el campo Cliente para empezar — todo se maneja con ENTER y las flechas</div>'
+            + '    <button id="er-save-btn" style="width:100%; background:linear-gradient(135deg,#FF6600,#E65100); border:0; color:#fff; padding:13px; border-radius:7px; cursor:pointer; font-weight:900; font-size:0.95rem; letter-spacing:1px;">💾 GUARDAR Y SIGUIENTE  (Enter)</button>'
             + '  </div>'
-            + '</div>'
-            + '<div style="padding:6px 18px; font-size:0.7rem; color:#777; border-bottom:1px solid #2a2a2a;">'
-            + '  Teclado: <b style="color:#aaa;">ENTER/TAB</b> siguiente campo · <b style="color:#aaa;">ENTER al final</b> = fila lista + nueva (hereda cliente) · <b style="color:#aaa;">↑↓</b> autocompletar o cambiar de fila · destinatario conocido rellena la dirección solo · el CP pone la provincia'
-            + '</div>'
-            + '<div style="flex:1; overflow:auto; padding:0 8px 40px;">'
-            + '  <table style="border-collapse:collapse; font-size:0.78rem; color:#ddd; margin-top:4px; min-width:1350px;">'
-            + '    <thead><tr style="color:#9cdcfe; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.5px;">'
-            + '      <th></th><th style="text-align:left; padding:4px;">Cliente</th><th style="text-align:left; padding:4px;">Sede</th>'
-            + '      <th style="text-align:left; padding:4px;">Destinatario</th><th style="text-align:left; padding:4px;">Calle</th><th style="padding:4px;">Nº</th>'
-            + '      <th style="text-align:left; padding:4px;">Localidad</th><th style="padding:4px;">CP</th><th style="text-align:left; padding:4px;">Provincia</th>'
-            + '      <th style="text-align:left; padding:4px;">Teléfono</th><th style="padding:4px;">Bult.</th><th style="text-align:left; padding:4px;">Artículo</th>'
-            + '      <th style="padding:4px;">Turno</th><th style="padding:4px;">Portes</th><th></th>'
-            + '    </tr></thead>'
-            + '    <tbody id="er-tbody"></tbody>'
-            + '  </table>'
-            + '  <datalist id="er-articles"></datalist>'
-            + '</div>'
+
+            // creados en esta sesión
+            + '  <div style="border-top:1px solid #333; background:#1a1a1c; max-height:180px; display:flex; flex-direction:column;">'
+            + '    <div style="padding:8px 16px 4px; font-size:0.66rem; color:#888; letter-spacing:2px; font-weight:700;">CREADOS EN ESTA SESIÓN (<span id="er-count">0</span>)</div>'
+            + '    <div id="er-created-list" style="overflow-y:auto; padding:0 8px 8px;"></div>'
+            + '  </div>'
+
             + '</div>';
 
-        // Estilo de inputs de la rejilla (una sola vez)
-        if (!document.getElementById('er-style')) {
-            const style = document.createElement('style');
-            style.id = 'er-style';
-            style.textContent = '#er-tbody input, #er-tbody select { background:#2d2d30; border:1px solid #3c3c3c; color:#fff; padding:5px 6px; border-radius:4px; font-size:0.78rem; outline:none; box-sizing:border-box; }'
-                + '#er-tbody input:focus, #er-tbody select:focus { border-color:#FF6600; background:#33302c; }'
-                + '#er-tbody td { padding:3px 2px; }'
-                + '#er-tbody input:disabled, #er-tbody select:disabled { opacity:0.45; }';
-            document.head.appendChild(style);
-        }
+        document.body.appendChild(overlay);
+        _win = overlay;
 
-        _container.querySelector('#er-save-btn').addEventListener('click', _saveAll);
-        _container.querySelector('#er-add-btn').addEventListener('click', function () {
-            const last = _rows.length ? _rows[_rows.length - 1] : null;
-            const nr = _addRow(last);
-            _focusCol(nr, last && last.client ? 'receiver' : 'cliente');
-        });
-        const closeBtn = _container.querySelector('#er-close-btn');
-        if (closeBtn) closeBtn.addEventListener('click', function () { _ddHide(); _closeFn(); });
-
-        _container.addEventListener('keydown', function (e) {
-            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); _saveAll(); }
-        });
-
-        // Cargas
+        // cargas en segundo plano
         _buildClientsIndex();
         _loadRoutes();
-        _loadArticles().then(arts => {
-            const dl = _container.querySelector('#er-articles');
-            if (dl) dl.innerHTML = arts.map(a => '<option value="' + _esc(a) + '">').join('');
+        _loadArticles();
+
+        // ── eventos ──
+        $('er-close').addEventListener('click', function () { _ddHide(); overlay.remove(); _win = null; });
+        overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) { _ddHide(); overlay.remove(); _win = null; } });
+        $('er-save-btn').addEventListener('click', _save);
+
+        // teclado global de la ventana
+        overlay.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !_ddOpen()) { _ddHide(); overlay.remove(); _win = null; return; }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); _save(); return; }
         });
 
-        const first = _addRow(null);
-        _focusCol(first, 'cliente');
+        // navegación ENTER + dropdowns por campo
+        FIELDS.forEach(id => {
+            const el = $(id);
+            if (!el) return;
+            el.addEventListener('keydown', function (e) {
+                if (_ddOpen() && _dd.anchor === el) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); _ddMove(1); return; }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); _ddMove(-1); return; }
+                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); _ddPick(-1); return; }
+                    if (e.key === 'Escape') { e.stopPropagation(); _ddHide(); return; }
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const nx = _nextField(id);
+                    if (nx) _focus(nx); else _save();
+                }
+            });
+            el.addEventListener('blur', function () { setTimeout(() => { if (_dd.anchor === el) _ddHide(); }, 160); });
+        });
+
+        // CLIENTE: lista al enfocar + filtro al escribir
+        const cliInp = $('er-cliente');
+        function _cliShow() { _ddShow(cliInp, _searchClients(cliInp.value), it => _pickClient(it._c)); }
+        cliInp.addEventListener('focus', _cliShow);
+        cliInp.addEventListener('input', function () {
+            _client = null; cliInp.style.borderColor = '#FF6600';
+            $('er-cliente-num').textContent = '';
+            _cliShow();
+        });
+
+        // DESTINATARIO: habituales al enfocar + global al escribir 3+
+        const recInp = $('er-receiver');
+        function _recShow() { _ddShow(recInp, _searchDests(recInp.value), it => _pickDest(it._d)); }
+        recInp.addEventListener('focus', _recShow);
+        recInp.addEventListener('input', _recShow);
+
+        // ARTÍCULO: catálogo al enfocar + filtro
+        const artInp = $('er-articulo');
+        function _artShow() { _ddShow(artInp, _searchArticles(artInp.value), it => { artInp.value = it._a; _focus('er-timeslot'); }); }
+        artInp.addEventListener('focus', _artShow);
+        artInp.addEventListener('input', _artShow);
+
+        // CP → provincia
+        $('er-cp').addEventListener('input', function () {
+            const cp = $('er-cp').value.trim();
+            if (cp.length >= 2) {
+                const p = PROV_BY_CP[cp.substring(0, 2)];
+                if (p) $('er-provincia').value = p;
+            }
+        });
+
+        // turno por hora
+        const hour = new Date().getHours();
+        $('er-timeslot').value = (hour >= 8 && hour < 15) ? 'MAÑANA' : 'TARDE';
+
+        _focus('er-cliente');
     }
 
-    console.log('[ER] ⚡ Entrada Rápida cargada — window.openEntradaRapida() lista');
+    console.log('[ER] ⚡ Entrada Rápida (ventana) cargada — window.openEntradaRapida() lista');
 })();
