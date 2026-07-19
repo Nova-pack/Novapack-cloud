@@ -22,6 +22,7 @@
     let _clientsIndex = null;
     let _compsCache = {};
     let _destCache = {};
+    let _emisoras = null;    // billing_companies: quién FACTURA el albarán
     let _win = null;
     let _client = null;
     let _comps = null;
@@ -79,6 +80,32 @@
             _articles.sort();
         } catch (e) { console.warn('[ER] artículos:', e); }
         return _articles;
+    }
+
+    // Empresas EMISORAS (billing_companies): quién facturará el albarán.
+    // Se guarda como billingEntityId en el ticket ('' = central por defecto),
+    // igual que el flujo manual del admin.
+    async function _loadEmisoras() {
+        if (_emisoras) return _emisoras;
+        _emisoras = [];
+        try {
+            const snap = await db.collection('billing_companies').get();
+            snap.forEach(d => {
+                const c = d.data();
+                _emisoras.push({ id: d.id, name: c.name || d.id, nif: c.nif || c.cif || '' });
+            });
+            _emisoras.sort((a, b) => a.name.localeCompare(b.name));
+        } catch (e) { console.warn('[ER] emisoras:', e); }
+        return _emisoras;
+    }
+
+    function _fillEmisoraSelect(preselectId) {
+        const sel = $('er-emisora');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">🏢 Factura: Central (por defecto)</option>'
+            + (_emisoras || []).map(e =>
+                '<option value="' + _esc(e.id) + '"' + (e.id === preselectId ? ' selected' : '') + '>🏢 Factura: ' + _esc(e.name) + '</option>').join('');
+        if (preselectId && sel.value !== preselectId) sel.value = '';
     }
 
     function _buildClientsIndex() {
@@ -205,7 +232,7 @@
     }
 
     // Campos fijos ANTES de las líneas de mercancía
-    const HEAD_FIELDS = ['er-cliente', 'er-sede', 'er-receiver', 'er-street', 'er-number', 'er-cp', 'er-localidad', 'er-provincia', 'er-phone'];
+    const HEAD_FIELDS = ['er-cliente', 'er-sede', 'er-emisora', 'er-receiver', 'er-street', 'er-number', 'er-cp', 'er-localidad', 'er-provincia', 'er-phone'];
     const TAIL_FIELDS = ['er-timeslot', 'er-shipping'];
 
     // ── buscadores ──
@@ -371,6 +398,10 @@
         const sel = $('er-sede');
         sel.innerHTML = _comps.map(cp =>
             '<option value="' + _esc(cp.id) + '">' + _esc(cp.id === 'comp_main' ? (cp.name || 'Principal') : (cp.name || cp.id)) + '</option>').join('');
+        // Preseleccionar la emisora asignada en la ficha del cliente
+        const uD = (window.userMap || {})[c.id] || {};
+        await _loadEmisoras();
+        _fillEmisoraSelect(uD.billingCompanyId || '');
         _loadDests(c.id, c.idNum).then(d => {
             _setStatus((d.length ? d.length + ' destinos conocidos de este cliente · ' : '') + (_comps.length > 1 ? _comps.length + ' sedes cargadas · ' : '') + 'buscador 🌐 global activo', '#5DADE2');
         });
@@ -481,6 +512,7 @@
                 cod: 0,
                 packagesList: pkgs,
                 uid: uData.authUid || uData.id || c.id,
+                billingEntityId: $('er-emisora').value || '', // quién FACTURA ('' = central)
                 compId: compId,
                 subTariffId: comp.subTariffId || null,
                 clientIdNum: String(c.idNum),
@@ -559,13 +591,14 @@
 
             + '  <div style="padding:14px 18px 6px; overflow-y:auto;">'
 
-            + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">CLIENTE (REMITENTE)</div>'
-            + '    <div style="display:grid; grid-template-columns: 1fr 190px; gap:10px; margin-bottom:14px;">'
+            + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">CLIENTE (REMITENTE) · QUIÉN FACTURA</div>'
+            + '    <div style="display:grid; grid-template-columns: 1fr 150px 230px; gap:10px; margin-bottom:14px;">'
             + '      <div style="position:relative;">'
             + '        <input id="er-cliente" placeholder="🔍 Enfoca aquí y elige — o escribe nombre / nº de cliente" style="' + _inputStyle('border-color:#FF6600;') + '" autocomplete="off">'
             + '        <span id="er-cliente-num" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#4CAF50; font-size:0.7rem; font-weight:700;"></span>'
             + '      </div>'
-            + '      <select id="er-sede" title="Sede del cliente" style="' + _inputStyle() + '"><option value="comp_main">Principal</option></select>'
+            + '      <select id="er-sede" title="Sede del cliente (remitente del albarán)" style="' + _inputStyle() + '"><option value="comp_main">Principal</option></select>'
+            + '      <select id="er-emisora" title="Empresa que FACTURARÁ este albarán (billing_companies)" style="' + _inputStyle('border-color:#FFB300;') + '"><option value="">🏢 Factura: Central (por defecto)</option></select>'
             + '    </div>'
 
             + '    <div style="font-size:0.66rem; color:#FF6600; letter-spacing:2px; font-weight:700; margin-bottom:6px;">DESTINO</div>'
@@ -617,6 +650,7 @@
         _buildClientsIndex();
         _loadRoutes();
         _loadArticles();
+        _loadEmisoras().then(() => _fillEmisoraSelect(''));
 
         $('er-close').addEventListener('click', function () { _ddHide(); overlay.remove(); _win = null; });
         overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) { _ddHide(); overlay.remove(); _win = null; } });
