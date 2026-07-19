@@ -3390,7 +3390,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <span style="color:white; font-weight:700; font-size:0.9rem; letter-spacing:0.5px;">TORRE DE CONTROL DE RUTAS</span>
         <div style="flex:1;"></div>
         <button onclick="if(typeof loadRouteMonitor==='function') loadRouteMonitor()" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.2); color:white; padding:4px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:4px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'"><span class="material-symbols-outlined" style="font-size:1rem;">refresh</span> Refrescar</button>
-        <button onclick="erpOpenTab('auto-assign')" style="background:linear-gradient(135deg,#FF4D00,#FF8A50); border:1px solid rgba(255,255,255,0.2); color:#000; font-weight:700; padding:4px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:4px;"><span class="material-symbols-outlined" style="font-size:1rem;">auto_awesome</span> Auto-asignar</button>
+        <button onclick="erpOpenTab('auto-assign')" style="position:relative; background:linear-gradient(135deg,#FF4D00,#FF8A50); border:1px solid rgba(255,255,255,0.2); color:#000; font-weight:700; padding:4px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:4px;"><span class="material-symbols-outlined" style="font-size:1rem;">auto_awesome</span> Auto-asignar<span id="unassigned-badge" style="display:none; background:#D32F2F; color:#fff; font-size:0.62rem; font-weight:900; border-radius:10px; padding:1px 6px; margin-left:2px;" title="Albaranes pendientes SIN ruta detectada — nadie los ve hasta asignarlos">0</span></button>
         <button onclick="erpOpenTab('phones')" style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.2); color:white; padding:4px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px; display:flex; align-items:center; gap:4px;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'"><span class="material-symbols-outlined" style="font-size:1rem;">settings</span> Rutas/Carpetas</button>
     </div>
     <div style="padding:20px 25px;">
@@ -11008,6 +11008,15 @@ window.runPublicTicketsBackfill = async function() {
                         var updatedAt = d.updatedAt ? d.updatedAt.toDate() : null;
                         var minutesAgo = updatedAt ? Math.round((Date.now() - updatedAt.getTime()) / 60000) : null;
                         var stale = minutesAgo !== null && minutesAgo > 5;
+                        // Posición FANTASMA: sin actualizar en >20 min o sesión
+                        // cerrada (online:false) y ya vieja. No se muestra — evita
+                        // ver una ruta en el pueblo de la última sesión (Málaga
+                        // apareciendo en Benalmádena).
+                        var ghost = (minutesAgo === null) || (minutesAgo > 20) || (!isOnline && minutesAgo > 8);
+                        if (ghost) {
+                            if (_gpsMarkers[key]) { _gpsMarkers[key].setMap(null); delete _gpsMarkers[key]; }
+                            return;
+                        }
 
                         if (isOnline && !stale) onlineCount++;
 
@@ -11190,6 +11199,17 @@ window.runPublicTicketsBackfill = async function() {
                             if (d.accuracy) parts.push('±' + Math.round(d.accuracy) + 'm');
                             subtitle.textContent = parts.join(' · ');
 
+                            // Posición fantasma (>20 min): no colocar el marcador
+                            // en el punto de la última sesión — evita mostrar la
+                            // ruta en un pueblo donde ya no está.
+                            var ghostR = !d.updatedAt || ((Date.now() - d.updatedAt.toDate().getTime()) > 20 * 60 * 1000);
+                            if (ghostR) {
+                                if (_routeMapDriverMarker) { _routeMapDriverMarker.setMap(null); _routeMapDriverMarker = null; }
+                                statusEl.textContent = (d.driverName || 'Conductor') + ' — Sin señal reciente';
+                                statusEl.style.background = '#666';
+                                return;
+                            }
+
                             // Driver marker
                             var driverIcon = _makeTruckSvg('#2196F3', 40);
 
@@ -11328,8 +11348,27 @@ window.runPublicTicketsBackfill = async function() {
             let currentRouteDetailPhone = null;
             let routeTowerUnsubscribes = [];
 
+            // Cuenta los albaranes PENDIENTES sin ruta detectada (driverPhone
+            // vacío/ausente): son invisibles para todos los conductores hasta
+            // que se auto-asignen. Refleja el conteo en el badge del botón.
+            window._refreshUnassignedBadge = async function() {
+                var badge = document.getElementById('unassigned-badge');
+                if (!badge) return;
+                try {
+                    var snap = await db.collection('tickets').where('status', '==', 'Pendiente').limit(1000).get();
+                    var n = 0;
+                    snap.forEach(function(d) {
+                        var dp = (d.data().driverPhone || '').toString().replace(/\D/g, '');
+                        if (!dp || dp === '0') n++;
+                    });
+                    if (n > 0) { badge.textContent = n; badge.style.display = 'inline-block'; }
+                    else { badge.style.display = 'none'; }
+                } catch (e) { console.warn('[unassigned badge]', e.message); }
+            };
+
             window.loadRouteMonitor = async function() {
                 if (typeof showLoading === 'function') showLoading();
+                if (typeof window._refreshUnassignedBadge === 'function') window._refreshUnassignedBadge();
                 const grid = document.getElementById('route-monitor-grid');
                 grid.innerHTML = '<div style="color:var(--text-dim);">Conectando Torre en Tiempo Real...</div>';
 
@@ -22252,7 +22291,7 @@ window.importTarifas50 = async () => {
 <script src="nif_enrichment.js?v=20260404"></script>
 <script src="erp_tabs.js?v=20260717_er"></script>
 <script src="anti_extravio.js?v=20260504"></script>
-<script src="public_tickets_sync.js?v=20260504"></script>
+<script src="public_tickets_sync.js?v=20260719"></script>
 <script src="analytics.js?v=20260504"></script>
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>

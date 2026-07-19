@@ -115,32 +115,17 @@
         }
 
         // --- PWA Install Prompt ---
+        // NOTA: el banner de instalación lo gestiona reparto.js (candado #4,
+        // "np-install-banner"), que se auto-oculta cuando hay un modal abierto.
+        // Este de aquí (pwa-install-banner) queda DESACTIVADO para no mostrar
+        // dos banners a la vez. Se conserva la función por si se referencia,
+        // pero ya no se auto-lanza.
         var _deferredInstallPrompt = null;
         var _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 
-        window.addEventListener('beforeinstallprompt', function(e) {
-            e.preventDefault();
-            _deferredInstallPrompt = e;
-            if (!_isStandalone) _showInstallBanner('android');
-        });
-
-        // Show banner on load for iOS (no beforeinstallprompt support)
-        window.addEventListener('load', function() {
-            if (_isStandalone) return; // Already installed
-            setTimeout(function() {
-                if (_isIOS && !window.navigator.standalone) {
-                    _showInstallBanner('ios');
-                } else if (!_deferredInstallPrompt && !_isIOS) {
-                    // Android/desktop but beforeinstallprompt didn't fire yet — show anyway after delay
-                    setTimeout(function() {
-                        if (!_deferredInstallPrompt && !_isStandalone) _showInstallBanner('android');
-                    }, 3000);
-                }
-            }, 2000);
-        });
-
         function _showInstallBanner(platform) {
+            return; // desactivado — ver reparto.js candado #4 (código muerto abajo)
             if (document.getElementById('pwa-install-banner')) return;
             if (localStorage.getItem('pwa-install-dismissed-v2')) {
                 var dismissed = parseInt(localStorage.getItem('pwa-install-dismissed-v2'));
@@ -219,7 +204,7 @@
     </style>
 
     <!-- App Logic -->
-    <script src="reparto.js?v=20260515_authuid_fix" defer></script>
+    <script src="reparto.js?v=20260719_robusto" defer></script>
     <script src="copiloto.js?v=20260515_copiloto_v2" defer></script>
     <script src="ocr.js?v=20260715_series" defer></script>
 </head>

@@ -1,4 +1,5 @@
-const CACHE_NAME = 'novapack-repartidor-v15';
+const CACHE_NAME = 'novapack-repartidor-v16';
+// App-shell propio (mismo origen): debe cachearse entero o falla el install.
 const urlsToCache = [
     '/reparto.html',
     '/reparto.css',
@@ -10,13 +11,30 @@ const urlsToCache = [
     '/icon_new.png',
     '/phantom-engine.js'
 ];
+// Dependencias externas críticas para ARRANCAR EN FRÍO sin red. Se cachean
+// una a una best-effort (si una falla no aborta el install). Sin el SDK de
+// Firebase en caché, waitForFirebase() se quedaba en bucle offline.
+const cdnToCache = [
+    'https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js'
+];
 
 self.addEventListener('install', event => {
     // Do NOT call skipWaiting() here — let the page control activation
     // via postMessage('skipWaiting') to avoid reload loops on iOS
     event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(urlsToCache))
+        caches.open(CACHE_NAME).then(function(cache) {
+            return cache.addAll(urlsToCache).then(function() {
+                // CDN best-effort: cada una por separado, los fallos no rompen
+                return Promise.all(cdnToCache.map(function(u) {
+                    return cache.add(u).catch(function(e) {
+                        console.warn('[SW] no pude precachear', u, e && e.message);
+                    });
+                }));
+            });
+        })
     );
 });
 
@@ -34,21 +52,35 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
 
-    // Network-first for API/Firestore, cache-first for static assets
     const url = new URL(event.request.url);
-    if (url.hostname.includes('firestore') || url.hostname.includes('googleapis') || url.hostname.includes('firebase')) {
-        return; // Let Firestore requests go through normally
+
+    // Solo dejar pasar SIN tocar las llamadas de DATOS en vivo (API): éstas
+    // NUNCA deben servirse de caché. El SDK estático (gstatic/firebasejs),
+    // fuentes y Sentry SÍ se cachean para el arranque en frío offline.
+    if (
+        url.hostname.indexOf('firestore.googleapis.com') > -1 ||
+        url.hostname.indexOf('firebaseinstallations.googleapis.com') > -1 ||
+        url.hostname.indexOf('identitytoolkit.googleapis.com') > -1 ||
+        url.hostname.indexOf('securetoken.googleapis.com') > -1 ||
+        url.hostname.indexOf('firebasestorage.googleapis.com') > -1 ||
+        url.hostname.indexOf('firebasedatabase') > -1
+    ) {
+        return; // datos en vivo → red directa
     }
 
+    // Resto (app-shell + SDK/fuentes/sentry CDN): network-first con caída a
+    // caché → offline en frío funciona si se cargó online alguna vez.
     event.respondWith(
         fetch(event.request).then(response => {
-            if (response && response.status === 200) {
+            if (response && (response.status === 200 || response.type === 'opaque')) {
                 const responseClone = response.clone();
                 caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
             }
             return response;
         }).catch(() => {
-            return caches.match(event.request);
+            return caches.match(event.request).then(function(hit) {
+                return hit || caches.match('/reparto.html');
+            });
         })
     );
 });

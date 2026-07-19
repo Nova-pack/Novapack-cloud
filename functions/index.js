@@ -17,7 +17,7 @@
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
@@ -1110,4 +1110,172 @@ exports.verifactuSendNow = onCall({
         throw new HttpsError('permission-denied', 'Solo el administrador');
     }
     return await vfProcessPending('manual:' + request.auth.uid);
+});
+
+// =============================================================
+// TICKETS → ESPEJO PÚBLICO + EMAIL POD (trigger de servidor)
+// =============================================================
+// Antes el espejo public_tickets solo se actualizaba si un admin tenía
+// la consola abierta, y el email POD no se enviaba nunca. Este trigger
+// lo hace SIEMPRE en servidor, independiente de cualquier pestaña:
+//   - Mantiene public_tickets/{businessId} en cada cambio del ticket.
+//   - Al pasar a "Entregado", encola el email POD al cliente (si tiene
+//     email real) con el enlace de seguimiento.
+// =============================================================
+
+function tkStatusKey(status, t) {
+    if (status === 'Entregado' || t.delivered) return 'delivered';
+    if (status === 'Anulado') return 'cancelled';
+    if (status === 'Devuelto') return 'returned';
+    if (status === 'Incidencia') return 'incident';
+    if (parseInt(t.packagesScanned || 0, 10) > 0) return 'in_transit';
+    return 'pending';
+}
+
+function tkProjectPublic(t) {
+    const status = t.status || (t.delivered ? 'Entregado' : 'Pendiente');
+    return {
+        id: t.id || null,
+        status: status,
+        statusKey: tkStatusKey(status, t),
+        receiver: (t.receiver || '').toString().slice(0, 80),
+        destinationCity: (t.localidad || '').toString().slice(0, 60),
+        destinationCp: (t.cp || '').toString().slice(0, 8),
+        destinationProvince: (t.province || '').toString().slice(0, 40),
+        shippingType: t.shippingType || '',
+        packages: t.packagesList ? t.packagesList.length : (parseInt(t.packages, 10) || 0),
+        packagesScanned: parseInt(t.packagesScanned || 0, 10),
+        createdAt: t.createdAt || null,
+        distributedAt: t.distributedAt || null,
+        deliveredAt: t.deliveredAt || null,
+        deliveredTo: t.deliveryReceiverName ? String(t.deliveryReceiverName).slice(0, 80) : null,
+        signatureRefused: !!t.signatureRefused,
+        routeLabel: t.routeLabel || null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+}
+
+// Email real del cliente (para el POD). Descarta logins sintéticos.
+async function tkResolveClientEmail(t) {
+    function isSynthetic(e) { return /^c[0-9a-z]+(?:_[a-z0-9]+)+@novapack\.com$/i.test(String(e || '').trim()); }
+    function pick(u) { const e = (u.adminEmail || u.email || '').trim(); return (e && !isSynthetic(e)) ? e : ''; }
+    const uid = t.uid || t.senderUid || '';
+    if (uid) {
+        try {
+            const u = await db.collection('users').doc(String(uid)).get();
+            if (u.exists) { const e = pick(u.data()); if (e) return e; }
+        } catch (e) { /* sigue */ }
+    }
+    if (t.clientIdNum) {
+        try {
+            const q = await db.collection('users').where('idNum', '==', String(t.clientIdNum)).limit(1).get();
+            if (!q.empty) { const e = pick(q.docs[0].data()); if (e) return e; }
+        } catch (e) { /* sigue */ }
+    }
+    return '';
+}
+
+function tkPodEmailHtml(t, businessId) {
+    const trackUrl = 'https://novapaack.com/track.html?id=' + encodeURIComponent(businessId);
+    const receiver = (t.deliveryReceiverName || t.receiver || 'destinatario').toString();
+    return ''
+        + '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif; max-width:520px; margin:0 auto; color:#222;">'
+        + '<div style="background:#FF6600; padding:18px 24px; border-radius:10px 10px 0 0;">'
+        + '<span style="color:#fff; font-size:1.25rem; font-weight:800; letter-spacing:1px;">NOVAPACK</span>'
+        + '<span style="color:#fff; opacity:0.85; font-size:0.8rem; margin-left:8px;">Justificante de entrega</span>'
+        + '</div>'
+        + '<div style="border:1px solid #eee; border-top:none; border-radius:0 0 10px 10px; padding:24px;">'
+        + '<p style="font-size:1rem; margin:0 0 12px;">Tu envío <strong>' + businessId + '</strong> ha sido <strong style="color:#2E7D32;">entregado</strong>.</p>'
+        + '<table style="width:100%; font-size:0.9rem; border-collapse:collapse; margin:14px 0;">'
+        + '<tr><td style="padding:6px 0; color:#888;">Recibido por</td><td style="padding:6px 0; text-align:right; font-weight:600;">' + receiver + '</td></tr>'
+        + (t.localidad ? '<tr><td style="padding:6px 0; color:#888;">Destino</td><td style="padding:6px 0; text-align:right;">' + t.localidad + (t.cp ? ' (' + t.cp + ')' : '') + '</td></tr>' : '')
+        + '</table>'
+        + '<a href="' + trackUrl + '" style="display:block; text-align:center; background:#FF6600; color:#fff; text-decoration:none; padding:13px; border-radius:8px; font-weight:800; margin-top:10px;">VER SEGUIMIENTO ONLINE</a>'
+        + '<p style="font-size:0.72rem; color:#aaa; margin-top:18px; text-align:center;">NOVAPACK Logística · Servicio inmediato de paquetería</p>'
+        + '</div></div>';
+}
+
+exports.ticketMirrorAndPod = onDocumentWritten({
+    document: 'tickets/{docId}',
+    memory: '256MiB',
+    timeoutSeconds: 60
+}, async (event) => {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+
+    // Borrado del ticket → limpiar el espejo (si lo localizamos por business id)
+    if (!after) {
+        if (before && before.id) {
+            await db.collection('public_tickets').doc(String(before.id)).delete().catch(() => {});
+        }
+        return;
+    }
+
+    const businessId = (after.id ? String(after.id).trim() : '') || event.params.docId;
+
+    // 1) Espejo público SIEMPRE
+    try {
+        await db.collection('public_tickets').doc(businessId).set(tkProjectPublic(after), { merge: true });
+    } catch (e) {
+        logger.warn('ticketMirror: no pude escribir public_tickets/' + businessId, { msg: e.message });
+    }
+
+    // 2) Notificación in-app + Email POD solo en la TRANSICIÓN a entregado
+    const wasDelivered = before && (before.status === 'Entregado' || before.delivered === true);
+    const isDelivered = after.status === 'Entregado' || after.delivered === true;
+    if (!wasDelivered && isDelivered) {
+        // 2a) Aviso en la app del cliente — resolviendo el authUid REAL
+        //     (el listener del cliente filtra por uid == firebase auth uid,
+        //     no por docId; antes reparto usaba ticket.uid directo y se perdía).
+        try {
+            const clientDocId = after.uid || after.senderUid || '';
+            let clientAuthUid = '';
+            if (clientDocId) {
+                try {
+                    const cu = await db.collection('users').doc(String(clientDocId)).get();
+                    if (cu.exists) { const cd = cu.data() || {}; clientAuthUid = cd.authUid || cd.uid || String(clientDocId); }
+                    else clientAuthUid = String(clientDocId);
+                } catch (e) { clientAuthUid = String(clientDocId); }
+            }
+            if (clientAuthUid) {
+                await db.collection('user_notifications').add({
+                    uid: clientAuthUid,
+                    type: 'delivery_confirmed',
+                    ticketId: businessId,
+                    title: 'Envío entregado ' + businessId,
+                    message: 'Tu envío ' + businessId + ' ha sido entregado a ' + (after.deliveryReceiverName || after.receiver || 'destinatario') + '.',
+                    receiverName: after.deliveryReceiverName || '',
+                    read: false,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        } catch (e) {
+            logger.warn('ticketPod: fallo notif in-app ' + businessId, { msg: e.message });
+        }
+
+        // 2b) Email POD con enlace de seguimiento (si hay email real)
+        try {
+            const to = await tkResolveClientEmail(after);
+            if (to) {
+                await db.collection('mailbox').add({
+                    type: 'outgoing_pod',
+                    status: 'queued',
+                    to: to,
+                    subject: 'Entrega confirmada — envío ' + businessId,
+                    body: tkPodEmailHtml(after, businessId),
+                    clientId: after.uid || after.senderUid || null,
+                    clientIdNum: after.clientIdNum || null,
+                    ticketBusinessId: businessId,
+                    direction: 'outgoing',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    createdBy: 'trigger:ticketMirrorAndPod'
+                });
+                logger.info('POD email encolado → ' + to + ' (' + businessId + ')');
+            } else {
+                logger.info('POD sin email real para ' + businessId + ' — no se envía');
+            }
+        } catch (e) {
+            logger.warn('ticketPod: fallo encolando POD ' + businessId, { msg: e.message });
+        }
+    }
 });

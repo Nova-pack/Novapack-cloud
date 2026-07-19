@@ -455,6 +455,18 @@ function compressImage(file, maxWidth, quality) {
     });
 }
 
+// Blob/File → dataURL base64 (para guardar fotos en la cola offline)
+function _fileToB64(file) {
+    return new Promise(function(resolve) {
+        try {
+            var r = new FileReader();
+            r.onload = function(e) { resolve(e.target.result); };
+            r.onerror = function() { resolve(null); };
+            r.readAsDataURL(file);
+        } catch (e) { resolve(null); }
+    });
+}
+
 // --- HELPERS ---
 function showLoading() { document.getElementById('loading-overlay').classList.add('active'); }
 function hideLoading() { document.getElementById('loading-overlay').classList.remove('active'); }
@@ -691,7 +703,26 @@ var _offlineQueue = {
                             delete op.deliveryData._offlineSignatureB64;
                         });
                 }
-                return sigPromise.then(function() {
+                // Subir foto de entrega guardada offline (base64) → photoURL
+                var photoPromise = Promise.resolve();
+                if (op.deliveryData._offlinePhotoB64) {
+                    photoPromise = sigPromise.then(function() {
+                        var phRef = storage.ref('deliveries/' + op.ticketId + '/photo.jpg');
+                        return phRef.putString(op.deliveryData._offlinePhotoB64, 'data_url').then(function() {
+                            return phRef.getDownloadURL();
+                        }).then(function(url) {
+                            op.deliveryData.photoURL = url;
+                            if (op.archiveData) op.archiveData.photoURL = url;
+                            delete op.deliveryData._offlinePhotoB64;
+                        }).catch(function(e) {
+                            console.warn('[OFFLINE] Foto entrega upload fallido:', e.message);
+                            delete op.deliveryData._offlinePhotoB64;
+                        });
+                    });
+                } else {
+                    photoPromise = sigPromise;
+                }
+                return photoPromise.then(function() {
                     // Replace ISO strings with server timestamps
                     op.deliveryData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
                     op.deliveryData.distributedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -723,12 +754,73 @@ var _offlineQueue = {
                 return db.collection('driver_locations').doc(op.docId).set(op.data, { merge: true }).then(function() {
                     console.log('[OFFLINE] GPS sincronizado');
                 });
+            // ── Casos GENÉRICOS (incidencia, recogidas, cooper, discrepancia,
+            //    pre-albarán): update/set/add con revival de serverTimestamp y
+            //    subida opcional de foto guardada como base64 ──────────────────
+            case 'generic_update':
+            case 'generic_set':
+            case 'generic_add':
+                return self._replayPhoto(op, storage).then(function() {
+                    var data = self._reviveTS(op.data || {});
+                    var col = db.collection(op.collection);
+                    var writeP;
+                    if (op.type === 'generic_add') writeP = col.add(data);
+                    else if (op.type === 'generic_set') writeP = col.doc(op.docId).set(data, op.merge ? { merge: true } : undefined);
+                    else writeP = col.doc(op.docId).update(data);
+                    return writeP;
+                }).then(function() {
+                    console.log('[OFFLINE] ' + op.type + ' sincronizado (' + op.collection + ')');
+                    // Notificaciones/mailbox asociadas (best-effort, ya con TS revividos)
+                    if (Array.isArray(op.followups)) {
+                        op.followups.forEach(function(f) {
+                            try { db.collection(f.collection).add(self._reviveTS(f.data)).catch(function(){}); } catch (e) {}
+                        });
+                    }
+                });
             default:
                 console.warn('[OFFLINE] Tipo desconocido:', op.type);
                 return Promise.resolve();
         }
+    },
+
+    // Reemplaza recursivamente el marcador '__NP_TS__' por un serverTimestamp
+    // real (los sentinels de Firestore no sobreviven a IndexedDB).
+    _reviveTS: function(obj) {
+        if (obj === '__NP_TS__') return firebase.firestore.FieldValue.serverTimestamp();
+        if (Array.isArray(obj)) return obj.map(this._reviveTS, this);
+        if (obj && typeof obj === 'object') {
+            var out = {};
+            for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) out[k] = this._reviveTS(obj[k]);
+            return out;
+        }
+        return obj;
+    },
+
+    // Sube la foto base64 encolada (si la hay) y mete su URL en op.data[field].
+    _replayPhoto: function(op, storage) {
+        if (!op.photo || !op.photo.b64 || !op.photo.path) return Promise.resolve();
+        var ref = storage.ref(op.photo.path);
+        var putP = op.photo.b64.indexOf('data:') === 0
+            ? ref.putString(op.photo.b64, 'data_url')
+            : fetch(op.photo.b64).then(function(r) { return r.blob(); }).then(function(b) { return ref.put(b); });
+        return putP.then(function() { return ref.getDownloadURL(); })
+            .then(function(url) { if (op.data && op.photo.field) op.data[op.photo.field] = url; })
+            .catch(function(e) { console.warn('[OFFLINE] foto no subida:', e.message); });
+    },
+
+    // Ejecuta la operación si hay red; si no, la encola. Devuelve
+    // {online:bool}. Los callsites deciden el mensaje según el resultado.
+    queueOrRun: function(op) {
+        var self = this;
+        if (navigator.onLine) {
+            return self._executeOp(op).then(function() { return { online: true }; });
+        }
+        return self.enqueue(op).then(function() { return { online: false }; });
     }
 };
+
+// Marcador de serverTimestamp para datos que pasan por IndexedDB
+var NP_TS = '__NP_TS__';
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', function() {
@@ -737,6 +829,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function initApp() {
     var storage = firebase.storage();
+
+    // ============================================================
+    //  PERSISTENCIA OFFLINE FIRESTORE
+    // ============================================================
+    // Cachea en IndexedDB los albaranes de la ruta: sin cobertura el
+    // conductor sigue viendo su lista y las lecturas resuelven desde
+    // caché. DEBE activarse antes de la primera query — initApp corre
+    // antes del login/listeners. synchronizeTabs evita el error si la
+    // PWA se abre en 2 pestañas. Solo reparto.js llama esto (admin/app
+    // no lo cargan), así que no afecta a la consola.
+    try {
+        if (db && typeof db.enablePersistence === 'function' && !window._npPersistenceOn) {
+            window._npPersistenceOn = true;
+            db.enablePersistence({ synchronizeTabs: true }).then(function() {
+                console.log('[OFFLINE] Persistencia Firestore activa');
+            }).catch(function(e) {
+                // failed-precondition = varias pestañas · unimplemented = navegador viejo
+                console.warn('[OFFLINE] Persistencia no disponible:', e.code || e.message);
+            });
+        }
+    } catch (e) { console.warn('[OFFLINE] enablePersistence lanzó:', e.message); }
 
     // ============================================================
     //  ANTI-CIERRE — cuatro candados para que la app no se cierre
@@ -1241,6 +1354,23 @@ function initApp() {
         // Skip if master PIN session (anonymous auth) — route selector handles the flow
         if (_isMasterPinSession) return;
 
+        // ── REANUDAR SESIÓN PIN tras recarga ──
+        // Un usuario anónimo (sin phoneNumber) con sesión PIN guardada NO debe
+        // ser expulsado al login: restauramos su ruta y entramos directo.
+        if (user && !user.phoneNumber) {
+            var _pin = null;
+            try { _pin = JSON.parse(localStorage.getItem('np_pin_session') || 'null'); } catch (e) {}
+            if (_pin && _pin.phone) {
+                currentDriverPhone = normalizePhone(_pin.phone);
+                currentRouteLabel = _pin.label || '';
+                currentDriverName = _pin.driverName || 'Repartidor';
+                _isMasterPinSession = true;
+                console.log('[REPARTO] Sesión PIN reanudada tras recarga:', currentRouteLabel);
+                enterMainApp();
+                return;
+            }
+        }
+
         if (user && user.phoneNumber) {
             showLoading();
             try {
@@ -1393,6 +1523,17 @@ function initApp() {
         document.getElementById('driver-name').textContent = currentDriverName;
         document.getElementById('main-app').style.display = 'block';
 
+        // Persistir la sesión para reanudarla tras una recarga (el SW se
+        // auto-actualiza cada 30 min). Las sesiones por PIN son anónimas y sin
+        // esto quedaban expulsadas al login en cada recarga. Solo se restaura
+        // cuando el usuario es anónimo (sin phoneNumber) — ver onAuthStateChanged.
+        try {
+            localStorage.setItem('np_pin_session', JSON.stringify({
+                phone: currentDriverPhone, label: currentRouteLabel,
+                driverName: currentDriverName, savedAt: Date.now()
+            }));
+        } catch (e) {}
+
         try {
             var savedOrder = localStorage.getItem('routeOrder_' + currentDriverName);
             if (savedOrder) manualOrder = JSON.parse(savedOrder);
@@ -1442,6 +1583,8 @@ function initApp() {
             document.getElementById('master-pin-input').value = '';
             document.getElementById('phone-input').value = '';
             document.getElementById('login-error').textContent = '';
+            // Borrar la sesión PIN persistida (si no, se reanudaría al recargar)
+            try { localStorage.removeItem('np_pin_session'); } catch (e) {}
             // Sign out Firebase auth (for SMS users; no-op for PIN users)
             auth.signOut().catch(function(e) { console.error('Logout error:', e); });
             showToast('Sesión cerrada.', 'info');
@@ -1815,18 +1958,15 @@ function initApp() {
     }
 
     window.completeDriverAlert = async function(alertId) {
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
         if (!confirm('\u00bfMarcar como completada?')) return;
+        var op = {
+            type: 'generic_update', collection: 'driver_alerts', docId: alertId,
+            data: { completed: true, completedAt: NP_TS, completedBy: currentDriverName }
+        };
         try {
-            await db.collection('driver_alerts').doc(alertId).update({
-                completed: true,
-                completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                completedBy: currentDriverName
-            });
-            showToast('Recogida/aviso completado', 'success');
+            var res = await _offlineQueue.queueOrRun(op);
+            if (res.online) showToast('Recogida/aviso completado', 'success');
+            else showToast('✔ Guardado offline — se sincroniza al recuperar señal', 'info');
         } catch(e) {
             console.error('Error completing alert:', e);
             showToast('Error: ' + e.message, 'error');
@@ -1890,18 +2030,15 @@ function initApp() {
     }
 
     window.completePickup = async function(pickupId) {
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
         if (!confirm('\u00bfMarcar esta recogida como completada?')) return;
+        var op = {
+            type: 'generic_update', collection: 'pickupRequests', docId: pickupId,
+            data: { status: 'completed', completedAt: NP_TS, completedBy: currentDriverName }
+        };
         try {
-            await db.collection('pickupRequests').doc(pickupId).update({
-                status: 'completed',
-                completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-                completedBy: currentDriverName
-            });
-            showToast('Recogida completada.', 'success');
+            var res = await _offlineQueue.queueOrRun(op);
+            if (res.online) showToast('Recogida completada.', 'success');
+            else showToast('✔ Guardado offline — se sincroniza al recuperar señal', 'info');
         } catch (e) {
             console.error('Error completando recogida:', e);
             showToast('Error: ' + e.message, 'error');
@@ -2538,62 +2675,82 @@ function initApp() {
         var detail = (document.getElementById('incident-detail').value || '').trim();
         var fullReason = reason + (detail ? ' - ' + detail : '');
 
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
-
         var sendBtn = document.getElementById('btn-incident-send');
         sendBtn.disabled = true;
         sendBtn.textContent = 'Enviando...';
 
         try {
+            var ticketId = d._id || d.docId;
             var updateData = {
                 status: 'Incidencia',
                 incidentReason: fullReason,
                 incidentReportedBy: currentDriverName,
-                incidentReportedAt: firebase.firestore.FieldValue.serverTimestamp()
+                incidentReportedAt: navigator.onLine ? firebase.firestore.FieldValue.serverTimestamp() : NP_TS
             };
-
-            // Upload photo if present
             var photoFile = document.getElementById('incident-photo-input').files[0];
+
+            // Datos de aviso al cliente y al admin (buzón "Incidencias Reparto")
+            var notifUid = d.uid || d.clientIdNum || '';
+            var clientNotif = notifUid ? { collection: 'user_notifications', data: {
+                uid: notifUid, type: 'incident',
+                title: 'Incidencia en env\u00edo ' + (d.id || d._id),
+                body: fullReason, ticketId: d.id || d._id, docId: ticketId,
+                reportedBy: currentDriverName, createdAt: NP_TS, read: false
+            } } : null;
+            var adminMail = { collection: 'mailbox', data: {
+                type: 'driver_incident', category: 'incidencia', direction: 'internal',
+                ticketId: d.id || d._id, ticketDocId: ticketId, receiver: d.receiver || '',
+                reason: fullReason, reportedBy: currentDriverName,
+                driverPhone: currentDriverPhone || '', createdAt: NP_TS, status: 'internal_note'
+            } };
+
+            if (!navigator.onLine) {
+                // ── OFFLINE: encolar (antes se abortaba y se perd\u00eda) ──
+                var photoB64 = photoFile ? await _fileToB64(await compressImage(photoFile)) : null;
+                await _offlineQueue.enqueue({
+                    type: 'generic_update', collection: 'tickets', docId: ticketId,
+                    data: updateData,
+                    photo: photoB64 ? { b64: photoB64, path: 'incidents/' + ticketId + '/photo.jpg', field: 'incidentPhotoURL' } : null,
+                    followups: [clientNotif, adminMail].filter(Boolean)
+                });
+                document.getElementById('incident-modal').classList.remove('active');
+                _incidentDelivery = null;
+                showToast('\u2714 Incidencia guardada offline \u2014 se env\u00eda al recuperar se\u00f1al', 'info');
+                return;
+            }
+
+            // ── ONLINE ──
             if (photoFile) {
                 photoFile = await compressImage(photoFile);
-                var docId = d._id || d.docId;
-                var photoRef = storage.ref('incidents/' + docId + '/photo.jpg');
+                var photoRef = storage.ref('incidents/' + ticketId + '/photo.jpg');
                 await photoRef.put(photoFile, { contentType: photoFile.type });
                 updateData.incidentPhotoURL = await photoRef.getDownloadURL();
             }
-
-            var docRef = d._ref || db.collection('tickets').doc(d._id);
+            var docRef = d._ref || db.collection('tickets').doc(ticketId);
             await docRef.update(updateData);
 
-            // Notify the sender/user about the incident
+            // Avisar al cliente
             try {
-                var notifUid = d.uid || d.clientIdNum || '';
-                if (notifUid) {
-                    var notifData = {
-                        uid: notifUid,
-                        type: 'incident',
-                        title: 'Incidencia en envío ' + escapeHtml(d.id || d._id),
-                        body: escapeHtml(fullReason),
-                        ticketId: d.id || d._id,
-                        docId: d._id,
-                        reportedBy: currentDriverName,
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                        read: false
-                    };
-                    if (updateData.incidentPhotoURL) {
-                        notifData.photoURL = updateData.incidentPhotoURL;
-                    }
-                    await db.collection('user_notifications').add(notifData);
+                if (clientNotif) {
+                    var cn = clientNotif.data;
+                    cn.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                    if (updateData.incidentPhotoURL) cn.photoURL = updateData.incidentPhotoURL;
+                    await db.collection('user_notifications').add(cn);
                 }
             } catch(ne) { console.warn('No se pudo notificar al usuario:', ne); }
+            // Avisar al admin (buz\u00f3n)
+            try {
+                var am = adminMail.data;
+                am.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                if (updateData.incidentPhotoURL) am.incidentPhotoURL = updateData.incidentPhotoURL;
+                await db.collection('mailbox').add(am);
+            } catch(me) { console.warn('No se pudo avisar al admin:', me); }
 
             document.getElementById('incident-modal').classList.remove('active');
             _incidentDelivery = null;
             showToast('Incidencia reportada: ' + (d.id || d._id), 'warning');
         } catch (e) {
+            if (typeof Sentry !== 'undefined') { try { Sentry.captureException(e, { tags: { flow: 'incident' } }); } catch(_) {} }
             showToast('Error: ' + e.message, 'error');
         } finally {
             sendBtn.disabled = false;
@@ -2645,11 +2802,6 @@ function initApp() {
             return;
         }
 
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
-
         showLoading();
         var changes = {};
         if (newAddr && newAddr !== d.address) changes.address = newAddr;
@@ -2657,18 +2809,21 @@ function initApp() {
         if (newNotes) changes.notes = (d.notes || '') + ' | [REPARTIDOR ' + currentDriverName + ': ' + newNotes + ']';
 
         try {
-            await d._ref.update({
-                pendingChanges: changes,
-                pendingChangesText: 'Modificación solicitada por ' + currentDriverName + ' (' + currentDriverPhone + ')',
-                status: 'pending_confirmation'
+            var res = await _offlineQueue.queueOrRun({
+                type: 'generic_update', collection: 'tickets', docId: d._id,
+                data: {
+                    pendingChanges: changes,
+                    pendingChangesText: 'Modificación solicitada por ' + currentDriverName + ' (' + currentDriverPhone + ')',
+                    status: 'pending_confirmation'
+                }
             });
-            // Immediately remove it from local state to ensure it hides before snapshot arrives
+            // Ocultar de la lista local antes de que llegue el snapshot
             var idx = deliveries.findIndex(function(x) { return x._id === d._id; });
             if (idx > -1) deliveries[idx].status = 'pending_confirmation';
             renderDeliveries();
             document.getElementById('mod-modal').classList.remove('active');
             modDocId = null;
-            showToast('Solicitud enviada al admin.', 'success');
+            showToast(res.online ? 'Solicitud enviada al admin.' : '✔ Guardado offline — se envía al recuperar señal', res.online ? 'success' : 'info');
         } catch (e) {
             showToast('Error: ' + e.message, 'error');
         } finally {
@@ -2729,6 +2884,20 @@ function initApp() {
     });
 
     // --- HANDLE SCAN ---
+    // Busca un albarán en la lista ya cargada en memoria (para escanear
+    // sin cobertura). Cubre docId, campo id, y id sin ceros a la izquierda.
+    function _findTicketLocal(searchId) {
+        if (!Array.isArray(deliveries) || !deliveries.length) return null;
+        var sid = String(searchId || '').trim();
+        var sidNz = sid.replace(/^0+/, '');
+        for (var i = 0; i < deliveries.length; i++) {
+            var t = deliveries[i];
+            var tid = String(t.id || '');
+            if (t._id === sid || tid === sid || tid === sidNz || tid.replace(/^0+/, '') === sidNz) return t;
+        }
+        return null;
+    }
+
     async function handleScan(rawText) {
         showLoading();
         var searchId = rawText.trim();
@@ -2762,29 +2931,44 @@ function initApp() {
             }
         } catch (e) {}
 
+        var d = null;
         try {
             var doc = await db.collection('tickets').doc(searchId).get();
-            if (!doc.exists) {
+            if (doc.exists) { d = doc.data(); d._id = doc.id; d._ref = doc.ref; }
+            else {
                 var snap = await db.collection('tickets').where('id', '==', searchId).get();
-                if (snap.empty) {
+                if (!snap.empty) { d = snap.docs[0].data(); d._id = snap.docs[0].id; d._ref = snap.docs[0].ref; }
+                else {
                     var snap2 = await db.collection('tickets').where('id', '==', searchId.replace(/^0+/, '')).get();
-                    if (snap2.empty) {
-                        // Ticket not found — could be deleted by admin
-                        showToast('ALBARÁN NO ENCONTRADO: ' + searchId + '. Puede haber sido eliminado por administración.', 'error', 6000);
-                        hideLoading();
-                        return;
-                    }
-                    doc = snap2.docs[0];
-                } else {
-                    doc = snap.docs[0];
+                    if (!snap2.empty) { d = snap2.docs[0].data(); d._id = snap2.docs[0].id; d._ref = snap2.docs[0].ref; }
                 }
             }
+        } catch (fireErr) {
+            // Sin red / Firestore no responde → caeremos a la memoria local
+            console.warn('[scan] Firestore no disponible, busco en memoria:', fireErr.message);
+        }
 
-            var d = doc.data();
-            d._id = doc.id;
-            d._ref = doc.ref;
-            currentScanDoc = d;
+        // Fallback OFFLINE: usar el albarán ya cargado en la lista de la ruta
+        // (antes el get() en vivo fallaba sin red y no se podía ni entregar).
+        if (!d) {
+            var localT = _findTicketLocal(searchId);
+            if (localT) {
+                d = Object.assign({}, localT);
+                d._id = localT._id;
+                d._ref = db.collection('tickets').doc(d._id);
+                if (!navigator.onLine) showToast('Sin conexión — usando datos ya cargados de la ruta', 'info', 3000);
+            }
+        }
+        if (!d) {
+            showToast('ALBARÁN NO ENCONTRADO: ' + searchId + (navigator.onLine
+                ? '. Puede haber sido eliminado por administración.'
+                : '. Sin conexión: solo se pueden escanear albaranes ya cargados en tu ruta.'), 'error', 6000);
+            hideLoading();
+            return;
+        }
+        currentScanDoc = d;
 
+        try {
             // --- DETECT ALREADY DELIVERED ---
             var isAlreadyDelivered = d.status === 'Entregado' || d.delivered;
             if (isAlreadyDelivered) {
@@ -3033,24 +3217,24 @@ function initApp() {
                 packages: currentScanDoc.packages || currentScanDoc.bultos || 1,
                 route: currentScanDoc.route || currentScanDoc.driverPhone || ''
             };
-            var notifData = currentScanDoc.uid ? {
-                uid: currentScanDoc.uid,
-                type: 'delivery_confirmed',
-                ticketId: docId,
-                message: 'Su envío #' + (currentScanDoc.id || docId) + ' ha sido entregado a ' + receiverName,
-                receiverName: receiverName,
-                read: false
-            } : null;
+            // (El aviso al cliente lo genera el trigger de servidor, no aquí.)
 
             // --- OFFLINE PATH: queue everything for later sync ---
             if (!navigator.onLine) {
                 var sigB64 = signatureRefused ? null : getSignatureDataURL();
+                // Foto de entrega: capturarla también offline (antes se perdía)
+                var photoB64Off = null;
+                try {
+                    var offPhotoFile = document.getElementById('confirm-photo').files[0];
+                    if (offPhotoFile) photoB64Off = await _fileToB64(await compressImage(offPhotoFile));
+                } catch (ep) { console.warn('[POD offline] foto no capturada:', ep.message); }
                 // Remove serverTimestamp (not serializable) — will be set on sync
                 var offlineDeliveryData = Object.assign({}, deliveryData);
                 offlineDeliveryData.deliveredAt = new Date().toISOString();
                 offlineDeliveryData.distributedAt = new Date().toISOString();
                 offlineDeliveryData.billingReady = !!sigB64;
                 offlineDeliveryData._offlineSignatureB64 = sigB64 || null;
+                offlineDeliveryData._offlinePhotoB64 = photoB64Off || null;
 
                 var offlineArchiveData = Object.assign({}, archiveData);
                 offlineArchiveData.deliveredAt = new Date().toISOString();
@@ -3060,8 +3244,9 @@ function initApp() {
                     type: 'delivery_confirm',
                     ticketId: docId,
                     deliveryData: offlineDeliveryData,
-                    archiveData: offlineArchiveData,
-                    notification: notifData
+                    archiveData: offlineArchiveData
+                    // El aviso al cliente + email POD los crea el trigger de
+                    // servidor cuando esta entrega se sincroniza (no aquí).
                 });
 
                 // Show success to driver — will sync when online
@@ -3137,15 +3322,11 @@ function initApp() {
             await withTimeout(deliveryBatch.commit(), 15000, 'Firestore batch');
             console.log('[REPARTO] Entrega confirmada + archivada:', docId);
 
-            // --- POD: Notificar al cliente (non-blocking) ---
-            try {
-                if (notifData) {
-                    notifData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-                    await db.collection('user_notifications').add(notifData);
-                }
-            } catch (notifErr) {
-                console.warn('Error mandando notificación al cliente:', notifErr);
-            }
+            // --- POD: aviso al cliente + email de seguimiento ---
+            // Lo crea el TRIGGER de servidor (ticketMirrorAndPod) al detectar
+            // la transición a "Entregado": resuelve el authUid real del cliente
+            // (antes se perdía con multi-sucursal) y envía también el email POD.
+            // Aquí ya no duplicamos la notificación.
 
             document.getElementById('scan-ticket-details').innerHTML =
                 '<div style="text-align:center; padding:20px;">' +
@@ -3174,6 +3355,7 @@ function initApp() {
 
         } catch (e) {
             console.error('Delivery confirmation error:', e);
+            if (typeof Sentry !== 'undefined') { try { Sentry.captureException(e, { tags: { flow: 'pod_delivery' } }); } catch(_) {} }
             showToast('Error: ' + e.message, 'error');
             btn.disabled = false;
             btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
@@ -3780,11 +3962,6 @@ function initApp() {
     document.getElementById('btn-cooper-send').addEventListener('click', async function() {
         if (_cooperQueue.length === 0) { showToast('Haz al menos una foto', 'error'); return; }
 
-        if (!navigator.onLine) {
-            sendNotification('Sin conexión', 'No hay conexión a internet. Inténtalo cuando recuperes la señal.', 'warning');
-            return;
-        }
-
         var sendBtn = document.getElementById('btn-cooper-send');
         var sendLab = document.getElementById('btn-cooper-send-label');
         sendBtn.disabled = true;
@@ -3794,6 +3971,34 @@ function initApp() {
         var groupId = 'g' + groupTs + '_' + Math.random().toString(36).slice(2, 8);
         var total = _cooperQueue.length;
         var uploaded = 0, failed = 0;
+
+        // ── OFFLINE: encolar cada foto como base64 (antes se abortaba) ──
+        if (!navigator.onLine) {
+            try {
+                for (var ci = 0; ci < _cooperQueue.length; ci++) {
+                    var cb64 = await _fileToB64(await compressImage(_cooperQueue[ci].file));
+                    if (!cb64) continue;
+                    await _offlineQueue.enqueue({
+                        type: 'generic_add', collection: 'cooper_photos',
+                        data: {
+                            type: _cooperType, note: noteVal, route: currentRouteLabel || 'Sin ruta',
+                            driverName: currentDriverName || 'Desconocido', driverPhone: currentDriverPhone || '',
+                            groupId: groupId, groupIndex: ci + 1, groupTotal: total,
+                            createdAt: NP_TS, timestamp: groupTs + ci
+                        },
+                        photo: { b64: cb64, path: 'cooper/' + _cooperType + '/' + groupId + '/' + (groupTs + ci) + '.jpg', field: 'photoURL' }
+                    });
+                }
+                showToast('✔ ' + total + ' foto(s) guardadas offline — se envían al recuperar señal', 'info', 5000);
+                document.getElementById('cooper-modal').classList.remove('active');
+                _cooperType = null; _cooperQueue = []; _cooperRefreshUI();
+            } catch (offErr) {
+                showToast('Error guardando offline: ' + offErr.message, 'error');
+            } finally {
+                sendBtn.disabled = false; _cooperRefreshUI();
+            }
+            return;
+        }
 
         try {
             for (var i = 0; i < _cooperQueue.length; i++) {
@@ -4229,6 +4434,29 @@ function initApp() {
             var docId = d._id;
             var ref = d._ref || db.collection('tickets').doc(docId);
 
+            // ── OFFLINE: encolar en vez de colgarse en el await ──
+            if (!navigator.onLine) {
+                await _offlineQueue.enqueue({
+                    type: 'generic_update', collection: 'tickets', docId: docId,
+                    data: {
+                        declaredPackagesList: d.packagesList || null,
+                        packagesList: newItems,
+                        discrepancyDetected: true,
+                        discrepancyReason: reason,
+                        discrepancyAt: NP_TS,
+                        discrepancyByPhone: currentDriverPhone,
+                        discrepancyByName: currentDriverName,
+                        discrepancyRoute: currentRouteLabel || ''
+                    },
+                    photo: { b64: _discPhotoDataUrl, path: 'discrepancies/' + docId + '_offline.jpg', field: 'discrepancyPhoto' }
+                });
+                var dmOff = document.getElementById('discrepancy-modal');
+                if (dmOff) dmOff.style.display = 'none';
+                showToast('✔ Discrepancia guardada offline — se envía al recuperar señal', 'info');
+                discSaveBtn.disabled = false;
+                return;
+            }
+
             // Subir foto a Storage para no inflar el doc Firestore
             var photoUrl = null;
             try {
@@ -4335,6 +4563,7 @@ function initApp() {
             await loadTicketForConfirmation(currentScanDoc);
         } catch(err) {
             console.error('[disc] save fail:', err);
+            if (typeof Sentry !== 'undefined') { try { Sentry.captureException(err, { tags: { flow: 'discrepancy' } }); } catch(_) {} }
             showToast('Error guardando: ' + err.message, 'error', 6000);
         } finally {
             discSaveBtn.disabled = false;
@@ -5013,6 +5242,25 @@ function initApp() {
                 createdBy: 'driver_app_pickup_no_doc'
             };
 
+            // ── OFFLINE: encolar (antes se quedaba colgado en "Subiendo…") ──
+            if (!navigator.onLine) {
+                var offlinePayload = Object.assign({}, ticketPayload, { createdAt: NP_TS, impugnationDeadline: deadline });
+                await _offlineQueue.enqueue({
+                    type: 'generic_add', collection: 'tickets', data: offlinePayload,
+                    photo: _pndPhotoDataUrl ? { b64: _pndPhotoDataUrl, path: 'pickup_no_doc/' + label + '_offline.jpg', field: 'pickupPhoto' } : null,
+                    followups: [{ collection: 'mailbox', data: {
+                        type: 'driver_pickup_no_doc', category: 'pickup_sin_albaran', direction: 'internal',
+                        ticketRef: label, senderName: clientInfo.name || '', paymentType: _pndPorte,
+                        bultos: bultos, driverName: currentDriverName || '', driverPhone: currentDriverPhone || '',
+                        note: note, createdAt: NP_TS, status: 'internal_note'
+                    } }]
+                });
+                showToast('✔ Pre-albarán guardado offline — se envía al recuperar señal', 'info', 5000);
+                document.getElementById('pickup-no-doc-modal').style.display = 'none';
+                _pndResetModal();
+                return;
+            }
+
             // 3) Crear el ticket — guardamos para obtener docId, luego subimos foto y actualizamos
             var newDocRef = await db.collection('tickets').add(ticketPayload);
             var newDocId = newDocRef.id;
@@ -5127,6 +5375,7 @@ function initApp() {
             _pndResetModal();
         } catch(err) {
             console.error('[pnd] save fail:', err);
+            if (typeof Sentry !== 'undefined') { try { Sentry.captureException(err, { tags: { flow: 'prealbaran' } }); } catch(_) {} }
             showToast('Error creando pre-albarán: ' + err.message, 'error', 6000);
         } finally {
             pndSaveBtn.disabled = false;
