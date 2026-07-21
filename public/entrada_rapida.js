@@ -361,12 +361,18 @@
             const compId = $('er-sede').value || 'comp_main';
             const price = window.calculateTicketPriceSync(pseudo, _client.id, compId);
             const uData = (window.userMap || {})[_client.id] || {};
+            const tid = uData.tariffId ? String(uData.tariffId).trim() : '';
             if (uData.isFlatRate === true) {
                 el.textContent = '0,00 € (tarifa plana mensual)'; el.style.color = '#5DADE2';
             } else if (price > 0) {
                 el.textContent = _money(price); el.style.color = '#4CAF50';
+                el.title = 'Tarifa: ' + (tid || 'personalizada');
+            } else if (!tid) {
+                el.textContent = '⚠ sin tarifa asignada'; el.style.color = '#FF9800';
+                el.title = 'Asigna una tarifa al cliente en su ficha';
             } else {
-                el.textContent = '0,00 € — revisa la tarifa del cliente'; el.style.color = '#FF9800';
+                el.textContent = '0,00 € — tarifa "' + tid + '" no cubre este envío'; el.style.color = '#FF9800';
+                el.title = 'La tarifa existe pero no da precio para estos bultos/destino';
             }
         } catch (e) {
             el.textContent = '—'; el.style.color = '#666';
@@ -394,6 +400,11 @@
         inp.value = c.name;
         inp.style.borderColor = '#4CAF50';
         $('er-cliente-num').textContent = 'nº ' + c.idNum;
+
+        // Mostrar que estamos accediendo a su tarifa
+        var priceEl = $('er-price-est');
+        if (priceEl) { priceEl.textContent = 'cargando tarifa…'; priceEl.style.color = '#888'; }
+
         _comps = await _loadComps(c.id);
         const sel = $('er-sede');
         sel.innerHTML = _comps.map(cp =>
@@ -405,9 +416,56 @@
         _loadDests(c.id, c.idNum).then(d => {
             _setStatus((d.length ? d.length + ' destinos conocidos de este cliente · ' : '') + (_comps.length > 1 ? _comps.length + ' sedes cargadas · ' : '') + 'buscador 🌐 global activo', '#5DADE2');
         });
+
+        // ACCEDER A LA TARIFA PERSONALIZADA del cliente y recalcular el precio
+        await _ensureClientTariff(c);
         _updateEstimate();
+
         if (_comps.length <= 1) _focus('er-receiver');
         else _focus('er-sede');
+    }
+
+    // ── TARIFA PERSONALIZADA del cliente ──
+    // El motor de precios (calculateTicketPriceSync) lee window.tariffsCache;
+    // al abrir la ventana puede estar vacío → precio 0. Aquí garantizamos que
+    // la tarifa del cliente seleccionado esté cargada: su tarifa global
+    // asignada (GLOBAL_{tariffId} y _v2), y su tarifa PERSONAL por docId/authUid.
+    async function _ensureClientTariff(c) {
+        if (!window.tariffsCache) window.tariffsCache = {};
+        const cache = window.tariffsCache;
+        const uData = (window.userMap || {})[c.id] || {};
+        const tid = uData.tariffId ? String(uData.tariffId).trim() : '';
+
+        // Claves que necesita el motor para ESTE cliente
+        const wanted = [];
+        if (tid) {
+            wanted.push('GLOBAL_' + tid);
+            wanted.push('GLOBAL_' + tid + '_v2');
+            wanted.push('GLOBAL_' + tid.padStart(3, '0'));
+        }
+        wanted.push(c.id);                       // tarifa personal por docId
+        if (uData.authUid) wanted.push(uData.authUid);
+        if (uData.email) wanted.push(uData.email);
+
+        const missing = wanted.filter(k => k && !cache[k]);
+        if (!missing.length && Object.keys(cache).length > 0) return; // ya está
+
+        // Cache global vacío → una sola carga trae TODO (incluye subtarifas)
+        if (Object.keys(cache).length === 0) {
+            try {
+                const snap = await db.collection('tariffs').get();
+                snap.forEach(d => { cache[d.id] = d.data(); });
+                console.log('[ER] tarifas cargadas:', Object.keys(cache).length);
+                return;
+            } catch (e) { console.warn('[ER] carga masiva tarifas:', e); }
+        }
+        // Si no, solo las que falten para este cliente (targeted, barato)
+        for (const k of missing) {
+            try {
+                const d = await db.collection('tariffs').doc(k).get();
+                if (d.exists) cache[k] = d.data();
+            } catch (e) { /* ignorar */ }
+        }
     }
 
     // ── numeración atómica ──
@@ -651,6 +709,18 @@
         _loadRoutes();
         _loadArticles();
         _loadEmisoras().then(() => _fillEmisoraSelect(''));
+        // Precargar el catálogo de tarifas para que el precio salga al instante
+        // en cuanto se elija cliente (calienta window.tariffsCache).
+        try {
+            if (!window.tariffsCache || Object.keys(window.tariffsCache).length === 0) {
+                if (!window.tariffsCache) window.tariffsCache = {};
+                db.collection('tariffs').get().then(function (snap) {
+                    snap.forEach(function (d) { window.tariffsCache[d.id] = d.data(); });
+                    console.log('[ER] tarifas precargadas:', Object.keys(window.tariffsCache).length);
+                    if (_client) _updateEstimate();
+                }).catch(function (e) { console.warn('[ER] precarga tarifas:', e); });
+            }
+        } catch (e) {}
 
         $('er-close').addEventListener('click', function () { _ddHide(); overlay.remove(); _win = null; });
         overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) { _ddHide(); overlay.remove(); _win = null; } });
