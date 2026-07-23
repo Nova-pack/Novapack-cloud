@@ -2634,7 +2634,7 @@ async function renderClientsList() {
         const snap = await getCollection('destinations').get();
 
         let clients = [];
-        snap.forEach(doc => clients.push({ id: doc.id, ...doc.data() }));
+        snap.forEach(doc => clients.push({ ...doc.data(), id: doc.id })); // doc.id manda
         clients.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
         if (search) {
@@ -2994,7 +2994,7 @@ async function exportClientAgenda() {
         showLoading();
         const snap = await getCollection('destinations').get();
         const clients = [];
-        snap.forEach(doc => clients.push({ id: doc.id, ...doc.data() }));
+        snap.forEach(doc => clients.push({ ...doc.data(), id: doc.id })); // doc.id manda
 
         if (clients.length === 0) {
             alert("La agenda está vacía. No hay datos que exportar.");

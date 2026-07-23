@@ -327,8 +327,11 @@
             bSnap.forEach(doc => {
                 const d = doc.data();
                 const idn = (d.idNum || '').toString();
-                if (idn) branchesMap[idn] = { id: doc.id, ...d };
-                branchesMap[doc.id] = { id: doc.id, ...d };
+                // doc.id al final: gana sobre un campo `id` obsoleto del doc.
+                // Si no, la factura de la sucursal se emitiría contra un id
+                // que ya no existe.
+                if (idn) branchesMap[idn] = { ...d, id: doc.id };
+                branchesMap[doc.id] = { ...d, id: doc.id };
             });
         } catch(e) { console.warn('Branches load:', e); }
 

@@ -10312,8 +10312,13 @@ window.runPublicTicketsBackfill = async function() {
                 if (datalist) datalist.innerHTML = '';
                 userMap = {}; window.userMap = userMap;
                 userSnap.forEach(doc => {
-                    const data = doc.data();
+                    // id = doc.id SIEMPRE: hay documentos con un campo `id`
+                    // obsoleto dentro (alias antiguo) que, si gana, acaba en
+                    // un .doc(id).update() contra un documento inexistente.
+                    const data = { ...doc.data(), id: doc.id };
+                    if (data.idNum !== undefined) data.idNum = String(data.idNum);
                     userMap[doc.id] = data; // Store full user object
+                    if (data.authUid) userMap[data.authUid] = data;
                     if (data.role !== 'admin' && datalist) {
                         const opt = document.createElement('option');
                         opt.value = data.idNum || '---';
@@ -13751,7 +13756,12 @@ window.runPublicTicketsBackfill = async function() {
                     if (Object.keys(userMap).length < 2) {
                         console.log("[Billing] Pre-loading users...");
                         const uSnap = await db.collection('users').get();
-                        uSnap.forEach(d => { userMap[d.id] = d.data(); if (d.data().authUid) userMap[d.data().authUid] = d.data(); });
+                        uSnap.forEach(d => {
+                            const _u = { ...d.data(), id: d.id };   // id = doc.id SIEMPRE
+                            if (_u.idNum !== undefined) _u.idNum = String(_u.idNum);
+                            userMap[d.id] = _u;
+                            if (_u.authUid) userMap[_u.authUid] = _u;
+                        });
                     }
 
                     const uData = userMap[selectedUid] || {};
@@ -18575,7 +18585,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                     let users = [];
                     uSnap.forEach(doc => {
                         const d = doc.data();
-                        if (d.role !== 'admin') users.push({ id: doc.id, ...d });
+                        if (d.role !== 'admin') users.push({ ...d, id: doc.id }); // doc.id manda
                     });
                     users.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
@@ -20094,7 +20104,7 @@ window.importTarifas50 = async () => {
             const snap = await db.collection('users').get();
             window._advClientsCache = [];
             snap.forEach(doc => {
-                window._advClientsCache.push({ id: doc.id, ...doc.data() });
+                window._advClientsCache.push({ ...doc.data(), id: doc.id }); // doc.id manda
             });
 
             // Inyectar contactos del directorio UNIFICADO /contacts (Fase 2 mig. 2026-05-16)
@@ -22412,7 +22422,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260723_numalb"></script>
+<script src="ficha_cliente.js?v=20260723_docid"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260719_v2cuota"></script>
@@ -22424,9 +22434,9 @@ window.importTarifas50 = async () => {
 <script src="analytics.js?v=20260504"></script>
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
-<script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
-<script src="invoice_per_branch.js?v=20260719_v2cuota"></script>
-<script src="entrada_rapida.js?v=20260723_numalb"></script>
+<script src="invoice_flatrate_multibranch.js?v=20260723_docid"></script>
+<script src="invoice_per_branch.js?v=20260723_docid"></script>
+<script src="entrada_rapida.js?v=20260723_docid"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>

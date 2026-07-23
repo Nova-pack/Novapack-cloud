@@ -231,6 +231,55 @@
         return null; // no se pudo resolver
     }
 
+    // Resolutor de docId GENÉRICO (cualquier id, no sólo el de la ficha).
+    // Hace falta porque 7 clientes arrastran un campo `id` obsoleto dentro
+    // del documento (p.ej. ECOALBORAN: docId real o3IqPf5…, campo id
+    // "gesco_553"), herencia de cuando se les activó el acceso online y el
+    // doc se recreó bajo su authUid. Si algún punto del código repuebla
+    // userMap sin forzar id = doc.id, ese alias muerto acaba en un
+    // .doc(bid).update() y salta "No document to update".
+    window.resolveUserDocId = async function resolveUserDocId(idOrAlias, hintIdNum) {
+        if (!idOrAlias) return null;
+        if (window._docIdCache && window._docIdCache[idOrAlias]) return window._docIdCache[idOrAlias];
+        const remember = (real) => {
+            window._docIdCache = window._docIdCache || {};
+            window._docIdCache[idOrAlias] = real;
+            return real;
+        };
+        try {
+            const d = await db.collection('users').doc(idOrAlias).get();
+            if (d.exists) return remember(idOrAlias);
+        } catch(_) {}
+        // authUid → docId
+        try {
+            const s = await db.collection('users').where('authUid', '==', idOrAlias).limit(1).get();
+            if (!s.empty) {
+                console.warn('[docId] corregido por authUid:', idOrAlias, '→', s.docs[0].id);
+                return remember(s.docs[0].id);
+            }
+        } catch(_) {}
+        // campo `id` obsoleto dentro del documento
+        try {
+            const s = await db.collection('users').where('id', '==', idOrAlias).limit(1).get();
+            if (!s.empty) {
+                console.warn('[docId] corregido por campo id obsoleto:', idOrAlias, '→', s.docs[0].id);
+                return remember(s.docs[0].id);
+            }
+        } catch(_) {}
+        // último recurso: nº de cliente
+        try {
+            const idNum = hintIdNum || (window.userMap && window.userMap[idOrAlias] && window.userMap[idOrAlias].idNum);
+            if (idNum) {
+                const s = await db.collection('users').where('idNum', '==', String(idNum)).limit(1).get();
+                if (!s.empty) {
+                    console.warn('[docId] corregido por idNum:', idOrAlias, '→', s.docs[0].id);
+                    return remember(s.docs[0].id);
+                }
+            }
+        } catch(_) {}
+        return null;
+    };
+
     // Update resiliente: si el doc no existe en _fichaClientId, resuelve
     // el real y reintenta. Lo usan autoSave y _fichaSaveAll.
     async function _fichaUpdateUserDoc(updates) {
@@ -926,7 +975,8 @@
         try {
             const snap = await db.collection('users').where('parentClientId', '==', d.id).get();
             const branches = [];
-            snap.forEach(doc => branches.push({ id: doc.id, ...doc.data() }));
+            // doc.id al final: gana sobre un campo `id` obsoleto del documento
+            snap.forEach(doc => branches.push({ ...doc.data(), id: doc.id }));
             if (countEl) countEl.textContent = branches.length;
             if (branches.length === 0) {
                 list.innerHTML = '<div style="font-size:0.78rem; color:#666; padding:10px 12px; background:rgba(255,255,255,0.02); border-radius:6px;">Aún no hay sucursales. Pulsa <strong>+ Nueva sucursal</strong> para crear la primera.</div>';
@@ -1038,7 +1088,11 @@
                 sn.forEach(function(doc) {
                     if (seen[doc.id]) return;
                     seen[doc.id] = true;
-                    branches.push(Object.assign({ id: doc.id }, doc.data()));
+                    // OJO al orden: doc.data() va ANTES para que doc.id gane.
+                    // Con Object.assign({id: doc.id}, doc.data()) un campo `id`
+                    // obsoleto dentro del documento pisaba el docId real y el
+                    // guardado escribía contra un documento inexistente.
+                    branches.push(Object.assign({}, doc.data(), { id: doc.id }));
                 });
             });
         } catch (e) {
@@ -1122,20 +1176,42 @@
             const btn = this;
             btn.disabled = true; btn.textContent = 'Guardando…';
             try {
-                const batch = db.batch();
-                const patches = [];
+                // Recopilar cambios y RESOLVER el docId real de cada sucursal
+                // antes de escribir: el id que trae la tarjeta puede ser un
+                // alias muerto (campo `id` obsoleto o authUid).
+                const pend = [];
                 inputs.forEach(function(i) {
                     const bid = i.dataset.branch;
                     const val = Math.round((parseFloat(i.value) || 0) * 100) / 100;
-                    const prev = Number((branches.find(function(b) { return b.id === bid; }) || {}).flatMonthlyShare) || 0;
+                    const br = branches.find(function(b) { return b.id === bid; }) || {};
+                    const prev = Number(br.flatMonthlyShare) || 0;
                     if (val === prev) return; // sin cambios
-                    batch.update(db.collection('users').doc(bid), { flatMonthlyShare: val });
-                    patches.push({ id: bid, patch: { flatMonthlyShare: val } });
+                    pend.push({ bid: bid, val: val, idNum: br.idNum, name: br.name || bid });
                 });
-                if (!patches.length) { modal.remove(); return; }
+                if (!pend.length) { modal.remove(); return; }
+
+                const batch = db.batch();
+                const patches = [];
+                const noResuelto = [];
+                for (const p of pend) {
+                    const realId = (typeof window.resolveUserDocId === 'function')
+                        ? await window.resolveUserDocId(p.bid, p.idNum)
+                        : p.bid;
+                    if (!realId) { noResuelto.push(p.name); continue; }
+                    batch.update(db.collection('users').doc(realId), { flatMonthlyShare: p.val });
+                    patches.push({ id: realId, alias: p.bid, patch: { flatMonthlyShare: p.val } });
+                }
+                if (noResuelto.length) {
+                    alert('No encuentro la ficha de: ' + noResuelto.join(', ') +
+                          '.\n\nRecarga la página (Ctrl+F5) e inténtalo de nuevo.');
+                    if (!patches.length) { btn.disabled = false; btn.textContent = 'Guardar reparto'; return; }
+                }
                 await batch.commit();
                 patches.forEach(function(p) {
-                    if (window.userMap && window.userMap[p.id]) window.userMap[p.id].flatMonthlyShare = p.patch.flatMonthlyShare;
+                    if (window.userMap) {
+                        if (window.userMap[p.id]) window.userMap[p.id].flatMonthlyShare = p.patch.flatMonthlyShare;
+                        if (window.userMap[p.alias]) window.userMap[p.alias].flatMonthlyShare = p.patch.flatMonthlyShare;
+                    }
                     if (typeof window._invalidateAllClientCaches === 'function') window._invalidateAllClientCaches(p.id, p.patch);
                 });
                 modal.remove();

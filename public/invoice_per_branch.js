@@ -58,7 +58,7 @@
         const childSnap = await db.collection('users')
             .where('parentClientId', '==', parentId).get();
         const sedes = [parent];
-        childSnap.forEach(doc => sedes.push({ id: doc.id, ...doc.data() }));
+        childSnap.forEach(doc => sedes.push({ ...doc.data(), id: doc.id })); // doc.id manda
 
         // 3. Por cada sede, cargar comp_main (prefix, address) y sus tickets del periodo no facturados
         for (const sede of sedes) {

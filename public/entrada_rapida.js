@@ -135,7 +135,8 @@
         for (const root of roots) {
             try {
                 const snap = await db.collection('users').doc(root).collection('companies').get();
-                snap.forEach(d => { if (!byId[d.id]) byId[d.id] = Object.assign({ id: d.id }, d.data()); });
+                // d.id al final: gana sobre un campo `id` obsoleto del doc
+                snap.forEach(d => { if (!byId[d.id]) byId[d.id] = Object.assign({}, d.data(), { id: d.id }); });
             } catch (e) { console.warn('[ER] comps de ' + root + ':', e); }
         }
         let comps = Object.values(byId);
