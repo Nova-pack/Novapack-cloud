@@ -992,9 +992,32 @@
         modal.id = 'modal-new-sucursal';
         modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
         modal.innerHTML = ''
-            + '<div style="background:#1e1e1e; border:1px solid #5DADE2; border-radius:12px; padding:24px; max-width:560px; width:100%; color:#d4d4d4;">'
-            + '<h3 style="margin:0 0 6px; color:#5DADE2; font-size:1.05rem;">+ Nueva sucursal de ' + (parent.name || parent.idNum || '?') + '</h3>'
-            + '<p style="margin:0 0 18px; font-size:0.78rem; color:#888;">Hereda NIF ' + (parent.nif || '—') + ' y la tarifa del padre. Tiene su propio login y prefijo de albarán.</p>'
+            + '<div style="background:#1e1e1e; border:1px solid #5DADE2; border-radius:12px; padding:24px; max-width:560px; width:100%; max-height:92vh; overflow-y:auto; color:#d4d4d4;">'
+            + '<h3 style="margin:0 0 6px; color:#5DADE2; font-size:1.05rem;">Sucursal de ' + (parent.name || parent.idNum || '?') + '</h3>'
+            + '<p style="margin:0 0 14px; font-size:0.78rem; color:#888;">Hereda NIF ' + (parent.nif || '—') + ' y la tarifa del padre. Tiene su propio login y prefijo de albarán.</p>'
+
+            // ── Pestañas: crear nueva vs VINCULAR una que YA existe ──
+            + '<div style="display:flex; gap:6px; margin-bottom:16px; border-bottom:1px solid #333; padding-bottom:10px;">'
+            + '  <button type="button" id="ns-tab-create" style="flex:1; background:#5DADE2; border:0; color:#000; padding:9px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">➕ CREAR NUEVA</button>'
+            + '  <button type="button" id="ns-tab-link" style="flex:1; background:transparent; border:1px solid #555; color:#ccc; padding:9px; border-radius:6px; font-weight:700; font-size:0.8rem; cursor:pointer;">🔗 VINCULAR EXISTENTE</button>'
+            + '</div>'
+
+            // ── PANEL: vincular cliente existente ──
+            + '<div id="ns-link-panel" style="display:none;">'
+            + '  <p style="margin:0 0 10px; font-size:0.78rem; color:#aaa; line-height:1.5;">Si esa sucursal <b>ya está dada de alta</b> como cliente independiente, búscala aquí y vincúlala — no hace falta crearla otra vez ni duplicarla.</p>'
+            + '  <input type="text" id="ns-link-search" placeholder="🔍 Buscar cliente por nombre o nº…" autocomplete="off" style="width:100%; padding:10px; background:#0a0a0a; border:1px solid #5DADE2; color:#fff; border-radius:6px; font-size:0.9rem; box-sizing:border-box;">'
+            + '  <div id="ns-link-results" style="max-height:210px; overflow-y:auto; margin-top:6px; background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:6px;"></div>'
+            + '  <div id="ns-link-picked" style="display:none; margin-top:12px; padding:12px; background:rgba(76,175,80,0.08); border:1px solid rgba(76,175,80,0.35); border-radius:8px;"></div>'
+            + '  <div id="ns-link-opts" style="display:none; margin-top:12px; font-size:0.8rem;">'
+            + '    <div style="color:#5DADE2; font-weight:700; font-size:0.7rem; letter-spacing:1px; margin-bottom:8px;">HEREDAR DEL PADRE</div>'
+            + '    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;"><input type="checkbox" id="ns-inh-nif" checked> NIF <span style="color:#666; font-family:monospace;">' + (parent.nif || '—') + '</span> <span style="color:#666; font-size:0.72rem;">(se factura al padre)</span></label>'
+            + '    <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;"><input type="checkbox" id="ns-inh-tariff" checked> Tarifa <span style="color:#666; font-family:monospace;">' + (parent.tariffId || '—') + '</span></label>'
+            + '    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox" id="ns-inh-billing" checked> Datos de cobro (empresa facturadora, forma de pago, IBAN/SEPA)</label>'
+            + '  </div>'
+            + '</div>'
+
+            // ── PANEL: crear nueva (el de siempre) ──
+            + '<div id="ns-create-panel">'
             + '<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">'
             + '  <div><label style="font-size:0.7rem; color:#aaa;">ID Cliente</label><input type="text" id="ns-idnum" value="' + suggestedIdNum + '" style="width:100%; padding:8px; background:#0a0a0a; border:1px solid #444; color:#fff; border-radius:5px; font-family:monospace;"></div>'
             + '  <div><label style="font-size:0.7rem; color:#aaa;">Nombre sucursal</label><input type="text" id="ns-name" placeholder="Ej: ' + (parent.name || 'Cliente') + ' Vélez-Málaga" style="width:100%; padding:8px; background:#0a0a0a; border:1px solid #444; color:#fff; border-radius:5px;"></div>'
@@ -1011,12 +1034,153 @@
             + '    <div><label style="font-size:0.68rem; color:#aaa;">Contraseña</label><input type="text" id="ns-password" placeholder="mín 6 chars" style="width:100%; padding:7px; background:#0a0a0a; border:1px solid #444; color:#fff; border-radius:4px; font-size:0.8rem;"></div>'
             + '  </div>'
             + '</div>'
+            + '</div>' // /ns-create-panel
             + '<div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">'
             + '  <button type="button" id="ns-cancel" style="background:#333; border:1px solid #555; color:#fff; padding:8px 18px; border-radius:6px; cursor:pointer;">Cancelar</button>'
             + '  <button type="button" id="ns-save" style="background:#5DADE2; border:0; color:#000; padding:8px 22px; border-radius:6px; font-weight:700; cursor:pointer;">Crear sucursal</button>'
+            + '  <button type="button" id="ns-link-save" style="display:none; background:#4CAF50; border:0; color:#fff; padding:8px 22px; border-radius:6px; font-weight:700; cursor:pointer;">🔗 Vincular como sucursal</button>'
             + '</div>'
             + '</div>';
         document.body.appendChild(modal);
+
+        // ── Cambio de pestaña crear / vincular ──
+        var _nsLinkPicked = null;
+        var _nsEsc = function(x) { return (typeof escapeHtml === 'function') ? escapeHtml(x == null ? '' : x) : String(x == null ? '' : x).replace(/[&<>"']/g, function(m) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); };
+        function _nsSetTab(mode) {
+            var isLink = (mode === 'link');
+            document.getElementById('ns-create-panel').style.display = isLink ? 'none' : 'block';
+            document.getElementById('ns-link-panel').style.display = isLink ? 'block' : 'none';
+            document.getElementById('ns-save').style.display = isLink ? 'none' : 'inline-block';
+            document.getElementById('ns-link-save').style.display = isLink ? 'inline-block' : 'none';
+            var tc = document.getElementById('ns-tab-create'), tl = document.getElementById('ns-tab-link');
+            tc.style.background = isLink ? 'transparent' : '#5DADE2';
+            tc.style.color = isLink ? '#ccc' : '#000';
+            tc.style.border = isLink ? '1px solid #555' : '0';
+            tl.style.background = isLink ? '#4CAF50' : 'transparent';
+            tl.style.color = isLink ? '#fff' : '#ccc';
+            tl.style.border = isLink ? '0' : '1px solid #555';
+            if (isLink) { _nsRenderLinkResults(''); document.getElementById('ns-link-search').focus(); }
+        }
+        document.getElementById('ns-tab-create').addEventListener('click', function() { _nsSetTab('create'); });
+        document.getElementById('ns-tab-link').addEventListener('click', function() { _nsSetTab('link'); });
+
+        // ── Buscador de clientes existentes ──
+        function _nsCandidates(q) {
+            var map = window.userMap || {};
+            q = (q || '').trim().toLowerCase();
+            var out = [];
+            Object.keys(map).forEach(function(id) {
+                var u = map[id] || {};
+                if (id === parentId) return;                       // no puede ser su propia sucursal
+                if (u.parentClientId === parentId) return;         // ya es sucursal de este padre
+                if (!u.name && !u.idNum) return;
+                var hay = ((u.name || '') + ' ' + (u.idNum || '') + ' ' + (u.nif || '')).toLowerCase();
+                if (q && hay.indexOf(q) === -1) return;
+                out.push({ id: id, name: u.name || '(sin nombre)', idNum: u.idNum || '', nif: u.nif || '',
+                           localidad: u.localidad || '', otherParent: u.parentClientId || '' });
+            });
+            out.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
+            return out.slice(0, 40);
+        }
+
+        function _nsRenderLinkResults(q) {
+            var box = document.getElementById('ns-link-results');
+            var list = _nsCandidates(q);
+            if (!list.length) {
+                box.innerHTML = '<div style="padding:14px; color:#777; font-size:0.8rem; text-align:center;">Sin coincidencias.</div>';
+                return;
+            }
+            box.innerHTML = list.map(function(c) {
+                var warn = c.otherParent
+                    ? '<span style="background:rgba(255,152,0,0.2); color:#FF9800; font-size:0.62rem; padding:1px 6px; border-radius:8px; margin-left:6px;">ya es sucursal de otro</span>' : '';
+                return '<div data-link-id="' + c.id + '" style="padding:9px 12px; border-bottom:1px solid #2a2a2a; cursor:pointer;">'
+                    + '<div style="font-weight:600; color:#eee; font-size:0.85rem;">' + _nsEsc(c.name) + warn + '</div>'
+                    + '<div style="font-size:0.7rem; color:#888;">nº ' + _nsEsc(c.idNum) + (c.nif ? ' · ' + _nsEsc(c.nif) : '') + (c.localidad ? ' · ' + _nsEsc(c.localidad) : '') + '</div>'
+                    + '</div>';
+            }).join('');
+            Array.prototype.forEach.call(box.querySelectorAll('[data-link-id]'), function(row) {
+                row.addEventListener('mouseenter', function() { row.style.background = 'rgba(93,173,226,0.12)'; });
+                row.addEventListener('mouseleave', function() { row.style.background = 'transparent'; });
+                row.addEventListener('click', function() {
+                    var c = list.find(function(x) { return x.id === row.dataset.linkId; });
+                    if (c) _nsPickLink(c);
+                });
+            });
+        }
+
+        function _nsPickLink(c) {
+            _nsLinkPicked = c;
+            var box = document.getElementById('ns-link-picked');
+            box.style.display = 'block';
+            box.innerHTML = '<div style="font-size:0.7rem; color:#4CAF50; letter-spacing:1px; font-weight:700; margin-bottom:4px;">CLIENTE SELECCIONADO</div>'
+                + '<div style="font-weight:700; color:#fff;">' + _nsEsc(c.name) + '</div>'
+                + '<div style="font-size:0.75rem; color:#aaa; margin-top:2px;">nº ' + _nsEsc(c.idNum) + (c.nif ? ' · NIF ' + _nsEsc(c.nif) : '') + '</div>'
+                + (c.otherParent ? '<div style="margin-top:8px; font-size:0.75rem; color:#FF9800;">⚠ Ahora mismo es sucursal de otro cliente. Al vincular pasará a colgar de ' + _nsEsc(parent.name || parentId) + '.</div>' : '');
+            document.getElementById('ns-link-opts').style.display = 'block';
+        }
+
+        var _nsSearchInp = document.getElementById('ns-link-search');
+        _nsSearchInp.addEventListener('input', function() { _nsRenderLinkResults(this.value); });
+
+        // ── Guardar vínculo ──
+        document.getElementById('ns-link-save').addEventListener('click', async function() {
+            if (!_nsLinkPicked) { alert('Busca y selecciona el cliente que quieres convertir en sucursal.'); return; }
+            var btn = this;
+            var sel = _nsLinkPicked;
+            // Aviso si el candidato tiene sus PROPIAS sucursales (evitar 3 niveles)
+            try {
+                var kidsSnap = await db.collection('users').where('parentClientId', '==', sel.id).limit(1).get();
+                if (!kidsSnap.empty) {
+                    if (!confirm('⚠ "' + sel.name + '" tiene sus propias sucursales.\n\nEl sistema trabaja con 2 niveles (padre → sucursales). Si lo vinculas, sus sucursales quedarían en un tercer nivel y podrían no facturarse bien.\n\n¿Continuar de todas formas?')) return;
+                }
+            } catch (e) {}
+
+            var inhNif = document.getElementById('ns-inh-nif').checked;
+            var inhTar = document.getElementById('ns-inh-tariff').checked;
+            var inhBil = document.getElementById('ns-inh-billing').checked;
+            if (!confirm('Vincular "' + sel.name + '" como SUCURSAL de "' + (parent.name || parentId) + '".\n\n'
+                + 'Mantiene su login, sus albaranes y su prefijo.\n'
+                + (inhNif ? '· Heredará el NIF del padre (se facturará al padre)\n' : '')
+                + (inhTar ? '· Heredará la tarifa del padre\n' : '')
+                + (inhBil ? '· Heredará los datos de cobro del padre\n' : '')
+                + '\n¿Confirmas?')) return;
+
+            btn.disabled = true; btn.textContent = 'Vinculando…';
+            try {
+                var patch = {
+                    parentClientId: parentId,
+                    linkedAsBranchAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    linkedAsBranchBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin'
+                };
+                if (inhNif && parent.nif) patch.nif = parent.nif;
+                if (inhTar) {
+                    patch.tariffId = parent.tariffId || '';
+                    // Una sucursal factura por consumo real, nunca cuota plana propia
+                    patch.isFlatRate = false;
+                    patch.flatRateAmount = 0;
+                }
+                if (inhBil) {
+                    patch.billingCompanyId = parent.billingCompanyId || '';
+                    patch.paymentTerms = parent.paymentTerms || 'contado';
+                    patch.iban = parent.iban || '';
+                    patch.sepaRef = parent.sepaRef || '';
+                    patch.sepaDate = parent.sepaDate || '';
+                }
+                await db.collection('users').doc(sel.id).update(patch);
+                if (typeof window._invalidateAllClientCaches === 'function') {
+                    window._invalidateAllClientCaches(sel.id, patch);
+                }
+                modal.remove();
+                if (typeof showToast === 'function') showToast('"' + sel.name + '" vinculada como sucursal ✓', 'success');
+                else alert('✅ Sucursal vinculada.');
+                _fichaLoadSucursales();
+                if (typeof loadUsers === 'function') loadUsers('current');
+            } catch (e) {
+                console.error('[sucursal link]', e);
+                alert('Error vinculando: ' + e.message);
+                btn.disabled = false; btn.textContent = '🔗 Vincular como sucursal';
+            }
+        });
 
         document.getElementById('ns-activate').addEventListener('change', function() {
             document.getElementById('ns-auth-fields').style.display = this.checked ? 'grid' : 'none';
