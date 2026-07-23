@@ -1385,7 +1385,7 @@
                      + '</div>';
             }
             const checked = exclSet.has(_norm(en.name)) ? '' : 'checked';
-            rows += '<label class="cc-row" data-name="' + _e(en.name) + '" title="' + _e(en.name) + '" style="display:flex; align-items:center; gap:7px; padding:3px 6px; border-radius:4px; cursor:pointer; font-size:0.78rem; color:#ddd; text-align:left; margin:0; line-height:1.3; overflow:hidden; text-transform:none;">'
+            rows += '<label class="cc-row" data-name="' + _e(en.name) + '" title="' + _e(en.name) + '" style="display:flex; align-items:center; gap:7px; padding:3px 6px; border-radius:4px; cursor:pointer; font-size:0.78rem; color:#ddd; text-align:left; margin:0; line-height:1.3; min-height:24px; overflow:hidden; text-transform:none; font-weight:400; letter-spacing:normal;">'
                  + '<input type="checkbox" class="cc-check" data-idx="' + i + '" ' + checked + ' style="margin:0; flex:0 0 auto; width:15px; height:15px; accent-color:#4CAF50;">'
                  + '<span style="flex:1; min-width:0; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">' + _e(en.name) + '</span>'
                  + '</label>';
