@@ -862,6 +862,7 @@
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
                 <button type="button" onclick="window.composeConsolidatedWelcomeEmail('${d.id}')" style="background:#34C759; border:0; color:#fff; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Envía UN email al correo de administración con los accesos (usuario+clave) de la central y TODAS las sucursales. El admin los reparte internamente.">✉️ Enviar accesos al admin</button>
                 <button type="button" onclick="window.openParentDiagnostic('${d.id}')" style="background:transparent; border:1px solid #4CAF50; color:#4CAF50; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Comprobar que padre y sucursales están bien configurados y que la facturación saldrá correcta">🩺 Verificar configuración</button>
+                <button type="button" onclick="window.openFlatShareModal('${d.id}')" style="background:transparent; border:1px solid #4CAF50; color:#4CAF50; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Repartir la cuota fija mensual entre el padre y sus sucursales (ej: 2.800 € de los que 600 se facturan a una sede)">🔀 Repartir cuota</button>
                 <button type="button" onclick="window.openInvoiceFormatModal('${d.id}')" style="background:#FF6600; border:0; color:#fff; padding:6px 14px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;">📊 Facturar mes</button>
                 <button type="button" onclick="window.openNewSucursalModal('${d.id}')" style="background:#5DADE2; border:0; color:#000; padding:6px 14px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;">+ Nueva sucursal</button>
             </div>
@@ -936,13 +937,18 @@
                 const accessChip = b.authUid
                     ? '<span style="background:rgba(52,199,89,0.15); color:#34C759; padding:2px 8px; border-radius:8px; font-size:0.65rem;">🟢 Login activo</span>'
                     : '<span style="background:rgba(255,159,10,0.15); color:#FF9F0A; padding:2px 8px; border-radius:8px; font-size:0.65rem;">🔴 Sin acceso</span>';
+                // Chip con la parte de la cuota mensual que se le factura a esta sede
+                const _shareVal = Number(b.flatMonthlyShare) || 0;
+                const shareChip = _shareVal > 0
+                    ? '<span style="background:rgba(76,175,80,0.15); color:#4CAF50; padding:2px 8px; border-radius:8px; font-size:0.65rem; margin-left:6px; font-weight:700;" title="Parte de la cuota mensual del padre que se factura a esta sucursal">🔀 ' + _shareVal.toFixed(2).replace('.', ',') + ' €/mes</span>'
+                    : '';
                 return ''
                     + '<div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:rgba(93,173,226,0.04); border:1px solid rgba(93,173,226,0.15); border-radius:6px; font-size:0.8rem;">'
                     + '  <div>'
                     + '    <span style="color:#5DADE2; font-weight:700; font-family:monospace;">#' + (b.idNum || '?') + '</span>'
                     + '    <span style="color:#fff; margin-left:8px; font-weight:500;">' + (b.name || 'Sin nombre') + '</span>'
                     + '    <span style="color:#888; margin-left:10px; font-size:0.7rem;">' + (b.localidad || '') + '</span>'
-                    + '    <span style="margin-left:10px;">' + accessChip + '</span>'
+                    + '    <span style="margin-left:10px;">' + accessChip + shareChip + '</span>'
                     + (b.loginEmail ? '<div style="font-size:0.65rem; color:#666; font-family:monospace; margin-top:2px;">login: ' + b.loginEmail + '</div>' : '')
                     + '  </div>'
                     + '  <div style="display:flex; gap:4px;">'
@@ -957,6 +963,149 @@
             list.innerHTML = '<div style="color:#FF3B30; font-size:0.78rem;">Error cargando sucursales: ' + e.message + '</div>';
         }
     }
+
+    // ============================================================
+    //  PANEL DE REPARTO DE LA CUOTA MENSUAL (padre → sucursales)
+    // ============================================================
+    // Caso real: 2.800 €/mes de los que 600 se facturan a una sucursal.
+    // Aquí se ve la cuota total, se reparte a medida entre las sedes y se
+    // muestra en vivo lo que le queda al padre.
+    window.openFlatShareModal = async function(parentId) {
+        const parent = (window.userMap && window.userMap[parentId])
+                    || (window._advClientsCache && window._advClientsCache.find(c => c.id === parentId))
+                    || _fichaClientData;
+        if (!parent) { alert('No encuentro al cliente. Recarga la página.'); return; }
+
+        const _e = function(x) { return (typeof escapeHtml === 'function') ? escapeHtml(x == null ? '' : x) : String(x == null ? '' : x); };
+        const _m = function(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €'; };
+
+        // Cuota BRUTA del padre = lo que se le factura ahora (neto) + lo ya repartido
+        const netNow = (typeof window.getMonthlyFlatAmount === 'function') ? window.getMonthlyFlatAmount(parentId) : 0;
+        const sharedNow = (typeof window.getBranchesFlatShare === 'function') ? window.getBranchesFlatShare(parentId) : 0;
+        const gross = Math.round((netNow + sharedNow) * 100) / 100;
+
+        // Sucursales (tolera parentClientId por docId o por idNum del padre)
+        let branches = [];
+        try {
+            const seen = {};
+            const qs = [db.collection('users').where('parentClientId', '==', parentId).get()];
+            if (parent.idNum) qs.push(db.collection('users').where('parentClientId', '==', String(parent.idNum)).get());
+            const snaps = await Promise.all(qs);
+            snaps.forEach(function(sn) {
+                sn.forEach(function(doc) {
+                    if (seen[doc.id]) return;
+                    seen[doc.id] = true;
+                    branches.push(Object.assign({ id: doc.id }, doc.data()));
+                });
+            });
+        } catch (e) {
+            alert('Error cargando sucursales: ' + e.message); return;
+        }
+        if (!branches.length) { alert('Este cliente todavía no tiene sucursales vinculadas.'); return; }
+        branches.sort(function(a, b) { return String(a.idNum || '').localeCompare(String(b.idNum || '')); });
+
+        const old = document.getElementById('modal-flat-share');
+        if (old) old.remove();
+        const modal = document.createElement('div');
+        modal.id = 'modal-flat-share';
+        modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
+        modal.innerHTML = ''
+            + '<div style="background:#1e1e1e; border:1px solid #4CAF50; border-radius:12px; padding:24px; max-width:620px; width:100%; max-height:92vh; overflow-y:auto; color:#d4d4d4;">'
+            + '  <h3 style="margin:0 0 4px; color:#4CAF50; font-size:1.05rem;">🔀 Reparto de la cuota mensual</h3>'
+            + '  <p style="margin:0 0 16px; font-size:0.8rem; color:#888;">' + _e(parent.name || parentId) + '</p>'
+            + (gross <= 0
+                ? '<div style="background:rgba(255,152,0,0.08); border:1px solid rgba(255,152,0,0.35); border-radius:8px; padding:12px; font-size:0.8rem; color:#FFB74D;">⚠️ Este cliente no tiene cuota fija mensual configurada. Configúrala primero (ficha → Datos económicos, o en su tarifa) y vuelve aquí para repartirla.</div>'
+                : '')
+            + '  <div style="display:flex; gap:12px; margin-bottom:16px;">'
+            + '    <div style="flex:1; background:rgba(255,255,255,0.04); border:1px solid #333; border-radius:8px; padding:12px; text-align:center;">'
+            + '      <div style="font-size:0.65rem; color:#888; letter-spacing:1px;">CUOTA TOTAL PACTADA</div>'
+            + '      <div style="font-size:1.35rem; font-weight:800; color:#fff; margin-top:3px;">' + _m(gross) + '</div>'
+            + '    </div>'
+            + '    <div style="flex:1; background:rgba(76,175,80,0.07); border:1px solid rgba(76,175,80,0.35); border-radius:8px; padding:12px; text-align:center;">'
+            + '      <div style="font-size:0.65rem; color:#4CAF50; letter-spacing:1px;">SE FACTURA AL PADRE</div>'
+            + '      <div id="fs-remainder" style="font-size:1.35rem; font-weight:800; color:#4CAF50; margin-top:3px;">—</div>'
+            + '    </div>'
+            + '  </div>'
+            + '  <div style="font-size:0.68rem; color:#5DADE2; letter-spacing:1px; font-weight:700; margin-bottom:8px;">REPARTO POR SUCURSAL (€/mes)</div>'
+            + '  <div style="display:flex; flex-direction:column; gap:6px;">'
+            + branches.map(function(b) {
+                const val = Number(b.flatMonthlyShare) || 0;
+                return ''
+                    + '<div style="display:flex; align-items:center; gap:10px; padding:9px 12px; background:rgba(93,173,226,0.05); border:1px solid rgba(93,173,226,0.18); border-radius:7px;">'
+                    + '  <div style="flex:1; min-width:0;">'
+                    + '    <div style="font-size:0.85rem; color:#fff; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + _e(b.name || 'Sin nombre') + '</div>'
+                    + '    <div style="font-size:0.68rem; color:#888;">#' + _e(b.idNum || '?') + (b.localidad ? ' · ' + _e(b.localidad) : '') + '</div>'
+                    + '  </div>'
+                    + '  <input type="number" step="0.01" min="0" class="fs-share-input" data-branch="' + _e(b.id) + '" value="' + (val || '') + '" placeholder="0" style="width:120px; padding:7px 9px; background:#2d2d30; border:1px solid #5DADE2; color:#fff; border-radius:5px; font-size:0.95rem; font-weight:700; text-align:right;">'
+                    + '</div>';
+            }).join('')
+            + '  </div>'
+            + '  <div id="fs-warn" style="display:none; margin-top:12px; background:rgba(244,67,54,0.1); border:1px solid rgba(244,67,54,0.4); border-radius:7px; padding:10px 12px; font-size:0.78rem; color:#ff8a80;"></div>'
+            + '  <div style="margin-top:12px; font-size:0.72rem; color:#777; line-height:1.5;">Lo que asignes a cada sucursal se <b>resta</b> de la factura del padre y aparece en la factura de esa sucursal. La suma siempre es la cuota pactada. Déjalo a 0 para que esa sede no lleve cuota.</div>'
+            + '  <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:18px;">'
+            + '    <button type="button" id="fs-cancel" style="background:#333; border:1px solid #555; color:#fff; padding:9px 18px; border-radius:6px; cursor:pointer;">Cancelar</button>'
+            + '    <button type="button" id="fs-save" style="background:#4CAF50; border:0; color:#fff; padding:9px 22px; border-radius:6px; font-weight:700; cursor:pointer;">Guardar reparto</button>'
+            + '  </div>'
+            + '</div>';
+        document.body.appendChild(modal);
+
+        const inputs = Array.prototype.slice.call(modal.querySelectorAll('.fs-share-input'));
+        function _recalc() {
+            let sum = 0;
+            inputs.forEach(function(i) { sum += parseFloat(i.value) || 0; });
+            sum = Math.round(sum * 100) / 100;
+            const rest = Math.round((gross - sum) * 100) / 100;
+            const remEl = document.getElementById('fs-remainder');
+            const warnEl = document.getElementById('fs-warn');
+            remEl.textContent = _m(rest);
+            if (rest < 0) {
+                remEl.style.color = '#ff5252';
+                warnEl.style.display = 'block';
+                warnEl.innerHTML = '⚠️ Estás repartiendo <b>' + _m(sum) + '</b>, que supera la cuota pactada de <b>' + _m(gross) + '</b>. Ajusta los importes: el padre no puede facturar en negativo.';
+            } else {
+                remEl.style.color = rest === 0 ? '#FFD60A' : '#4CAF50';
+                warnEl.style.display = 'none';
+            }
+            return { sum: sum, rest: rest };
+        }
+        inputs.forEach(function(i) { i.addEventListener('input', _recalc); });
+        _recalc();
+
+        document.getElementById('fs-cancel').addEventListener('click', function() { modal.remove(); });
+        document.getElementById('fs-save').addEventListener('click', async function() {
+            const st = _recalc();
+            if (st.rest < 0) { alert('El reparto (' + _m(st.sum) + ') supera la cuota pactada (' + _m(gross) + ').\n\nAjusta los importes antes de guardar.'); return; }
+            const btn = this;
+            btn.disabled = true; btn.textContent = 'Guardando…';
+            try {
+                const batch = db.batch();
+                const patches = [];
+                inputs.forEach(function(i) {
+                    const bid = i.dataset.branch;
+                    const val = Math.round((parseFloat(i.value) || 0) * 100) / 100;
+                    const prev = Number((branches.find(function(b) { return b.id === bid; }) || {}).flatMonthlyShare) || 0;
+                    if (val === prev) return; // sin cambios
+                    batch.update(db.collection('users').doc(bid), { flatMonthlyShare: val });
+                    patches.push({ id: bid, patch: { flatMonthlyShare: val } });
+                });
+                if (!patches.length) { modal.remove(); return; }
+                await batch.commit();
+                patches.forEach(function(p) {
+                    if (window.userMap && window.userMap[p.id]) window.userMap[p.id].flatMonthlyShare = p.patch.flatMonthlyShare;
+                    if (typeof window._invalidateAllClientCaches === 'function') window._invalidateAllClientCaches(p.id, p.patch);
+                });
+                modal.remove();
+                const msg = 'Reparto guardado · padre ' + _m(st.rest) + ' + sucursales ' + _m(st.sum);
+                if (typeof showToast === 'function') showToast(msg, 'success');
+                else alert('✅ ' + msg);
+                _fichaLoadSucursales();
+            } catch (e) {
+                console.error('[flat share]', e);
+                alert('Error guardando el reparto: ' + e.message);
+                btn.disabled = false; btn.textContent = 'Guardar reparto';
+            }
+        });
+    };
 
     // Modal "Nueva sucursal" — formulario minimal con los campos necesarios.
     // Hereda NIF + tarifa + paymentTerms del padre. parentClientId apunta al
