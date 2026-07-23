@@ -1341,19 +1341,56 @@
             }
 
             // 7. Sede operativa comp_main (es lo que precarga el albarán del cliente)
+            //
+            // La sede es un ESPEJO de la ficha, no un dato que el admin teclee
+            // aparte. Si la ficha tiene dirección y la sede no, no tiene ningún
+            // sentido pedirle al admin que la reescriba: se copia y punto.
+            // Sólo es crítico cuando la ficha TAMPOCO la tiene.
             try {
-                const compSnap = await db.collection('users').doc(c.id).collection('companies').doc('comp_main').get();
+                const compRef = db.collection('users').doc(c.id).collection('companies').doc('comp_main');
+                const compSnap = await compRef.get();
                 if (compSnap.exists) {
                     const comp = compSnap.data();
                     const addr = ((comp.address || '') + '').trim();
-                    if (!addr || /^direcci[oó]n no (definida|configurada)$/i.test(addr)) {
-                        criticos.push('La sede operativa (comp_main) tiene la dirección VACÍA — el albarán imprimirá "Dirección no definida"');
+                    const vacia = !addr || /^direcci[oó]n no (definida|configurada)$/i.test(addr);
+                    if (vacia) {
+                        // Componer desde la ficha (mismo formato que el alta)
+                        const _p = [];
+                        if ((c.street || '').trim())    _p.push(c.street.trim());
+                        if ((c.number || '').trim())    _p.push('Nº ' + String(c.number).trim());
+                        if ((c.localidad || '').trim()) _p.push(c.localidad.trim());
+                        if ((c.cp || '').trim())        _p.push('(CP ' + String(c.cp).trim() + ')');
+                        const nueva = _p.join(', ') || ((c.senderAddress || '') + '').trim();
+
+                        if (nueva) {
+                            // AUTO-REPARACIÓN: volcar la ficha a la sede
+                            await compRef.set({
+                                name: c.name || '',
+                                nif: c.nif || c.cif || '',
+                                idNum: parseInt(c.idNum, 10) || null,
+                                street: c.street || '',
+                                number: c.number || '',
+                                localidad: c.localidad || '',
+                                cp: c.cp || '',
+                                province: c.province || '',
+                                phone: c.senderPhone || c.phone || '',
+                                address: nueva,
+                                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                            }, { merge: true });
+                            avisos.push('Se ha copiado la dirección de la ficha a la sede operativa: ' + nueva);
+                            console.log('[readiness] sede reparada para', c.id, '→', nueva);
+                        } else {
+                            criticos.push('Ni la ficha ni la sede tienen DIRECCIÓN — rellena Calle, Nº, CP y Localidad en la ficha');
+                        }
                     }
                     if (!((comp.phone || '') + '').trim() && !phone) avisos.push('La sede operativa no tiene teléfono');
                 }
                 // Si comp_main no existe, la app la creará del maestro en el
                 // primer login — cubierto por los checks 4/5 de arriba.
-            } catch (e) { /* lectura fallida: no bloquear por esto */ }
+            } catch (e) {
+                console.warn('[readiness] sede:', e && e.message);
+                avisos.push('No se pudo comprobar la sede operativa: ' + (e && e.message ? e.message : e));
+            }
 
             return { ok: criticos.length === 0, criticos, avisos };
         };
