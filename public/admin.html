@@ -1840,11 +1840,24 @@
                 };
                 if (newEmail)    patch.loginEmail         = newEmail;
                 if (newPassword) patch.loginPasswordPlain = newPassword;
-                await db.collection('users').doc(_clDocId).update(patch);
+                // Escritura resiliente: si el id resultara ser un alias
+                // antiguo, resolver el docId real y reintentar.
+                var writeId = _clDocId;
+                try {
+                    await db.collection('users').doc(writeId).update(patch);
+                } catch (errUpd) {
+                    var noDoc = /No document to update/i.test(errUpd && errUpd.message || '');
+                    if (!noDoc || typeof window.resolveUserDocId !== 'function') throw errUpd;
+                    var realW = await window.resolveUserDocId(_clDocId, _clCurrentData && _clCurrentData.idNum);
+                    if (!realW) throw errUpd;
+                    writeId = realW;
+                    _clDocId = realW;
+                    await db.collection('users').doc(writeId).update(patch);
+                }
 
                 // 3. Caches en memoria
                 if (typeof window._invalidateAllClientCaches === 'function')
-                    window._invalidateAllClientCaches(_clDocId, patch);
+                    window._invalidateAllClientCaches(writeId, patch);
 
                 // 4. Cerrar modal
                 document.getElementById('modal-change-login').style.display = 'none';
@@ -1872,15 +1885,40 @@
         };
 
         window.openChangeLoginModal = async function openChangeLoginModal(docId) {
-            const data = (window.userMap && window.userMap[docId])
-                      || (window._advClientsCache && window._advClientsCache.find(c => c.id === docId))
-                      || {};
+          try {
+            if (!docId) { alert('No se ha indicado ningún cliente.'); return; }
+            let data = (window.userMap && window.userMap[docId])
+                    || (window._advClientsCache && window._advClientsCache.find(c => c.id === docId))
+                    || null;
+            let realId = docId;
+
+            // Si no está en memoria (o el id recibido es un alias antiguo),
+            // resolver el docId real y leerlo de Firestore. Antes se asumía
+            // directamente "sin acceso activado" y el botón parecía roto.
+            if (!data || !data.authUid) {
+                if (typeof window.resolveUserDocId === 'function') {
+                    try {
+                        const r = await window.resolveUserDocId(docId, data && data.idNum);
+                        if (r) realId = r;
+                    } catch (e) { console.warn('[cambiar login] resolver docId:', e); }
+                }
+                try {
+                    const snap = await db.collection('users').doc(realId).get();
+                    if (snap.exists) data = { ...snap.data(), id: realId };
+                } catch (e) { console.warn('[cambiar login] lectura Firestore:', e); }
+            }
+
+            if (!data) {
+                alert('No encuentro la ficha de este cliente (' + docId + ').\n\nRecarga la página (Ctrl+F5) e inténtalo de nuevo.');
+                return;
+            }
             if (!data.authUid) {
                 alert('Este cliente aún no tiene acceso activado. Usa primero el botón 🔓.');
                 return;
             }
-            // Guardar estado
-            _clDocId = docId;
+            // Guardar estado — realId, NO el alias, para que el guardado
+            // escriba contra el documento que existe de verdad.
+            _clDocId = realId;
             _clAuthUid = data.authUid;
             _clCurrentData = data;
 
@@ -1900,8 +1938,18 @@
 
             // Mostrar
             const modal = document.getElementById('modal-change-login');
+            if (!modal) { alert('No se encuentra la ventana de cambio de login. Recarga la página (Ctrl+F5).'); return; }
+            // Defensa: un position:fixed dentro de un contenedor oculto o con
+            // transform no se ve nunca. Colgándolo del body siempre sale.
+            if (modal.parentElement !== document.body) document.body.appendChild(modal);
             modal.style.display = 'flex';
             setTimeout(() => { const e = document.getElementById('cl-new-email'); if(e) e.focus(); }, 100);
+          } catch (err) {
+            // Antes cualquier fallo aquí dejaba el botón "muerto" sin decir nada
+            console.error('[cambiar login]', err);
+            alert('No se pudo abrir el cambio de login:\n\n' + (err && err.message ? err.message : String(err)) +
+                  '\n\nSi se repite, mándame esta línea.');
+          }
         };
 
         // Compose welcome email — opens the admin's mail client with a pre-
