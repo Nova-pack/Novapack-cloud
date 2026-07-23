@@ -25,14 +25,15 @@
     // ────────────────────────────────────────────────────────────
     document.addEventListener('click', async function (ev) {
         const btn = ev.target && ev.target.closest
-            ? ev.target.closest('#fc-btn-changelogin, #fc-btn-resend, #fc-btn-impersonate')
+            ? ev.target.closest('#fc-btn-changelogin, #fc-btn-resend, #fc-btn-impersonate, #fc-btn-catalogo')
             : null;
         if (!btn) return;
         ev.preventDefault();
         ev.stopPropagation();
         const d = _fichaClientData || {};
         const nombre = btn.id === 'fc-btn-changelogin' ? 'Cambiar login'
-                     : btn.id === 'fc-btn-resend' ? 'Reenviar bienvenida' : 'Entrar como';
+                     : btn.id === 'fc-btn-resend' ? 'Reenviar bienvenida'
+                     : btn.id === 'fc-btn-catalogo' ? 'Catálogo del cliente' : 'Entrar como';
         console.log('[ficha] clic en botón:', nombre, '(cliente ' + (d.id || '?') + ')');
         try {
             if (btn.id === 'fc-btn-changelogin') {
@@ -46,6 +47,8 @@
                     if (r) target = r;
                 }
                 await window.openChangeLoginModal(target);
+            } else if (btn.id === 'fc-btn-catalogo') {
+                await window.openClientCatalogModal(d.id);
             } else if (btn.id === 'fc-btn-resend') {
                 if (typeof window.composeWelcomeEmail !== 'function') {
                     alert('El compositor de bienvenida no está cargado. Recarga con Ctrl+F5.');
@@ -978,6 +981,7 @@
         </div>
         <div style="margin-bottom:8px;">
             <button type="button" onclick="window.fichaReadinessCheck('${d.id}')" style="background:transparent; border:1px solid #FF9800; color:#FF9800; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Comprueba que el cliente tiene TODO lo necesario para trabajar desde el primer día: acceso, NIF, dirección+CP, tarifa, sede operativa y canal para recibir las claves">🚦 ¿Listo para trabajar?</button>
+            <button type="button" id="fc-btn-catalogo" style="background:transparent; border:1px solid #5DADE2; color:#5DADE2; padding:6px 12px; border-radius:6px; font-size:0.75rem; font-weight:700; cursor:pointer;" title="Elige qué artículos del catálogo puede seleccionar este cliente al crear albaranes. Los desmarcados desaparecen de su desplegable.">🗂️ Catálogo del cliente</button>
         </div>
         <div id="fc-access-loginline" style="display:none; font-size:0.7rem; color:#888; font-family:monospace; word-break:break-all; margin-bottom:8px;"></div>
         <div style="display:grid; grid-template-columns: 200px 1fr 1fr 1fr; gap:6px; margin-bottom:6px;">
@@ -1275,6 +1279,192 @@
                 console.error('[flat share]', e);
                 alert('Error guardando el reparto: ' + e.message);
                 btn.disabled = false; btn.textContent = 'Guardar reparto';
+            }
+        });
+    };
+
+    // ════════════════════════════════════════════════════════════
+    //  🗂️ CATÁLOGO DEL CLIENTE — qué artículos puede elegir
+    // ════════════════════════════════════════════════════════════
+    // El desplegable del cliente = su tarifa + catálogo base (tarifa 50).
+    // Aquí el admin DESMARCA los que no quiere que ese cliente vea; se
+    // guardan en users/{id}.catalogExclusions y la app los oculta.
+    window.openClientCatalogModal = async function(clientId) {
+        const _e = function(x) { return (typeof escapeHtml === 'function') ? escapeHtml(x == null ? '' : x) : String(x == null ? '' : x); };
+        const _norm = function(s) {
+            return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
+                .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+        };
+
+        // Cliente (resolviendo alias de docId si hiciera falta)
+        let realId = clientId;
+        if (typeof window.resolveUserDocId === 'function') {
+            try { const r = await window.resolveUserDocId(clientId); if (r) realId = r; } catch (e) {}
+        }
+        let cli = (window.userMap && (window.userMap[realId] || window.userMap[clientId])) || null;
+        if (!cli) {
+            try {
+                const s = await db.collection('users').doc(realId).get();
+                if (s.exists) cli = { ...s.data(), id: realId };
+            } catch (e) {}
+        }
+        if (!cli) { alert('No encuentro la ficha de este cliente. Recarga (Ctrl+F5).'); return; }
+
+        if (typeof showLoading === 'function') showLoading();
+        // 1) Artículos de SU tarifa (v2 array o v1 objeto), sin la cuota mensual
+        const ownNames = [];
+        try {
+            const tid = (cli.tariffId ? String(cli.tariffId).trim() : '');
+            const cands = [];
+            if (tid) cands.push('GLOBAL_' + tid, 'GLOBAL_' + tid + '_v2', tid);
+            cands.push(realId);
+            for (const c of cands) {
+                const d = await db.collection('tariffs').doc(c).get();
+                if (!d.exists) continue;
+                const items = d.data().items;
+                if (Array.isArray(items)) {
+                    items.forEach(function(it) {
+                        if (it && it.mode !== 'flat_monthly') {
+                            const n = (it.name || it.id || '').toString().trim();
+                            if (n) ownNames.push(n);
+                        }
+                    });
+                } else if (items && typeof items === 'object') {
+                    Object.keys(items).forEach(function(n) { ownNames.push(n); });
+                }
+                break; // primera tarifa que exista
+            }
+        } catch (e) { console.warn('[catálogo] tarifa propia:', e && e.message); }
+
+        // 2) Catálogo base (tarifa 50)
+        let baseNames = [];
+        try {
+            const b = await db.collection('tariffs').doc('GLOBAL_50').get();
+            if (b.exists) {
+                const bi = b.data().items;
+                baseNames = Array.isArray(bi)
+                    ? bi.filter(function(it) { return it && it.mode !== 'flat_monthly'; })
+                        .map(function(it) { return (it.name || it.id || '').toString().trim(); })
+                    : Object.keys(bi || {});
+            }
+        } catch (e) { console.warn('[catálogo] base:', e && e.message); }
+        if (typeof hideLoading === 'function') hideLoading();
+
+        // Fusión dedup (propios primero, con etiqueta)
+        const seen = {};
+        const entries = [];
+        ownNames.forEach(function(n) {
+            const k = _norm(n); if (!k || seen[k]) return; seen[k] = 1;
+            entries.push({ name: n, own: true });
+        });
+        baseNames.forEach(function(n) {
+            const k = _norm(n); if (!k || seen[k]) return; seen[k] = 1;
+            entries.push({ name: n, own: false });
+        });
+        if (!entries.length) { alert('No hay artículos que gestionar (ni tarifa propia ni catálogo base).'); return; }
+        entries.sort(function(a, b) { return (b.own - a.own) || a.name.localeCompare(b.name, 'es'); });
+
+        const exclSet = new Set(((cli.catalogExclusions || [])).map(_norm));
+
+        const old = document.getElementById('modal-client-catalog');
+        if (old) old.remove();
+        const modal = document.createElement('div');
+        modal.id = 'modal-client-catalog';
+        modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
+
+        let rows = '';
+        entries.forEach(function(en, i) {
+            const checked = exclSet.has(_norm(en.name)) ? '' : 'checked';
+            rows += '<label class="cc-row" data-name="' + _e(en.name) + '" style="display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid #2a2a2d; cursor:pointer; font-size:0.82rem; color:#ddd;">'
+                 + '<input type="checkbox" class="cc-check" data-idx="' + i + '" ' + checked + ' style="scale:1.15;">'
+                 + '<span style="flex:1;">' + _e(en.name) + '</span>'
+                 + (en.own ? '<span style="background:rgba(76,175,80,0.15); border:1px solid #4CAF50; color:#4CAF50; font-size:0.62rem; padding:1px 7px; border-radius:8px;">su tarifa</span>' : '')
+                 + '</label>';
+        });
+
+        modal.innerHTML =
+            '<div style="background:#1d1d20; border:1px solid #3c3c40; border-radius:12px; width:min(680px, 96vw); max-height:88vh; display:flex; flex-direction:column; overflow:hidden;">'
+          + '  <div style="padding:14px 18px; border-bottom:1px solid #333; display:flex; align-items:center; gap:10px;">'
+          + '    <span style="font-size:1.1rem;">🗂️</span>'
+          + '    <div style="flex:1;">'
+          + '      <div style="color:#fff; font-weight:700; font-size:0.95rem;">Catálogo de ' + _e(cli.name || realId) + '</div>'
+          + '      <div style="color:#888; font-size:0.72rem;">Desmarca lo que este cliente NO debe poder elegir al crear albaranes. El filtro por origen (salidas desde su zona) se aplica además de esto.</div>'
+          + '    </div>'
+          + '    <button type="button" id="cc-close" style="background:none; border:none; color:#888; font-size:1.5rem; cursor:pointer;">×</button>'
+          + '  </div>'
+          + '  <div style="padding:10px 18px; display:flex; gap:8px; align-items:center; border-bottom:1px solid #2a2a2d;">'
+          + '    <input type="text" id="cc-search" placeholder="Buscar artículo…" style="flex:1; padding:7px 10px; background:#141416; border:1px solid #444; color:#fff; border-radius:6px; font-size:0.82rem;">'
+          + '    <button type="button" id="cc-all" style="background:transparent; border:1px solid #4CAF50; color:#4CAF50; padding:5px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">Marcar visibles</button>'
+          + '    <button type="button" id="cc-none" style="background:transparent; border:1px solid #FF9800; color:#FF9800; padding:5px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">Desmarcar visibles</button>'
+          + '  </div>'
+          + '  <div id="cc-list" style="flex:1; overflow-y:auto; padding:4px 10px;">' + rows + '</div>'
+          + '  <div style="padding:12px 18px; border-top:1px solid #333; display:flex; align-items:center; gap:10px;">'
+          + '    <span id="cc-counter" style="flex:1; color:#888; font-size:0.75rem;"></span>'
+          + '    <button type="button" id="cc-cancel" style="background:transparent; border:1px solid #666; color:#ccc; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:0.8rem;">Cancelar</button>'
+          + '    <button type="button" id="cc-save" style="background:#4CAF50; border:none; color:#fff; padding:8px 20px; border-radius:6px; cursor:pointer; font-weight:700; font-size:0.8rem;">💾 Guardar catálogo</button>'
+          + '  </div>'
+          + '</div>';
+        document.body.appendChild(modal);
+
+        const checks = Array.prototype.slice.call(modal.querySelectorAll('.cc-check'));
+        const rowsEls = Array.prototype.slice.call(modal.querySelectorAll('.cc-row'));
+        function refreshCounter() {
+            const off = checks.filter(function(c) { return !c.checked; }).length;
+            document.getElementById('cc-counter').textContent =
+                (entries.length - off) + ' visibles · ' + off + ' ocultos · ' + entries.length + ' en total';
+        }
+        checks.forEach(function(c) { c.addEventListener('change', refreshCounter); });
+        refreshCounter();
+
+        document.getElementById('cc-search').addEventListener('input', function() {
+            const f = _norm(this.value);
+            rowsEls.forEach(function(r) {
+                r.style.display = (!f || _norm(r.dataset.name).indexOf(f) >= 0) ? 'flex' : 'none';
+            });
+        });
+        const setVisibles = function(state) {
+            rowsEls.forEach(function(r, i) {
+                if (r.style.display !== 'none') checks[i].checked = state;
+            });
+            refreshCounter();
+        };
+        document.getElementById('cc-all').addEventListener('click', function() { setVisibles(true); });
+        document.getElementById('cc-none').addEventListener('click', function() { setVisibles(false); });
+        document.getElementById('cc-close').addEventListener('click', function() { modal.remove(); });
+        document.getElementById('cc-cancel').addEventListener('click', function() { modal.remove(); });
+
+        document.getElementById('cc-save').addEventListener('click', async function() {
+            const btn = this;
+            const exclusions = [];
+            checks.forEach(function(c, i) { if (!c.checked) exclusions.push(entries[i].name); });
+            if (exclusions.length === entries.length) {
+                alert('Has ocultado TODOS los artículos: el cliente no podría crear ningún albarán. Deja al menos uno visible.');
+                return;
+            }
+            btn.disabled = true; btn.textContent = 'Guardando…';
+            try {
+                await db.collection('users').doc(realId).update({
+                    catalogExclusions: exclusions,
+                    catalogExclusionsUpdatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                const patch = { catalogExclusions: exclusions };
+                if (window.userMap) {
+                    if (window.userMap[realId]) Object.assign(window.userMap[realId], patch);
+                    if (window.userMap[clientId]) Object.assign(window.userMap[clientId], patch);
+                }
+                if (_fichaClientData && (_fichaClientData.id === realId || _fichaClientData.id === clientId)) {
+                    _fichaClientData.catalogExclusions = exclusions;
+                }
+                if (typeof window._invalidateAllClientCaches === 'function') window._invalidateAllClientCaches(realId, patch);
+                modal.remove();
+                const msg = exclusions.length
+                    ? 'Catálogo guardado: ' + exclusions.length + ' artículo' + (exclusions.length === 1 ? '' : 's') + ' oculto' + (exclusions.length === 1 ? '' : 's') + ' para ' + (cli.name || 'el cliente')
+                    : 'Catálogo guardado: el cliente ve el catálogo completo';
+                if (typeof showToast === 'function') showToast(msg, 'success'); else alert('✅ ' + msg);
+            } catch (e) {
+                console.error('[catálogo]', e);
+                alert('Error guardando el catálogo: ' + e.message);
+                btn.disabled = false; btn.textContent = '💾 Guardar catálogo';
             }
         });
     };

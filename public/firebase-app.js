@@ -2184,12 +2184,20 @@ async function addPackageRow(data = null) {
     // rutas hacia ese destino se ponen las primeras.
     const destHint = ((document.getElementById('ticket-localidad') || {}).value || '') + ' '
                    + ((document.getElementById('ticket-province') || {}).value || '');
-    const ordered = _npArticlesForClient(
+    let ordered = _npArticlesForClient(
         Array.from(availableSet),
         (typeof userData !== 'undefined' && userData && userData.localidad) || '',
         (typeof userData !== 'undefined' && userData && userData.province) || '',
         destHint
     );
+    // EXCLUSIONES por cliente: artículos que el admin ha quitado de su
+    // catálogo (ficha → 🗂️ Catálogo del cliente). Comparación normalizada
+    // (sin acentos/mayúsculas) para que no se escape ninguno.
+    const _exclList = (typeof userData !== 'undefined' && userData && userData.catalogExclusions) || [];
+    if (_exclList.length) {
+        const _exclSet = new Set(_exclList.map(_npNormGeo));
+        ordered = ordered.filter(n => !_exclSet.has(_npNormGeo(n)));
+    }
     // En edicion: conservar el articulo del albaran aunque el filtro lo excluya
     if (data && data.size && ordered.indexOf(data.size.trim()) < 0) {
         ordered.unshift(data.size.trim());
