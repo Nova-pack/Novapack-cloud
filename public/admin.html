@@ -16353,6 +16353,30 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             //   - V2: tarifa con items mode='flat_monthly' → suma sus basePrice
             //
             // Si los dos coexisten, ganan los items v2 (más expresivos).
+            // ════════════════════════════════════════════════════════
+            //  CARGADOR CANÓNICO DE TARIFAS
+            // ════════════════════════════════════════════════════════
+            // getMonthlyFlatAmount() y calculateTicketPriceSync() son SÍNCRONAS
+            // y leen tariffsCache. Si el cache está vacío (o quedó viejo tras
+            // editar una tarifa) devuelven 0 — que es como se perdía la cuota
+            // plana v2 en el reparto y en la facturación.
+            // Llama a esto (await) ANTES de usarlas. force=true relee de
+            // Firestore (necesario justo después de tocar una tarifa).
+            window.ensureTariffsLoaded = async function(force) {
+                try {
+                    if (!window.tariffsCache) window.tariffsCache = tariffsCache;
+                    if (!force && Object.keys(tariffsCache).length > 0) return tariffsCache;
+                    const snap = await db.collection('tariffs').get();
+                    // Limpiar antes de repoblar para no dejar restos de tarifas borradas
+                    Object.keys(tariffsCache).forEach(function(k) { delete tariffsCache[k]; });
+                    snap.forEach(function(doc) { tariffsCache[doc.id] = doc.data(); });
+                    console.log('[TARIFAS] cache ' + (force ? 'refrescado' : 'cargado') + ':', Object.keys(tariffsCache).length);
+                } catch (e) {
+                    console.warn('[TARIFAS] no pude cargar el cache:', e.message);
+                }
+                return tariffsCache;
+            };
+
             // Suma de las partes de cuota asignadas a las sucursales de un padre.
             // Permite repartir la cuota fija: p.ej. padre 2.800 €/mes de los que
             // 600 € se facturan a una sucursal → padre 2.200 + sucursal 600.
@@ -22311,7 +22335,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260719_reparto"></script>
+<script src="ficha_cliente.js?v=20260719_v2cuota"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260717_fiscal"></script>
@@ -22324,7 +22348,7 @@ window.importTarifas50 = async () => {
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
-<script src="invoice_per_branch.js?v=20260719_cuota"></script>
+<script src="invoice_per_branch.js?v=20260719_v2cuota"></script>
 <script src="entrada_rapida.js?v=20260719_tarifa"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>

@@ -509,6 +509,11 @@
         // Calcular importe de la cuota plana del padre
         // Soporta legacy (flatRateAmount) y v2 (items flat_monthly de la tarifa)
         // vía el helper unificado window.getMonthlyFlatAmount.
+        // Cargar el cache de tarifas antes de leer la cuota: getMonthlyFlatAmount
+        // es síncrona y sin cache la cuota v2 (flat_monthly) daría 0.
+        if (typeof window.ensureTariffsLoaded === 'function') {
+            try { await window.ensureTariffsLoaded(); } catch (e) {}
+        }
         const flatAmount = (typeof window.getMonthlyFlatAmount === 'function')
             ? window.getMonthlyFlatAmount(parent.id)
             : (Number(parent.flatRateAmount) || 0);

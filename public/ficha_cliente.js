@@ -979,6 +979,23 @@
         const _e = function(x) { return (typeof escapeHtml === 'function') ? escapeHtml(x == null ? '' : x) : String(x == null ? '' : x); };
         const _m = function(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €'; };
 
+        // IMPORTANTE: refrescar el cache de tarifas ANTES de calcular. La cuota
+        // v2 (item flat_monthly) se lee de tariffsCache; si estaba vacío o con
+        // la versión anterior de la tarifa, la cuota salía a 0 aunque estuviera
+        // bien configurada.
+        if (typeof window.ensureTariffsLoaded === 'function') {
+            try { await window.ensureTariffsLoaded(true); } catch (e) {}
+        }
+        // Releer el cliente por si su tariffId cambió al editar la tarifa
+        try {
+            const fresh = await db.collection('users').doc(parentId).get();
+            if (fresh.exists) {
+                const fd = fresh.data();
+                if (window.userMap && window.userMap[parentId]) Object.assign(window.userMap[parentId], fd);
+                Object.assign(parent, fd);
+            }
+        } catch (e) {}
+
         // Cuota BRUTA del padre = lo que se le factura ahora (neto) + lo ya repartido
         const netNow = (typeof window.getMonthlyFlatAmount === 'function') ? window.getMonthlyFlatAmount(parentId) : 0;
         const sharedNow = (typeof window.getBranchesFlatShare === 'function') ? window.getBranchesFlatShare(parentId) : 0;

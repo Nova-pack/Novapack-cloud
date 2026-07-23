@@ -250,6 +250,13 @@
                 _mbGrouped[fid].tickets.push({ ...t, docId: doc.id });
             });
 
+            // CRÍTICO: getMonthlyFlatAmount lee tariffsCache de forma síncrona.
+            // Sin el cache cargado, las cuotas v2 (item flat_monthly) salían a 0
+            // y NO se facturaban. Cargarlo antes de calcular nada.
+            if (typeof window.ensureTariffsLoaded === 'function') {
+                try { await window.ensureTariffsLoaded(); } catch (e) { console.warn('[MB] tarifas:', e); }
+            }
+
             // Añadir clientes con cuota plana que NO tienen tickets este mes
             // — se les debe facturar la cuota igualmente. Iteramos userMap
             // buscando los que tengan flat (vía v2 flat_monthly o legacy)
@@ -257,8 +264,10 @@
             if (window.userMap && typeof window.getMonthlyFlatAmount === 'function') {
                 Object.values(window.userMap).forEach(u => {
                     if (!u || !u.id) return;
-                    if (u.parentClientId) return; // sucursales NO cobran cuota plana propia
                     if (_mbGrouped[u.id]) return; // ya está
+                    // Las sucursales solo entran si tienen una PARTE de la cuota
+                    // del padre asignada (reparto). Si no, su cuota es 0 y no
+                    // procede emitirles factura de cuota.
                     const flat = window.getMonthlyFlatAmount(u.id) || 0;
                     if (flat > 0) {
                         _mbGrouped[u.id] = { clientInfo: u, tickets: [], subtotal: 0, iva: 0, irpf: 0, total: 0 };
