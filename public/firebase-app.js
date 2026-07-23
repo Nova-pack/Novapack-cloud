@@ -106,6 +106,9 @@ let editingId = null;
 let editingClientId = null;
 let currentReportData = [];
 let activeTariffArticles = [];
+// Catálogo base de SERVICIOS (tarifa 50): disponible para todos los clientes
+// como carta de servicios — sin precios en la app; la valoración es del admin.
+let baseCatalogArticles = [];
 let cachedProvinces = []; // Global cache to avoid UI race conditions and over-fetching
 
 // NEW: Robust Global Logout
@@ -547,6 +550,24 @@ async function loadPredefinedPhones() {
 async function loadActiveTariff() {
     activeTariffArticles = [];
     if (!currentUser) return;
+
+    // ─── CATÁLOGO BASE DE SERVICIOS (tarifa 50) ───
+    // Se carga SIEMPRE, tenga el cliente tarifa propia o no: es la carta de
+    // servicios común (BULTO MALAGA-VELEZ, PAQUETE SEVILLA-CORDOBA, …).
+    // El filtro por origen del cliente se aplica al pintar el desplegable.
+    try {
+        if (!baseCatalogArticles.length) {
+            const baseDoc = await db.collection('tariffs').doc('GLOBAL_50').get();
+            if (baseDoc.exists) {
+                const bi = baseDoc.data().items;
+                baseCatalogArticles = Array.isArray(bi)
+                    ? bi.filter(it => it && it.mode !== 'flat_monthly')
+                        .map(it => (it.name || it.id || '').toString().trim()).filter(Boolean)
+                    : Object.keys(bi || {});
+                console.log('Catálogo base de servicios (tarifa 50):', baseCatalogArticles.length, 'artículos');
+            }
+        }
+    } catch (e) { console.warn('Catálogo base no disponible:', e.message); }
 
     try {
         let tariffData = null;
@@ -2065,6 +2086,74 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// ─── CATÁLOGO POR RUTAS ──────────────────────────────────────────
+// Los artículos del catálogo siguen el patrón "TIPO ORIGEN-DESTINO"
+// (BULTO MALAGA-VELEZ, PAQUETE SEVILLA-CORDOBA…). El sistema debe ser
+// listo: a un cliente ubicado en Sevilla solo se le enseñan las SALIDAS
+// desde Sevilla — así no puede elegir una ruta equivocada.
+
+function _npNormGeo(s) {
+    return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// "BULTO FUENTE PIEDRA-VELEZ" → { type:'BULTO', origin:'FUENTE PIEDRA', dest:'VELEZ' }
+// Sin ruta (BIDON 20 L., BATERIA 75AH, PLT-1…) → null (artículo genérico).
+function _npParseRouteArticle(name) {
+    const raw = String(name || '');
+    const i = raw.indexOf('-');
+    if (i <= 0) return null;
+    const left = _npNormGeo(raw.slice(0, i));
+    const dest = _npNormGeo(raw.slice(i + 1));
+    const lw = left.split(' ');
+    if (lw.length < 2 || !dest) return null;              // "PLT-1", "X-…"
+    const origin = lw.slice(1).join(' ');
+    if (/^\d/.test(origin) || /^\d/.test(dest)) return null; // "BIDON 200 L", "PALET 150-200 KG"
+    return { type: lw[0], origin: origin, dest: dest };
+}
+
+// Filtra y ordena el catálogo para UN cliente:
+//   1º rutas que salen de su localidad (si su localidad es un origen del
+//      catálogo) o, en su defecto, de su provincia — con las que van al
+//      destino ya tecleado en el albarán ARRIBA del todo
+//   2º artículos genéricos (sin ruta), alfabético
+// Cliente sin localidad ni provincia → catálogo completo (no bloquear).
+function _npArticlesForClient(names, myLocalidad, myProvince, destHint) {
+    const loc = _npNormGeo(myLocalidad);
+    const prov = _npNormGeo(myProvince);
+    const hint = _npNormGeo(destHint);
+
+    const routes = [], generics = [];
+    (names || []).forEach(function (n) {
+        const r = _npParseRouteArticle(n);
+        if (r) routes.push({ n: n, r: r }); else generics.push(n);
+    });
+
+    const matchLoc = function (o) {
+        return !!loc && (o === loc || o.indexOf(loc) === 0 || loc.indexOf(o) === 0);
+    };
+    let mine;
+    if (!loc && !prov) {
+        mine = routes.slice();                                  // sin perfil geográfico: todo
+    } else if (routes.some(function (x) { return matchLoc(x.r.origin); })) {
+        mine = routes.filter(function (x) { return matchLoc(x.r.origin); });
+    } else if (prov) {
+        mine = routes.filter(function (x) { return x.r.origin === prov; });
+    } else {
+        mine = [];
+    }
+
+    const destScore = function (d) {
+        return (hint && d && (hint.indexOf(d) >= 0 || d.indexOf(hint) >= 0)) ? 1 : 0;
+    };
+    mine.sort(function (a, b) {
+        return (destScore(b.r.dest) - destScore(a.r.dest)) || a.n.localeCompare(b.n, 'es');
+    });
+    generics.sort(function (a, b) { return a.localeCompare(b, 'es'); });
+
+    return mine.map(function (x) { return x.n; }).concat(generics);
+}
+
 // --- PACKAGE MANAGEMENT ---
 async function addPackageRow(data = null) {
     const list = document.getElementById('packages-list');
@@ -2072,71 +2161,42 @@ async function addPackageRow(data = null) {
     row.className = 'package-row';
     row.style = "display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end; padding: 6px 8px; background: rgba(255,255,255,0.01); border-radius: 4px; border: 1px solid rgba(255,255,255,0.03);";
 
-    // Generate options: Prioritize active tariff articles if they exist
-    let optionsHtml = '<option value="" disabled selected>-- Seleccionar Artículo --</option>';
+    // Opciones = articulos de SU tarifa + catalogo base de servicios (tarifa
+    // 50), deduplicado. El cliente no ve precios: es una carta de servicios;
+    // la valoracion la hace el admin al facturar (los de cuota plana van a 0
+    // salvo sus sueltos, que estan en su propia tarifa).
+    let optionsHtml = '<option value="" disabled selected>-- Seleccionar Art\u00edculo --</option>';
     let availableSet = new Set();
-    
+
     if (activeTariffArticles.length > 0) {
         activeTariffArticles.forEach(s => availableSet.add(s.trim()));
-    } else {
+    } else if (!baseCatalogArticles.length) {
+        // Sin tarifa NI catalogo (offline sin cache): tamanos por defecto
         const customSizes = await getCustomData('custom_sizes') || [];
         DEFAULT_SIZES.split(',').forEach(s => availableSet.add(s.trim()));
         customSizes.forEach(s => availableSet.add(s.trim()));
     }
-    
-    if (data && data.size && !availableSet.has(data.size.trim())) {
-        availableSet.add(data.size.trim());
+    baseCatalogArticles.forEach(s => availableSet.add(String(s).trim()));
+
+    // FILTRO POR ORIGEN: el sistema es listo — un cliente ubicado en Sevilla
+    // solo ve las salidas DESDE Sevilla (su localidad si es cabecera de ruta;
+    // si no, su provincia). Y si ya ha tecleado el destino del albaran, las
+    // rutas hacia ese destino se ponen las primeras.
+    const destHint = ((document.getElementById('ticket-localidad') || {}).value || '') + ' '
+                   + ((document.getElementById('ticket-province') || {}).value || '');
+    const ordered = _npArticlesForClient(
+        Array.from(availableSet),
+        (typeof userData !== 'undefined' && userData && userData.localidad) || '',
+        (typeof userData !== 'undefined' && userData && userData.province) || '',
+        destHint
+    );
+    // En edicion: conservar el articulo del albaran aunque el filtro lo excluya
+    if (data && data.size && ordered.indexOf(data.size.trim()) < 0) {
+        ordered.unshift(data.size.trim());
     }
 
-    // GEOGRAPHIC FILTER: Ensure user can only select origin packages matching their province
-    const normalize = str => {
-        if (!str) return "";
-        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-    };
-    
-    // Attempt to identify user province (needs window.userData or userData in scope)
-    const userProvStr = (typeof userData !== 'undefined' && userData && userData.province) ? normalize(userData.province) : "";
-
-    const geoFilter = (s) => {
-        if (!userProvStr || userProvStr === "todas" || userProvStr === "") return true; // No profile mapping, allow all
-        if (s === "create_new_size") return true; 
-
-        const t = normalize(s);
-        const provinces = ["alava", "albacete", "alicante", "almeria", "asturias", "avila", "badajoz", "barcelona", "burgos", "caceres", "cadiz", "cantabria", "castellon", "ciudad real", "cordoba", "cuenca", "girona", "gerona", "granada", "guadalajara", "guipuzcoa", "huelva", "huesca", "islas baleares", "baleares", "jaen", "a coruna", "la coruna", "la rioja", "las palmas", "leon", "lleida", "lerida", "lugo", "madrid", "malaga", "murcia", "navarra", "ourense", "orense", "palencia", "pontevedra", "salamanca", "segovia", "sevilla", "soria", "tarragona", "tenerife", "teruel", "toledo", "valencia", "valladolid", "vizcaya", "bizkaia", "zamora", "zaragoza", "ceuta", "melilla"];
-        
-        let found = [];
-        provinces.forEach(p => {
-            let regex = new RegExp(`\\b${p}\\b`, 'g');
-            let match;
-            while ((match = regex.exec(t)) !== null) {
-                found.push({ name: p, index: match.index });
-            }
-        });
-        found.sort((a,b) => a.index - b.index);
-
-        if (found.length > 0) {
-            // Re-map common alternate names to standardize for comparison
-            let originProv = found[0].name;
-            if (originProv === 'gerona') originProv = 'girona';
-            if (originProv === 'lerida') originProv = 'lleida';
-            if (originProv === 'orense') originProv = 'ourense';
-            if (originProv === 'la coruna') originProv = 'a coruna';
-            if (originProv === 'baleares') originProv = 'islas baleares';
-            if (originProv === 'bizkaia') originProv = 'vizcaya';
-
-            // Check if origin matches user's province
-            if (originProv === userProvStr || userProvStr.includes(originProv) || originProv.includes(userProvStr)) {
-                return true; // Match!
-            }
-            return false; // Origin explicit but DOES NOT MATCH user province, hide it.
-        }
-        return true; // Generic item with no province in name (e.g. Nacional, Caja grande)
-    };
-
-    availableSet.forEach(s => {
-        if (geoFilter(s)) {
-            optionsHtml += `<option value="${s}">${s}</option>`;
-        }
+    ordered.forEach(s => {
+        optionsHtml += `<option value="${s}">${s}</option>`;
     });
 
     optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
