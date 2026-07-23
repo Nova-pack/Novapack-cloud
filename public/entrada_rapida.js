@@ -471,7 +471,10 @@
 
     // ── numeración atómica ──
     async function _nextTicketId(idNum, compId, comp) {
-        const prefix = (comp && comp.prefix) || 'NP';
+        // Saneado: sedes antiguas pueden traer un UID como prefijo
+        const prefix = (typeof window.sanitizeTicketPrefix === 'function')
+            ? window.sanitizeTicketPrefix(comp && comp.prefix, idNum)
+            : ((comp && comp.prefix) || 'NP');
         const YY = String(new Date().getFullYear()).slice(-2);
         const yearPrefix = prefix + '-' + YY + '-';
         const counterRef = db.collection('ticket_counters').doc(compId + '_' + idNum + '_' + YY);

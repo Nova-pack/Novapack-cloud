@@ -1611,9 +1611,11 @@ async function resetEditor() {
     document.getElementById('ticket-packages-count').value = '0';
     document.getElementById('ticket-weight-total').value = '0.00';
 
-    // 3. Metadatos y ID
+    // 3. Metadatos y ID — solo VISTA PREVIA (peek). El número definitivo lo
+    // asigna getNextId() en el momento de guardar; así abrir el formulario
+    // no quema números del contador.
     showLoading();
-    const nextId = await getNextId();
+    const nextId = await peekNextId();
     document.getElementById('editor-status').innerHTML = `ALBARÁN NÚMERO: <strong style="color:var(--brand-primary);">${escapeHtml(String(nextId))}</strong>`;
 
     if (!document.getElementById('date-filter').value) {
@@ -1688,10 +1690,64 @@ function _renderSenderWarning() {
     banner.style.display = 'flex';
 }
 
+// Saneado del prefijo de albarán (idéntico en billing_series.js — no divergir).
+// Hay sedes antiguas con un UID de 28 caracteres grabado como prefijo, que
+// producía albaranes tipo "qzs4dFFKxtZ1kwmtgfprElt5Udk1-26-11".
+window.sanitizeTicketPrefix = window.sanitizeTicketPrefix || function (raw, idNum) {
+    var p = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (p && p.length <= 6) return p;
+    var fb = String(idNum || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    return fb || 'NP';
+};
+
+// Devuelve el prefijo saneado de la sede y, si el guardado estaba corrupto,
+// lo REPARA en Firestore al vuelo (autocuración: la próxima carga ya viene bien).
+function _fixCompPrefix(comp) {
+    const stored = (comp && comp.prefix) ? String(comp.prefix) : '';
+    const idn = (userData && userData.idNum) ? String(userData.idNum) : '';
+    const clean = window.sanitizeTicketPrefix(stored, idn);
+    if (comp && stored && stored !== clean) {
+        comp.prefix = clean;
+        try {
+            db.collection('users').doc(effectiveStorageUid || currentUser.uid)
+              .collection('companies').doc(comp.id)
+              .set({ prefix: clean, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true })
+              .then(() => console.log('[prefijo] sede reparada:', stored, '→', clean))
+              .catch(() => {});
+        } catch (e) { /* sin permisos/red: al menos queda saneado en memoria */ }
+    }
+    return clean;
+}
+
+// Vista previa del próximo nº SIN consumirlo. getNextId() incrementa el
+// contador atómico, así que usarlo para "mostrar" quemaba un número real
+// cada vez que se abría el formulario (por eso aparecían saltos tipo -11
+// sin haber creado ningún albarán).
+async function peekNextId() {
+    const comp = companies.find(c => c.id === currentCompanyId);
+    const currentYY = String(new Date().getFullYear()).slice(-2);
+    if (!comp) return "NP-" + currentYY + "-…";
+    const prefix = _fixCompPrefix(comp);
+    const yearPrefix = prefix + "-" + currentYY + "-";
+    const myIdNum = userData && userData.idNum ? userData.idNum.toString() : (currentUser ? currentUser.uid : null);
+    if (!myIdNum) return yearPrefix + "…";
+    try {
+        const snap = await db.collection('ticket_counters')
+            .doc(currentCompanyId + "_" + myIdNum + "_" + currentYY).get();
+        if (snap.exists && typeof snap.data().currentMax === 'number') {
+            return yearPrefix + (snap.data().currentMax + 1);
+        }
+    } catch (e) { /* sin contador aún */ }
+    // Primer albarán del año: estimación con el suelo configurado. La
+    // asignación real (getNextId) hará además el escaneo del histórico.
+    const floor = (parseInt(comp.startNum, 10) > 0) ? parseInt(comp.startNum, 10) - 1 : 1000;
+    return yearPrefix + (floor + 1);
+}
+
 async function getNextId() {
     const comp = companies.find(c => c.id === currentCompanyId);
     if (!comp) return "NP-" + String(new Date().getFullYear()).slice(-2) + "-0";
-    const prefix = comp.prefix || "NP";
+    const prefix = _fixCompPrefix(comp);
     const currentYY = String(new Date().getFullYear()).slice(-2);
     const yearPrefix = prefix + "-" + currentYY + "-";
 

@@ -158,6 +158,17 @@ window.allocInvoiceNumber = async function allocInvoiceNumber(senderData, kind, 
 // FIJARLO desde el admin sincronizando el contador.
 // =============================================================
 
+// Saneado del prefijo de albarán. Hay sedes antiguas con un UID de 28
+// caracteres grabado como prefijo (p.ej. "qzs4dFFK…-26-11" en vez de
+// "553-26-11"). Un prefijo válido tiene 1-6 caracteres A-Z/0-9; si no,
+// se deriva del nº de cliente. (idéntico en firebase-app.js — no divergir)
+window.sanitizeTicketPrefix = window.sanitizeTicketPrefix || function (raw, idNum) {
+    var p = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (p && p.length <= 6) return p;
+    var fb = String(idNum || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    return fb || 'NP';
+};
+
 window.ticketCounterPath = function ticketCounterPath(compId, idNum) {
     var yy = String(new Date().getFullYear()).slice(-2);
     return 'ticket_counters/' + (compId || 'comp_main') + '_' + String(idNum) + '_' + yy;
@@ -166,7 +177,7 @@ window.ticketCounterPath = function ticketCounterPath(compId, idNum) {
 // Mayor secuencial ya emitido este año para ese cliente+sede.
 window.ticketHistoryMax = async function ticketHistoryMax(idNum, compId, prefix) {
     var yy = String(new Date().getFullYear()).slice(-2);
-    var yearPrefix = (prefix || 'NP') + '-' + yy + '-';
+    var yearPrefix = window.sanitizeTicketPrefix(prefix, idNum) + '-' + yy + '-';
     var max = 0;
     try {
         var snap = await db.collection('tickets').where('clientIdNum', '==', String(idNum)).get();
@@ -247,7 +258,7 @@ window.applyTicketStartNumber = async function applyTicketStartNumber(clientDocI
         compId: compId,
         clientIdNum: String(idNum),
         year: String(new Date().getFullYear()).slice(-2),
-        prefix: comp.prefix || 'NP',
+        prefix: window.sanitizeTicketPrefix(comp.prefix, idNum),
         currentMax: n - 1,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
