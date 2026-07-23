@@ -14,6 +14,58 @@
     let _fichaInvoicesCache = [];
     let _fichaTariffsCache = []; // {id, label}
 
+    // ────────────────────────────────────────────────────────────
+    // Botones de la zona "Acceso online" — DELEGACIÓN GLOBAL.
+    // La ficha se renderiza más de una vez (onLoad del tab + llamada
+    // directa) y cada render reescribe el innerHTML de la zona: un
+    // listener puesto sobre los botones muere con el repintado y el
+    // botón queda mudo. Este único listener vive en document (fase de
+    // captura, nadie puede tragarse el clic antes) y funciona por id,
+    // exista el botón desde cuándo exista.
+    // ────────────────────────────────────────────────────────────
+    document.addEventListener('click', async function (ev) {
+        const btn = ev.target && ev.target.closest
+            ? ev.target.closest('#fc-btn-changelogin, #fc-btn-resend, #fc-btn-impersonate')
+            : null;
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const d = _fichaClientData || {};
+        const nombre = btn.id === 'fc-btn-changelogin' ? 'Cambiar login'
+                     : btn.id === 'fc-btn-resend' ? 'Reenviar bienvenida' : 'Entrar como';
+        console.log('[ficha] clic en botón:', nombre, '(cliente ' + (d.id || '?') + ')');
+        try {
+            if (btn.id === 'fc-btn-changelogin') {
+                if (typeof window.openChangeLoginModal !== 'function') {
+                    alert('La ventana de cambio de login no está cargada.\n\nRecarga con Ctrl+F5.');
+                    return;
+                }
+                let target = d.id;
+                if (typeof window.resolveUserDocId === 'function' && d.id) {
+                    const r = await window.resolveUserDocId(d.id, d.idNum);
+                    if (r) target = r;
+                }
+                await window.openChangeLoginModal(target);
+            } else if (btn.id === 'fc-btn-resend') {
+                if (typeof window.composeWelcomeEmail !== 'function') {
+                    alert('El compositor de bienvenida no está cargado. Recarga con Ctrl+F5.');
+                    return;
+                }
+                await window.composeWelcomeEmail((window.userMap && window.userMap[d.id]) || _fichaClientData);
+            } else {
+                if (typeof window.impersonateClient !== 'function') {
+                    alert('La función "Entrar como" no está cargada. Recarga con Ctrl+F5.');
+                    return;
+                }
+                await window.impersonateClient(d.id);
+            }
+        } catch (err) {
+            console.error('[ficha] ' + nombre, err);
+            alert('No se pudo abrir «' + nombre + '»:\n\n' + (err && err.message ? err.message : String(err)));
+        }
+    }, true);
+    console.log('[ficha] botones de acceso: delegación global activa (v20260723_boton)');
+
     // ============================================================
     //  ENTRY POINT
     // ============================================================
@@ -2090,51 +2142,10 @@
                   + '<button type="button" id="fc-btn-resend" style="background:rgba(52,199,89,0.10); border:1px solid #34C759; color:#34C759; padding:4px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">✉️ Reenviar</button>'
                   + '<button type="button" id="fc-btn-impersonate" style="background:rgba(171,71,188,0.10); border:1px solid #AB47BC; color:#AB47BC; padding:4px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">👁️ Entrar como</button>';
 
-                const _bind = function(btnId, nombreFn, run) {
-                    const el = document.getElementById(btnId);
-                    if (!el) { console.warn('[ficha] no existe el botón', btnId); return; }
-                    el.addEventListener('click', async function(ev) {
-                        ev.preventDefault(); ev.stopPropagation();
-                        try {
-                            await run();
-                        } catch (err) {
-                            console.error('[ficha] ' + nombreFn, err);
-                            alert('No se pudo abrir «' + nombreFn + '»:\n\n' +
-                                  (err && err.message ? err.message : String(err)));
-                        }
-                    });
-                };
-
-                _bind('fc-btn-changelogin', 'Cambiar login', async function() {
-                    if (typeof window.openChangeLoginModal !== 'function') {
-                        alert('La ventana de cambio de login no está disponible en esta pantalla.\n\nRecarga con Ctrl+F5.');
-                        return;
-                    }
-                    // Identificador REAL: si el de la ficha fuera un alias
-                    // antiguo, se resuelve antes de abrir.
-                    let target = d.id;
-                    if (typeof window.resolveUserDocId === 'function') {
-                        const r = await window.resolveUserDocId(d.id, d.idNum);
-                        if (r) target = r;
-                    }
-                    await window.openChangeLoginModal(target);
-                });
-
-                _bind('fc-btn-resend', 'Reenviar bienvenida', async function() {
-                    if (typeof window.composeWelcomeEmail !== 'function') {
-                        alert('El compositor de bienvenida no está disponible. Recarga con Ctrl+F5.');
-                        return;
-                    }
-                    await window.composeWelcomeEmail((window.userMap && window.userMap[d.id]) || _fichaClientData);
-                });
-
-                _bind('fc-btn-impersonate', 'Entrar como', async function() {
-                    if (typeof window.impersonateClient !== 'function') {
-                        alert('La función "Entrar como" no está disponible. Recarga con Ctrl+F5.');
-                        return;
-                    }
-                    await window.impersonateClient(d.id);
-                });
+                // Los clics los captura la delegación global _fichaAccessDelegation
+                // (registrada una sola vez al cargar el fichero): sobrevive a
+                // cualquier repintado de esta zona, que era lo que dejaba a los
+                // botones sin listener cuando la ficha se renderizaba dos veces.
 
                 if (lineInfo) {
                     lineInfo.style.display = 'block';

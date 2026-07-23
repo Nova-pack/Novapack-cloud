@@ -1979,8 +1979,31 @@
             // Defensa: un position:fixed dentro de un contenedor oculto o con
             // transform no se ve nunca. Colgándolo del body siempre sale.
             if (modal.parentElement !== document.body) document.body.appendChild(modal);
+            // Por encima de la familia de overlays de la ficha (z-index 100000)
+            modal.style.zIndex = '100200';
             modal.style.display = 'flex';
-            setTimeout(() => { const e = document.getElementById('cl-new-email'); if(e) e.focus(); }, 100);
+            console.log('[cambiar login] modal abierto para', _clDocId);
+            // Autodiagnóstico: si tras abrir el modal OTRO elemento lo está
+            // tapando, dilo con nombre y apellidos en vez de "no pasa nada".
+            setTimeout(() => {
+                try {
+                    const r = modal.getBoundingClientRect();
+                    if (!r.width || !r.height || getComputedStyle(modal).display === 'none') {
+                        alert('El modal de cambio de login se abrió pero NO es visible (display=' +
+                              getComputedStyle(modal).display + '). Haz Ctrl+F5 y reinténtalo.');
+                        return;
+                    }
+                    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+                    if (top && !modal.contains(top)) {
+                        const desc = top.id ? '#' + top.id : (top.className ? String(top.className).slice(0, 60) : top.tagName);
+                        console.warn('[cambiar login] hay un elemento tapando el modal:', desc, top);
+                        alert('El modal se ha abierto pero hay un elemento tapándolo: «' + desc + '».\n\n' +
+                              'Manda este nombre al soporte. Voy a intentar ponerlo delante igualmente.');
+                        modal.style.zIndex = '2147483000';
+                    }
+                } catch (eDiag) { /* el diagnóstico nunca debe romper el modal */ }
+                const e = document.getElementById('cl-new-email'); if (e) e.focus();
+            }, 120);
           } catch (err) {
             // Antes cualquier fallo aquí dejaba el botón "muerto" sin decir nada
             console.error('[cambiar login]', err);
@@ -22507,7 +22530,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260723_prefijo"></script>
+<script src="ficha_cliente.js?v=20260723_boton"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260719_v2cuota"></script>
