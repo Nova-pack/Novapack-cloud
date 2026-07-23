@@ -1001,6 +1001,32 @@
         const sharedNow = (typeof window.getBranchesFlatShare === 'function') ? window.getBranchesFlatShare(parentId) : 0;
         const gross = Math.round((netNow + sharedNow) * 100) / 100;
 
+        // ORIGEN del importe — para ver de un vistazo si viene de la tarifa
+        // asignada o de la cuota antigua de la ficha (fuente de confusión:
+        // una tarifa con cuota creada pero NO asignada al cliente no cuenta).
+        let fuente = '';
+        let fuenteColor = '#888';
+        try {
+            const cache = window.tariffsCache || {};
+            const tid = parent.tariffId ? String(parent.tariffId).trim() : '';
+            const baseT = tid ? (cache['GLOBAL_' + tid] || cache['GLOBAL_' + tid + '_v2'] || cache[tid]) : null;
+            let v2Total = 0;
+            if (baseT && baseT.version === 2 && Array.isArray(baseT.items)) {
+                baseT.items.forEach(function(it) { if (it.mode === 'flat_monthly') v2Total += Number(it.basePrice) || 0; });
+            }
+            if (v2Total > 0) {
+                fuente = 'Según la tarifa «' + _e(baseT.name || tid) + '»';
+                fuenteColor = '#4CAF50';
+            } else if (parent.isFlatRate === true && (Number(parent.flatRateAmount) || 0) > 0) {
+                fuente = '⚠️ Cuota antigua de la ficha' + (tid ? '' : ' — este cliente NO tiene tarifa asignada')
+                       + '. Si has creado la cuota en una tarifa, asígnasela al cliente para que se use esa.';
+                fuenteColor = '#FF9800';
+            } else if (gross <= 0) {
+                fuente = 'Sin cuota configurada';
+                fuenteColor = '#FF9800';
+            }
+        } catch (e) {}
+
         // Sucursales (tolera parentClientId por docId o por idNum del padre)
         let branches = [];
         try {
@@ -1037,6 +1063,7 @@
             + '    <div style="flex:1; background:rgba(255,255,255,0.04); border:1px solid #333; border-radius:8px; padding:12px; text-align:center;">'
             + '      <div style="font-size:0.65rem; color:#888; letter-spacing:1px;">CUOTA TOTAL PACTADA</div>'
             + '      <div style="font-size:1.35rem; font-weight:800; color:#fff; margin-top:3px;">' + _m(gross) + '</div>'
+            + (fuente ? '<div style="font-size:0.66rem; color:' + fuenteColor + '; margin-top:5px; line-height:1.4;">' + fuente + '</div>' : '')
             + '    </div>'
             + '    <div style="flex:1; background:rgba(76,175,80,0.07); border:1px solid rgba(76,175,80,0.35); border-radius:8px; padding:12px; text-align:center;">'
             + '      <div style="font-size:0.65rem; color:#4CAF50; letter-spacing:1px;">SE FACTURA AL PADRE</div>'
