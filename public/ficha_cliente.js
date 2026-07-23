@@ -2966,9 +2966,39 @@
         if (pfxVal !== null) {
             const cleaned = pfxVal.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
             if (cleaned) {
-                compMainUpdate = { prefix: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+                compMainUpdate = { prefix: cleaned };
             }
         }
+
+        // La SEDE OPERATIVA (comp_main) es la que precarga el albarán del
+        // cliente y la que se imprime. Hay que mantenerla sincronizada con la
+        // ficha: si sólo se escribía el prefijo, el set(merge) CREABA una sede
+        // con la dirección vacía y el albarán salía con "Dirección no
+        // definida" (es lo que detecta el semáforo 🚦 de cliente listo).
+        const _postal = {
+            name:      updates.name,
+            nif:       updates.nif,
+            street:    updates.street,
+            number:    updates.number,
+            localidad: updates.localidad,
+            cp:        updates.cp,
+            province:  updates.province,
+            phone:     updates.senderPhone
+        };
+        const _hayPostal = Object.keys(_postal).some(k => _postal[k] !== undefined && _postal[k] !== null);
+        if (_hayPostal) {
+            compMainUpdate = compMainUpdate || {};
+            Object.keys(_postal).forEach(k => { if (_postal[k] !== undefined && _postal[k] !== null) compMainUpdate[k] = _postal[k]; });
+            if (updates.idNum) compMainUpdate.idNum = parseInt(updates.idNum, 10) || null;
+            // address compuesta, mismo formato que el alta de cliente
+            const _p = [];
+            if (_postal.street) _p.push(_postal.street);
+            if (_postal.number) _p.push('Nº ' + _postal.number);
+            if (_postal.localidad) _p.push(_postal.localidad);
+            if (_postal.cp) _p.push('(CP ' + _postal.cp + ')');
+            if (_p.length) compMainUpdate.address = _p.join(', ');
+        }
+        if (compMainUpdate) compMainUpdate.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
         if (snVal !== null) {
             const n = parseInt(snVal, 10);
             const snEl0 = document.getElementById('fc-startnum');
