@@ -1961,11 +1961,30 @@
             const compDoc = await db.collection('users').doc(d.id).collection('companies').doc('comp_main').get();
             const c = compDoc.exists ? compDoc.data() : {};
             const pfx = c.prefix || (d.idNum || 'NP').toString().toUpperCase().slice(0, 3);
-            const sn = c.startNum || 1001;
             const pfxEl = document.getElementById('fc-prefix');
             const snEl = document.getElementById('fc-startnum');
             if (pfxEl) pfxEl.value = pfx;
-            if (snEl) snEl.value = sn;
+
+            // "Próximo nº" muestra el número que se emitirá DE VERDAD (sale
+            // del contador atómico ticket_counters, no de startNum), para que
+            // el admin no vea 1001 mientras el cliente va por el 1240.
+            let sn = c.startNum || 1001;
+            let hint = '';
+            if (typeof window.peekNextTicketNumber === 'function' && d.idNum) {
+                try {
+                    const peek = await window.peekNextTicketNumber(d.idNum, 'comp_main', c);
+                    sn = peek.next;
+                    hint = (peek.source === 'contador') ? 'nº real en curso'
+                         : (peek.source === 'histórico') ? 'según albaranes ya emitidos'
+                         : 'valor configurado';
+                } catch (e) { console.warn('peekNextTicketNumber:', e && e.message); }
+            }
+            if (snEl) {
+                snEl.value = sn;
+                snEl.dataset.original = String(sn);
+                const lbl = snEl.parentElement && snEl.parentElement.querySelector('label');
+                if (lbl && hint) lbl.textContent = 'Próximo nº (' + hint + ')';
+            }
         } catch(e) { console.warn('comp_main load (ficha):', e); }
 
         // Wire preview live
@@ -2865,26 +2884,28 @@
 
         // Prefijo y nº de albarán → van a comp_main (no a /users)
         let compMainUpdate = null;
+        let startNumWanted = null;
         const pfxVal = getVal('fc-prefix');
         const snVal = getVal('fc-startnum');
-        if (pfxVal !== null || snVal !== null) {
-            compMainUpdate = {};
-            if (pfxVal !== null) {
-                const cleaned = pfxVal.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-                if (cleaned) compMainUpdate.prefix = cleaned;
+        if (pfxVal !== null) {
+            const cleaned = pfxVal.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+            if (cleaned) {
+                compMainUpdate = { prefix: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
             }
-            if (snVal !== null) {
-                const n = parseInt(snVal, 10);
-                if (!isNaN(n) && n > 0) compMainUpdate.startNum = n;
-            }
-            if (Object.keys(compMainUpdate).length === 0) compMainUpdate = null;
-            else compMainUpdate.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+        if (snVal !== null) {
+            const n = parseInt(snVal, 10);
+            const snEl0 = document.getElementById('fc-startnum');
+            const original = snEl0 ? parseInt(snEl0.dataset.original, 10) : NaN;
+            // Sólo si el admin lo ha CAMBIADO: fijar el nº toca el contador
+            // atómico, y no queremos reescribirlo en cada guardado rutinario.
+            if (!isNaN(n) && n > 0 && n !== original) startNumWanted = n;
         }
 
         // Remove null entries
         Object.keys(updates).forEach(k => { if (updates[k] === null) delete updates[k]; });
 
-        if (Object.keys(updates).length === 0) {
+        if (Object.keys(updates).length === 0 && !compMainUpdate && startNumWanted === null) {
             alert('No hay cambios que guardar.');
             return;
         }
@@ -2900,6 +2921,33 @@
             }
             if (compMainUpdate) {
                 await db.collection('users').doc(savedId).collection('companies').doc('comp_main').set(compMainUpdate, { merge: true });
+            }
+
+            // Fijar el próximo nº de albarán: además de guardarlo en comp_main
+            // hay que sincronizar el contador atómico, que es quien numera
+            // de verdad. Sin esto el cambio no tenía ningún efecto.
+            if (startNumWanted !== null && typeof window.applyTicketStartNumber === 'function') {
+                const idNumForCounter = (updates.idNum || (_fichaClientData && _fichaClientData.idNum) || '');
+                let res = await window.applyTicketStartNumber(savedId, 'comp_main', idNumForCounter, startNumWanted);
+                if (!res.ok && res.reason === 'backwards') {
+                    const forzar = confirm(
+                        '⚠️ Ese cliente ya tiene albaranes hasta el nº ' + res.usedMax + ' este año.\n\n' +
+                        'Empezar en ' + startNumWanted + ' DUPLICARÍA números de albarán.\n\n' +
+                        'Aceptar = forzarlo igualmente (bajo tu responsabilidad).\n' +
+                        'Cancelar = usar el ' + res.suggested + ', el primero libre.'
+                    );
+                    res = await window.applyTicketStartNumber(
+                        savedId, 'comp_main', idNumForCounter,
+                        forzar ? startNumWanted : res.suggested,
+                        { force: true }
+                    );
+                }
+                const snEl2 = document.getElementById('fc-startnum');
+                if (res.ok && snEl2) { snEl2.value = res.applied; snEl2.dataset.original = String(res.applied); }
+                if (res.ok && typeof showToast === 'function') {
+                    showToast('Próximo albarán fijado en el nº ' + res.applied, 'success');
+                }
+                if (!res.ok) console.warn('applyTicketStartNumber:', res);
             }
 
             // Update local cache (id resuelto + id original por si difieren)

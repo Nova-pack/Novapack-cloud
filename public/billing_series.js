@@ -147,3 +147,110 @@ window.allocInvoiceNumber = async function allocInvoiceNumber(senderData, kind, 
     );
     return { invoiceId: kind + '-' + serieCode + '-' + yy + '-' + n, number: n, serieCode: serieCode };
 };
+
+// =============================================================
+// NUMERACIÓN DE ALBARANES — puente ficha ⇄ contador atómico
+// =============================================================
+// El nº de albarán que se emite NO sale de comp_main.startNum:
+// sale del contador atómico ticket_counters/{compId}_{idNum}_{YY}.
+// Por eso, cambiar "Próximo nº" en la ficha no tenía ningún efecto
+// real. Estos helpers leen el próximo nº de verdad y permiten
+// FIJARLO desde el admin sincronizando el contador.
+// =============================================================
+
+window.ticketCounterPath = function ticketCounterPath(compId, idNum) {
+    var yy = String(new Date().getFullYear()).slice(-2);
+    return 'ticket_counters/' + (compId || 'comp_main') + '_' + String(idNum) + '_' + yy;
+};
+
+// Mayor secuencial ya emitido este año para ese cliente+sede.
+window.ticketHistoryMax = async function ticketHistoryMax(idNum, compId, prefix) {
+    var yy = String(new Date().getFullYear()).slice(-2);
+    var yearPrefix = (prefix || 'NP') + '-' + yy + '-';
+    var max = 0;
+    try {
+        var snap = await db.collection('tickets').where('clientIdNum', '==', String(idNum)).get();
+        snap.forEach(function (d) {
+            var t = d.data();
+            if ((t.compId || 'comp_main') !== (compId || 'comp_main')) return;
+            var bid = t.id || '';
+            if (bid.indexOf(yearPrefix) === 0) {
+                var seq = parseInt(bid.substring(yearPrefix.length), 10);
+                if (!isNaN(seq) && seq > max) max = seq;
+            }
+        });
+    } catch (e) { console.warn('ticketHistoryMax:', e && e.message); }
+    return max;
+};
+
+// Suelo de numeración configurado por el admin: el primer albarán
+// será exactamente startNum (por defecto 1001).
+window.ticketStartFloor = function ticketStartFloor(comp) {
+    var n = parseInt(comp && comp.startNum, 10);
+    return (n > 0) ? n - 1 : 1000;
+};
+
+// Próximo nº que se emitirá DE VERDAD, sin consumirlo.
+window.peekNextTicketNumber = async function peekNextTicketNumber(idNum, compId, comp) {
+    var ref = db.doc(window.ticketCounterPath(compId, idNum));
+    try {
+        var snap = await ref.get();
+        if (snap.exists && typeof snap.data().currentMax === 'number') {
+            return { next: snap.data().currentMax + 1, source: 'contador' };
+        }
+    } catch (e) { console.warn('peekNextTicketNumber:', e && e.message); }
+    var hist = await window.ticketHistoryMax(idNum, compId, comp && comp.prefix);
+    var floor = window.ticketStartFloor(comp);
+    return { next: Math.max(hist, floor) + 1, source: (hist > floor) ? 'histórico' : 'configurado' };
+};
+
+// Fija el próximo nº de albarán: guarda startNum en comp_main Y
+// sincroniza el contador atómico (currentMax = n-1) para que el
+// siguiente albarán salga con ese número exacto.
+// Devuelve {ok:false, reason:'backwards'} si retrocedería por debajo
+// de lo ya emitido (duplicaría nº de albarán) — salvo opts.force.
+window.applyTicketStartNumber = async function applyTicketStartNumber(clientDocId, compId, idNum, startNum, opts) {
+    opts = opts || {};
+    var n = parseInt(startNum, 10);
+    if (!(n > 0)) return { ok: false, reason: 'invalid' };
+    if (!clientDocId || idNum === undefined || idNum === null || idNum === '') {
+        return { ok: false, reason: 'no-client' };
+    }
+    compId = compId || 'comp_main';
+
+    var compRef = db.collection('users').doc(clientDocId).collection('companies').doc(compId);
+    var comp = {};
+    try {
+        var cs = await compRef.get();
+        if (cs.exists) comp = cs.data() || {};
+    } catch (e) { console.warn('applyTicketStartNumber comp:', e && e.message); }
+
+    var hist = await window.ticketHistoryMax(idNum, compId, comp.prefix);
+    var ref = db.doc(window.ticketCounterPath(compId, idNum));
+    var cur = 0;
+    try {
+        var s = await ref.get();
+        if (s.exists) cur = s.data().currentMax || 0;
+    } catch (e) { console.warn('applyTicketStartNumber counter:', e && e.message); }
+    var usedMax = Math.max(hist, cur);
+
+    if (n <= usedMax && !opts.force) {
+        return { ok: false, reason: 'backwards', usedMax: usedMax, suggested: usedMax + 1 };
+    }
+
+    await compRef.set({
+        startNum: n,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await ref.set({
+        compId: compId,
+        clientIdNum: String(idNum),
+        year: String(new Date().getFullYear()).slice(-2),
+        prefix: comp.prefix || 'NP',
+        currentMax: n - 1,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    return { ok: true, applied: n, previousMax: usedMax };
+};

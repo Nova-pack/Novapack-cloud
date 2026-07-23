@@ -475,7 +475,9 @@
         const yearPrefix = prefix + '-' + YY + '-';
         const counterRef = db.collection('ticket_counters').doc(compId + '_' + idNum + '_' + YY);
 
-        let seed = 0;
+        // Suelo configurado por el admin (comp_main.startNum): si el cliente
+        // aún no tiene albaranes este año, el primero sale con ESE número.
+        let seed = (comp && parseInt(comp.startNum, 10) > 0) ? parseInt(comp.startNum, 10) - 1 : 1000;
         const cSnap = await counterRef.get();
         if (!cSnap.exists) {
             try {

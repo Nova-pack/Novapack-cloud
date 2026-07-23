@@ -1321,42 +1321,104 @@ window.showTariffTab = (tab) => {
 // --- IMPORT GLOBAL TARIFF TO CLIENT ---
 window._globalTariffCache = {};
 
+// Lista plana de tarifas globales, para poder refiltrar sin releer Firestore.
+window._globalTariffOptions = [];
+
+// Etiqueta legible: lo primero es el NOMBRE de la tarifa (antes se mostraba
+// sólo el id técnico, así que una tarifa como "Plana + servicios sueltos 2026
+// COVEI" aparecía como "Tarifa #PLANA___SERVICIOS_SUELTOS_2026_v2" y el
+// usuario no la encontraba nunca).
+function _tariffOptionLabel(fullId, data) {
+    const shortId = fullId.replace(/^GLOBAL_/, '');
+    const isV2 = data.version === 2;
+    const items = Array.isArray(data.items) ? data.items : (data.items ? Object.values(data.items) : []);
+    const name = (data.name || '').trim();
+    let label = name ? name : 'Tarifa #' + shortId;
+
+    if (isV2) {
+        let cuota = 0;
+        items.forEach(it => { if (it && it.mode === 'flat_monthly') cuota += Number(it.basePrice) || 0; });
+        label += '  ·  v2 · ' + items.length + ' concepto' + (items.length === 1 ? '' : 's');
+        if (cuota > 0) label += ' · cuota ' + cuota.toFixed(2).replace('.', ',') + ' €/mes';
+    } else {
+        const mode = data.tariffMode || 'size';
+        if (mode === 'weight') {
+            const br = (data.weightTariff && data.weightTariff.brackets) ? data.weightTariff.brackets.length : 0;
+            label += '  ·  v1 PESO · ' + br + ' tramos';
+        } else {
+            label += '  ·  v1 · ' + items.length + ' artículos';
+        }
+    }
+    if (name) label += '   [' + shortId + ']';
+    return label;
+}
+
+// Repinta el <select> aplicando el texto del buscador.
+window.filterImportGlobalSelect = function(filter) {
+    const sel = document.getElementById('import-global-tariff-select');
+    if (!sel) return;
+    const prev = sel.value;
+    const f = String(filter || '').toLowerCase().trim();
+    sel.innerHTML = '<option value="">Seleccionar tarifa global...</option>';
+    const list = (window._globalTariffOptions || []).filter(o => !f || o.search.includes(f));
+    list.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.id;
+        opt.textContent = o.label;
+        sel.appendChild(opt);
+    });
+    if (prev && list.some(o => o.id === prev)) sel.value = prev;
+    else if (f && list.length === 1) sel.value = list[0].id;
+    if (typeof sel.onchange === 'function') sel.onchange();
+};
+
 async function loadImportGlobalSelect() {
     const sel = document.getElementById('import-global-tariff-select');
     if (!sel) return;
-    sel.innerHTML = '<option value="">Seleccionar tarifa global...</option>';
+    sel.innerHTML = '<option value="">Cargando tarifas…</option>';
     window._globalTariffCache = {};
+    window._globalTariffOptions = [];
     try {
         const snap = await db.collection('tariffs').get();
         snap.forEach(doc => {
             if (doc.id.startsWith('GLOBAL_')) {
-                const id = doc.id.replace('GLOBAL_', '');
-                const data = doc.data();
-                const itemCount = data.items ? Object.keys(data.items).length : 0;
+                const data = doc.data() || {};
                 window._globalTariffCache[doc.id] = data;
-                const opt = document.createElement('option');
-                opt.value = doc.id;
-                const mode = data.tariffMode || 'size';
-                opt.textContent = 'Tarifa #' + id + (mode === 'weight' ? ' (PESO — ' + ((data.weightTariff && data.weightTariff.brackets) ? data.weightTariff.brackets.length : 0) + ' tramos)' : ' (' + itemCount + ' artículos)');
-                sel.appendChild(opt);
+                const label = _tariffOptionLabel(doc.id, data);
+                window._globalTariffOptions.push({
+                    id: doc.id,
+                    label: label,
+                    v2: data.version === 2,
+                    search: (label + ' ' + doc.id + ' ' + (data.name || '')).toLowerCase()
+                });
             }
         });
+        // Las v2 (motor nuevo) primero, y dentro de cada grupo por nombre
+        window._globalTariffOptions.sort((a, b) =>
+            (b.v2 - a.v2) || a.label.localeCompare(b.label, 'es', { numeric: true }));
+        const searchEl = document.getElementById('tariff-global-search');
+        window.filterImportGlobalSelect(searchEl ? searchEl.value : '');
         // Preview on change
         sel.onchange = () => {
             const preview = document.getElementById('tariff-preview-count');
             if (!preview) return;
             const cached = window._globalTariffCache[sel.value];
             if (cached) {
-                const mode = cached.tariffMode || 'size';
-                if (mode === 'weight' && cached.weightTariff) {
-                    const bc = cached.weightTariff.brackets ? cached.weightTariff.brackets.length : 0;
-                    preview.textContent = '→ PESO: ' + bc + ' tramos se copiarán';
-                    preview.style.color = '#4CAF50';
-                } else if (cached.items) {
-                    preview.textContent = '→ ' + Object.keys(cached.items).length + ' artículos se copiarán';
+                if (cached.version === 2) {
+                    preview.textContent = '→ se asignará al cliente (motor v2)';
                     preview.style.color = '#4CAF50';
                 } else {
-                    preview.textContent = '';
+                    const mode = cached.tariffMode || 'size';
+                    if (mode === 'weight' && cached.weightTariff) {
+                        const bc = cached.weightTariff.brackets ? cached.weightTariff.brackets.length : 0;
+                        preview.textContent = '→ PESO: ' + bc + ' tramos se copiarán';
+                        preview.style.color = '#4CAF50';
+                    } else if (cached.items) {
+                        preview.textContent = '→ ' + Object.keys(cached.items).length + ' artículos se copiarán';
+                        preview.style.color = '#4CAF50';
+                    } else {
+                        preview.textContent = '';
+                    }
                 }
             } else {
                 preview.textContent = '';
@@ -1372,8 +1434,7 @@ window.importGlobalToClient = async () => {
     if (!globalId) { alert('❌ Selecciona una tarifa global (paso 2)'); return; }
     
     const clientName = window.userMap[clientUid] ? window.userMap[clientUid].name : clientUid;
-    const tariffName = globalId.replace('GLOBAL_', '#');
-    
+
     try {
         // Get global tariff (from cache or fetch)
         let globalData;
@@ -1383,6 +1444,47 @@ window.importGlobalToClient = async () => {
             const globalDoc = await db.collection('tariffs').doc(globalId).get();
             if (!globalDoc.exists) { alert('Tarifa global no encontrada'); return; }
             globalData = globalDoc.data();
+        }
+
+        const tariffName = (globalData.name || '').trim() || globalId.replace('GLOBAL_', '#');
+        // tariffId que guarda la ficha del cliente = docId SIN el prefijo
+        // GLOBAL_ (así lo resuelven getMonthlyFlatAmount y pricingEngine).
+        const shortTariffId = globalId.replace(/^GLOBAL_/, '');
+
+        // ── Paso imprescindible en AMBAS versiones ──────────────────────
+        // Adjudicar = escribir tariffId en la ficha del cliente. Antes esto
+        // NO se hacía (sólo se copiaban artículos v1 a tariffs/{uid}), por
+        // eso el motor v2, la facturación mensual y el reparto de cuota
+        // seguían viendo el cliente "sin tarifa" tras pulsar Adjudicar.
+        await db.collection('users').doc(clientUid).update({ tariffId: shortTariffId });
+        if (window.userMap && window.userMap[clientUid]) window.userMap[clientUid].tariffId = shortTariffId;
+        if (typeof window._invalidateAllClientCaches === 'function') {
+            window._invalidateAllClientCaches(clientUid, { tariffId: shortTariffId });
+        }
+        if (typeof window.ensureTariffsLoaded === 'function') await window.ensureTariffsLoaded(true);
+
+        // ── Tarifas v2: no se copia nada, la tarifa vive en su doc global ──
+        if (globalData.version === 2) {
+            const items2 = Array.isArray(globalData.items) ? globalData.items : [];
+            let cuota = 0;
+            items2.forEach(it => { if (it && it.mode === 'flat_monthly') cuota += Number(it.basePrice) || 0; });
+            const content2 = document.getElementById('tariff-client-content');
+            if (content2) {
+                content2.innerHTML =
+                    '<div style="background:rgba(76,175,80,0.1); border:1px solid #4CAF50; border-radius:8px; padding:20px; text-align:center;">'
+                  + '  <div style="font-size:1.5rem; margin-bottom:10px;">✅ Tarifa adjudicada</div>'
+                  + '  <div style="font-size:0.95rem; color:#d4d4d4; margin-bottom:5px;">'
+                  + '    <b style="color:#FFD700;">' + clientName + '</b> → <b style="color:#4CAF50;">' + tariffName + '</b>'
+                  + '    <span style="background:#4CAF50; color:white; padding:2px 8px; border-radius:10px; font-size:0.7rem; margin-left:8px;">v2</span>'
+                  + '  </div>'
+                  + '  <div style="font-size:0.85rem; color:#aaa;">' + items2.length + ' conceptos'
+                  + (cuota > 0 ? ' · cuota mensual <b style="color:#4CAF50;">' + cuota.toFixed(2).replace('.', ',') + ' €</b>' : '')
+                  + '</div>'
+                  + '</div>';
+            }
+            if (typeof showToast === 'function') showToast('Tarifa «' + tariffName + '» adjudicada a ' + clientName, 'success');
+            console.log('✅ Tarifa v2', tariffName, 'adjudicada a', clientName, '(tariffId=' + shortTariffId + ')');
+            return;
         }
 
         const globalItems = globalData.items || {};
@@ -1432,7 +1534,8 @@ window.importGlobalToClient = async () => {
             `;
         }
 
-        console.log('✅ Tarifa', tariffName, '(' + tariffMode + ') adjudicada a', clientName);
+        if (typeof showToast === 'function') showToast('Tarifa «' + tariffName + '» adjudicada a ' + clientName, 'success');
+        console.log('✅ Tarifa', tariffName, '(' + tariffMode + ') adjudicada a', clientName, '(tariffId=' + shortTariffId + ')');
     } catch(e) {
         alert('❌ Error: ' + e.message);
         console.error(e);

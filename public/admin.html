@@ -36,7 +36,7 @@
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
     <script src="verifactu.js?v=20260717_fiscal"></script>
-    <script src="billing_series.js?v=20260717_fiscal"></script>
+    <script src="billing_series.js?v=20260723_numalb"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="phantom-engine.js?v=1" defer></script>
@@ -5765,15 +5765,21 @@ window.runPublicTicketsBackfill = async function() {
                     <!-- ROW 1: Select Client -->
                     <div style="display:flex; gap:10px; align-items:center; margin-bottom:8px;">
                         <span style="color:#FFD700; font-weight:bold; font-size:0.85rem; min-width:90px;"><span class="material-symbols-outlined">looks_one</span> Cliente:</span>
-                        <input type="text" id="tariff-client-search" placeholder="Filtrar..." style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; width:150px; font-size:0.85rem;">
+                        <input type="text" id="tariff-client-search" placeholder="Nº o nombre…" autocomplete="off"
+                               oninput="window.renderFilteredTariffClients && window.renderFilteredTariffClients(this.value)"
+                               style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; width:190px; font-size:0.85rem;">
                         <select id="tariff-client-select" style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; font-size:0.85rem; min-width:250px;">
                             <option value="">Seleccionar cliente...</option>
                         </select>
+                        <span id="tariff-client-count" style="color:#888; font-size:0.75rem;"></span>
                     </div>
                     <!-- ROW 2: Select Global Tariff + Actions -->
                     <div style="display:flex; gap:10px; align-items:center;">
                         <span style="color:#4CAF50; font-weight:bold; font-size:0.85rem; min-width:90px;"><span class="material-symbols-outlined">looks_two</span> Tarifa:</span>
-                        <select id="import-global-tariff-select" style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; font-size:0.85rem; min-width:180px;">
+                        <input type="text" id="tariff-global-search" placeholder="Buscar tarifa…" autocomplete="off"
+                               oninput="window.filterImportGlobalSelect && window.filterImportGlobalSelect(this.value)"
+                               style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; width:160px; font-size:0.85rem;">
+                        <select id="import-global-tariff-select" style="padding:5px 10px; background:#1e1e1e; border:1px solid #555; color:white; border-radius:4px; font-size:0.85rem; min-width:320px;">
                             <option value="">Seleccionar tarifa global...</option>
                         </select>
                         <span id="tariff-preview-count" style="color:#888; font-size:0.8rem;"></span>
@@ -9462,12 +9468,39 @@ window.runPublicTicketsBackfill = async function() {
                             province: province || '',
                             phone: senderPhone || '',
                             prefix: _formPrefix || _defaultPrefix,
-                            startNum: (!isNaN(_formStartNum) && _formStartNum > 0) ? _formStartNum : 1001,
                             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                         };
+                        // OJO: startNum SÓLO se escribe si el formulario trae un
+                        // número válido. Antes se forzaba 1001 cuando el input
+                        // estaba vacío — y como se rellena con una lectura
+                        // asíncrona de comp_main, cualquier guardado rápido
+                        // machacaba el número del cliente y lo devolvía a 1001.
+                        if (!isNaN(_formStartNum) && _formStartNum > 0) {
+                            mainCompData.startNum = _formStartNum;
+                        }
 
                         // For existing users, we update. For new users, we set/merge.
                         await db.collection('users').doc(targetDocId).collection('companies').doc('comp_main').set(mainCompData, { merge: true });
+
+                        // Si el admin ha fijado un nº de albarán, hay que
+                        // sincronizar el contador atómico (ticket_counters):
+                        // es él quien numera, no comp_main.startNum.
+                        if (!isNaN(_formStartNum) && _formStartNum > 0 && typeof window.applyTicketStartNumber === 'function') {
+                            try {
+                                let r = await window.applyTicketStartNumber(targetDocId, 'comp_main', idNumStr, _formStartNum);
+                                if (!r.ok && r.reason === 'backwards') {
+                                    const forzar = confirm(
+                                        '⚠️ Este cliente ya tiene albaranes hasta el nº ' + r.usedMax + ' este año.\n\n' +
+                                        'Empezar en ' + _formStartNum + ' DUPLICARÍA números de albarán.\n\n' +
+                                        'Aceptar = forzarlo igualmente.\nCancelar = usar el ' + r.suggested + '.'
+                                    );
+                                    r = await window.applyTicketStartNumber(
+                                        targetDocId, 'comp_main', idNumStr,
+                                        forzar ? _formStartNum : r.suggested, { force: true });
+                                }
+                                if (!r.ok) console.warn('applyTicketStartNumber:', r);
+                            } catch (e) { console.warn('No pude fijar el nº de albarán:', e); }
+                        }
 
                         // 3b. Actualizar flag de "cuenta activa" en la ficha maestra
                         try {
@@ -12687,7 +12720,8 @@ window.runPublicTicketsBackfill = async function() {
                 try {
                     if (Object.keys(userMap).length === 0) await loadUsers();
                     allClientsForTariff = Object.keys(userMap).map(uid => ({ uid, ...userMap[uid] }));
-                    renderFilteredTariffClients('');
+                    const searchEl = document.getElementById('tariff-client-search');
+                    window.renderFilteredTariffClients(searchEl ? searchEl.value : '');
                     populateGlobalTariffsDatalist();
                 } catch (e) { console.error(e); }
             }
@@ -12875,17 +12909,40 @@ window.runPublicTicketsBackfill = async function() {
                 } catch (err) { console.error(err); }
             }
 
-            function renderFilteredTariffClients(filter) {
+            // Filtra el desplegable de clientes por Nº o por nombre.
+            // OJO: idNum puede venir como NÚMERO desde Firestore, así que hay
+            // que pasarlo por String() antes de .toLowerCase() — si no, el
+            // filtro entero revienta con TypeError y el buscador "no hace nada".
+            window.renderFilteredTariffClients = function(filter) {
                 const select = document.getElementById('tariff-client-select');
+                if (!select) return;
+                const prev = select.value;                       // conserva la selección
                 select.innerHTML = '<option value="">-- Seleccionar un Cliente --</option>';
-                const f = filter.toLowerCase();
-                allClientsForTariff.filter(c => (c.name || '').toLowerCase().includes(f) || (c.idNum || '').toLowerCase().includes(f)).forEach(c => {
+                const f = String(filter || '').toLowerCase().trim();
+                const list = (allClientsForTariff || []).filter(c => {
+                    if (c.isGlobal) return false;                // los globales no son clientes
+                    if (!f) return true;
+                    const name = String(c.name || '').toLowerCase();
+                    const num  = String(c.idNum || '').toLowerCase();
+                    const mail = String(c.email || '').toLowerCase();
+                    const nif  = String(c.nif || '').toLowerCase();
+                    return name.includes(f) || num.includes(f) || mail.includes(f) || nif.includes(f);
+                });
+                // Orden natural por nº de cliente
+                list.sort((a, b) => String(a.idNum || '').localeCompare(String(b.idNum || ''), undefined, { numeric: true }));
+                list.forEach(c => {
                     const opt = document.createElement('option');
                     opt.value = c.uid;
-                    opt.textContent = `[#${c.idNum || '---'}] ${c.name || c.email} `;
+                    opt.textContent = `[#${c.idNum || '---'}] ${c.name || c.email || c.uid}`
+                                    + (c.parentClientId ? ' · sucursal' : '');
                     select.appendChild(opt);
                 });
-            }
+                if (prev && list.some(c => c.uid === prev)) select.value = prev;
+                const cnt = document.getElementById('tariff-client-count');
+                if (cnt) cnt.textContent = list.length + (list.length === 1 ? ' cliente' : ' clientes');
+                // Si el filtro deja exactamente uno, se autoselecciona
+                if (f && list.length === 1) select.value = list[0].uid;
+            };
 
             document.getElementById('btn-load-tariff').onclick = () => {
                 const uid = document.getElementById('tariff-client-select').value;
@@ -15711,7 +15768,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 const name = document.getElementById('comp-name').value.trim();
                 const prefix = document.getElementById('comp-prefix').value.trim().toUpperCase();
                 const iban = document.getElementById('comp-iban').value.trim().toUpperCase();
-                const startNum = parseInt(document.getElementById('comp-start-num').value) || 1001;
+                const startNum = parseInt(document.getElementById('comp-start-num').value, 10);
                 const street = document.getElementById('comp-street').value.trim();
                 const num = document.getElementById('comp-number').value.trim();
                 const city = document.getElementById('comp-city').value.trim();
@@ -15730,15 +15787,35 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 const fullAddress = addressParts.join(', ');
 
                 const data = {
-                    name, prefix, startNum, street, number: num, localidad: city, cp, province, phone,
+                    name, prefix, street, number: num, localidad: city, cp, province, phone,
                     address: fullAddress, iban,
                     subTariffId: subTariffId || null,
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
+                // startNum sólo si viene un número válido (antes se forzaba
+                // 1001 con el campo vacío y se perdía la numeración de la sede)
+                if (!isNaN(startNum) && startNum > 0) data.startNum = startNum;
 
                 showLoading();
                 try {
                     await db.collection('users').doc(currentAdminTargetUid).collection('companies').doc(compId).set(data, { merge: true });
+                    // Sincronizar el contador atómico de esa sede
+                    if (!isNaN(startNum) && startNum > 0 && typeof window.applyTicketStartNumber === 'function') {
+                        const _cIdNum = (window.userMap && window.userMap[currentAdminTargetUid] && window.userMap[currentAdminTargetUid].idNum) || '';
+                        if (_cIdNum) {
+                            let r = await window.applyTicketStartNumber(currentAdminTargetUid, compId, _cIdNum, startNum);
+                            if (!r.ok && r.reason === 'backwards') {
+                                const forzar = confirm(
+                                    '⚠️ Esta sede ya tiene albaranes hasta el nº ' + r.usedMax + ' este año.\n\n' +
+                                    'Empezar en ' + startNum + ' DUPLICARÍA números.\n\n' +
+                                    'Aceptar = forzarlo. Cancelar = usar el ' + r.suggested + '.'
+                                );
+                                r = await window.applyTicketStartNumber(currentAdminTargetUid, compId, _cIdNum,
+                                    forzar ? startNum : r.suggested, { force: true });
+                            }
+                            if (!r.ok) console.warn('applyTicketStartNumber (sede):', r);
+                        }
+                    }
                     showToast('Sede guardada correctamente', 'success');
                     document.getElementById('company-form-area').style.display = 'none';
                     loadCompaniesTable(currentAdminTargetUid);
@@ -18918,7 +18995,7 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             </div>
         </div>
 
-        <script src="billing_adv_v4.js?v=20260717_fiscal"></script>
+        <script src="billing_adv_v4.js?v=20260723_numalb"></script>
     
     <!-- MODAL REASIGNAR REPARTIDOR -->
     <div id="modal-ticket-reassign" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:102070; justify-content:center; align-items:center; padding:20px; overflow-y:auto;">
@@ -22335,7 +22412,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260719_fuente"></script>
+<script src="ficha_cliente.js?v=20260723_numalb"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260719_v2cuota"></script>
@@ -22349,7 +22426,7 @@ window.importTarifas50 = async () => {
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
 <script src="invoice_per_branch.js?v=20260719_v2cuota"></script>
-<script src="entrada_rapida.js?v=20260719_tarifa"></script>
+<script src="entrada_rapida.js?v=20260723_numalb"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>
 <script src="contacts_migration.js?v=20260516_v1"></script>

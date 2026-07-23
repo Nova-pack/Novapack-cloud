@@ -1749,7 +1749,10 @@ async function getNextId() {
                     .get();
                 maxNum = extractMaxNum(serverSnap2, maxNum);
 
-                const newMax = maxNum + 1;
+                // Suelo configurado por el admin (comp_main.startNum): el
+                // primer albarán del año debe salir con ESE número, no con 0.
+                const startFloor = (parseInt(comp.startNum, 10) > 0) ? parseInt(comp.startNum, 10) - 1 : 1000;
+                const newMax = Math.max(maxNum, startFloor) + 1;
                 transaction.set(counterRef, {
                     compId: cid,
                     clientIdNum: myIdNum,
@@ -1910,11 +1913,12 @@ async function handleCompanyFormSubmit(e) {
         phone: document.getElementById('comp-phone').value.trim(),
         province: selectedProvince,
         prefix: (document.getElementById('comp-prefix').value.trim() || 'NP').toUpperCase(),
-        startNum: parseInt(document.getElementById('comp-start-num').value) || 1,
-        
-        
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    // startNum sólo si el campo trae un número válido: con `|| 1` un campo
+    // vacío machacaba la numeración configurada de la sede.
+    const _sn = parseInt(document.getElementById('comp-start-num').value, 10);
+    if (!isNaN(_sn) && _sn > 0) data.startNum = _sn;
 
     showLoading();
     try {
