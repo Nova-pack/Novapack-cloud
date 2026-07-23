@@ -1372,18 +1372,31 @@
         modal.id = 'modal-client-catalog';
         modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:100000; display:flex; align-items:center; justify-content:center; padding:20px;';
 
+        // Filas compactas. OJO: estilos explícitos en cada propiedad clave
+        // (text-align, margin, line-height…) porque el CSS global del admin
+        // pisa labels/spans y dejaba el modal ilegible.
         let rows = '';
+        let lastOwn = null;
         entries.forEach(function(en, i) {
+            if (en.own !== lastOwn) {
+                lastOwn = en.own;
+                rows += '<div style="grid-column:1/-1; color:' + (en.own ? '#4CAF50' : '#5DADE2') + '; font-size:0.68rem; font-weight:700; letter-spacing:1px; padding:8px 4px 3px; border-bottom:1px solid #2a2a2d; margin-bottom:2px; text-align:left;">'
+                     + (en.own ? '🧾 ARTÍCULOS DE SU TARIFA' : '📦 CATÁLOGO BASE (tarifa 50)')
+                     + '</div>';
+            }
             const checked = exclSet.has(_norm(en.name)) ? '' : 'checked';
-            rows += '<label class="cc-row" data-name="' + _e(en.name) + '" style="display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid #2a2a2d; cursor:pointer; font-size:0.82rem; color:#ddd;">'
-                 + '<input type="checkbox" class="cc-check" data-idx="' + i + '" ' + checked + ' style="scale:1.15;">'
-                 + '<span style="flex:1;">' + _e(en.name) + '</span>'
-                 + (en.own ? '<span style="background:rgba(76,175,80,0.15); border:1px solid #4CAF50; color:#4CAF50; font-size:0.62rem; padding:1px 7px; border-radius:8px;">su tarifa</span>' : '')
+            rows += '<label class="cc-row" data-name="' + _e(en.name) + '" title="' + _e(en.name) + '" style="display:flex; align-items:center; gap:7px; padding:3px 6px; border-radius:4px; cursor:pointer; font-size:0.78rem; color:#ddd; text-align:left; margin:0; line-height:1.3; overflow:hidden; text-transform:none;">'
+                 + '<input type="checkbox" class="cc-check" data-idx="' + i + '" ' + checked + ' style="margin:0; flex:0 0 auto; width:15px; height:15px; accent-color:#4CAF50;">'
+                 + '<span style="flex:1; min-width:0; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">' + _e(en.name) + '</span>'
                  + '</label>';
         });
 
         modal.innerHTML =
-            '<div style="background:#1d1d20; border:1px solid #3c3c40; border-radius:12px; width:min(680px, 96vw); max-height:88vh; display:flex; flex-direction:column; overflow:hidden;">'
+            '<style>'
+          + '  #modal-client-catalog .cc-row:hover { background:#26262a; }'
+          + '  #modal-client-catalog #cc-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(290px, 1fr)); gap:1px 16px; align-content:start; }'
+          + '</style>'
+          + '<div style="background:#1d1d20; border:1px solid #3c3c40; border-radius:12px; width:min(940px, 96vw); max-height:88vh; display:flex; flex-direction:column; overflow:hidden; text-align:left;">'
           + '  <div style="padding:14px 18px; border-bottom:1px solid #333; display:flex; align-items:center; gap:10px;">'
           + '    <span style="font-size:1.1rem;">🗂️</span>'
           + '    <div style="flex:1;">'
@@ -1397,7 +1410,7 @@
           + '    <button type="button" id="cc-all" style="background:transparent; border:1px solid #4CAF50; color:#4CAF50; padding:5px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">Marcar visibles</button>'
           + '    <button type="button" id="cc-none" style="background:transparent; border:1px solid #FF9800; color:#FF9800; padding:5px 10px; border-radius:5px; font-size:0.72rem; cursor:pointer;">Desmarcar visibles</button>'
           + '  </div>'
-          + '  <div id="cc-list" style="flex:1; overflow-y:auto; padding:4px 10px;">' + rows + '</div>'
+          + '  <div id="cc-list" style="flex:1; overflow-y:auto; padding:6px 14px 10px;">' + rows + '</div>'
           + '  <div style="padding:12px 18px; border-top:1px solid #333; display:flex; align-items:center; gap:10px;">'
           + '    <span id="cc-counter" style="flex:1; color:#888; font-size:0.75rem;"></span>'
           + '    <button type="button" id="cc-cancel" style="background:transparent; border:1px solid #666; color:#ccc; padding:8px 16px; border-radius:6px; cursor:pointer; font-size:0.8rem;">Cancelar</button>'

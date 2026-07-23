@@ -6,6 +6,12 @@
       "runtimeExecutable": "firebase",
       "runtimeArgs": ["serve", "--only", "hosting", "--project", "novapack-68f05", "--port", "5000"],
       "port": 5000
+    },
+    {
+      "name": "static-test",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8123", "--directory", "."],
+      "port": 8123
     }
   ]
 }
