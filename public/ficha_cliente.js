@@ -2042,6 +2042,24 @@
                 + '  estos campos desaparecen y la cuota la maneja la tarifa.'
                 + '</div>';
         }
+
+        // ── SUCURSAL: parte de la cuota mensual del PADRE que se factura aquí ──
+        // Caso real: el padre tiene 2.800 €/mes de los que 600 € se facturan a
+        // una sucursal. Se pone 600 aquí: se RESTA de la factura del padre y se
+        // cobra en la de esta sucursal. La suma sigue siendo la cuota pactada.
+        if (d.parentClientId) {
+            var _share = Number(d.flatMonthlyShare) || 0;
+            wrap.innerHTML += ''
+                + '<div style="margin-top:10px; background:rgba(93,173,226,0.06); border:1px solid rgba(93,173,226,0.35); border-radius:8px; padding:12px 14px;">'
+                + '  <label style="display:block; color:#5DADE2; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-bottom:5px;">🔀 Parte de la cuota del padre que se factura A ESTA SUCURSAL (€/mes)</label>'
+                + '  <input type="number" step="0.01" min="0" id="fc-flat-share" value="' + (_share || '') + '" placeholder="0" style="width:190px; padding:7px 9px; background:#2d2d30; border:1px solid #5DADE2; color:#fff; border-radius:5px; font-size:1rem; font-weight:700;">'
+                + '  <div style="font-size:0.72rem; color:#aaa; margin-top:7px; line-height:1.55;">'
+                + '    Si la cuota fija mensual del cliente padre se <b>reparte</b> entre sedes, indica aquí cuánto se factura a esta sucursal.'
+                + '    Ese importe se <b>resta</b> de la factura del padre y aparece en la factura de esta sucursal — la suma total sigue siendo la cuota pactada.'
+                + '    Déjalo en 0 si toda la cuota se factura al padre.'
+                + '  </div>'
+                + '</div>';
+        }
     }
 
     // ============================================================
@@ -2642,6 +2660,8 @@
         if (getVal('fc-sepa-date') !== null) updates.sepaDate = getVal('fc-sepa-date');
         if (getVal('fc-flatrate') !== null) updates.isFlatRate = getVal('fc-flatrate') === 'Sí';
         if (getVal('fc-flatrate-amt') !== null) updates.flatRateAmount = parseFloat(getVal('fc-flatrate-amt')) || 0;
+        // Sucursal: parte de la cuota del padre que se le factura a ella
+        if (getVal('fc-flat-share') !== null) updates.flatMonthlyShare = parseFloat(getVal('fc-flat-share')) || 0;
 
         // Acceso online (fc-access-active)
         const accCb = document.getElementById('fc-access-active');

@@ -16353,14 +16353,36 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
             //   - V2: tarifa con items mode='flat_monthly' → suma sus basePrice
             //
             // Si los dos coexisten, ganan los items v2 (más expresivos).
+            // Suma de las partes de cuota asignadas a las sucursales de un padre.
+            // Permite repartir la cuota fija: p.ej. padre 2.800 €/mes de los que
+            // 600 € se facturan a una sucursal → padre 2.200 + sucursal 600.
+            window.getBranchesFlatShare = function(parentUid) {
+                const map = window.userMap || {};
+                const parent = map[parentUid] || {};
+                const parentIdNum = String(parent.idNum || '');
+                let total = 0;
+                Object.keys(map).forEach(function(k) {
+                    const u = map[k] || {};
+                    const p = u.parentClientId;
+                    if (!p) return;
+                    // parentClientId puede guardar el docId o el idNum del padre
+                    if (p !== parentUid && (!parentIdNum || String(p) !== parentIdNum)) return;
+                    total += Number(u.flatMonthlyShare) || 0;
+                });
+                return Math.round(total * 100) / 100;
+            };
+
             window.getMonthlyFlatAmount = function(uid) {
                 const uData = (window.userMap && window.userMap[uid]) || {};
 
-                // CRITICO: las SUCURSALES no tienen cuota plana propia — la
-                // cuota es del CLIENTE PADRE, no se duplica por sucursal.
-                // Aunque la sucursal herede tariffId con flat_monthly, ignoramos
-                // ese item al calcular su cuota mensual.
-                if (uData.parentClientId) return 0;
+                // SUCURSAL: por defecto NO tiene cuota propia (la cuota es del
+                // padre y no debe duplicarse). Excepción: si se le ha asignado
+                // expresamente una PARTE de la cuota del padre
+                // (flatMonthlyShare), esa parte se le factura a ella y se resta
+                // de la del padre.
+                if (uData.parentClientId) {
+                    return Math.round((Number(uData.flatMonthlyShare) || 0) * 100) / 100;
+                }
 
                 // Intento V2 primero: ¿la tarifa asignada tiene items flat_monthly?
                 if (uData.tariffId && typeof window.pricingEngine !== 'undefined' && typeof tariffsCache !== 'undefined') {
@@ -16378,7 +16400,12 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                             (resolved.items || []).forEach(it => {
                                 if (it.mode === 'flat_monthly') total += Number(it.basePrice) || 0;
                             });
-                            if (total > 0) return Math.round(total * 100) / 100;
+                            // PADRE: se le factura su cuota MENOS lo asignado a
+                            // sus sucursales (reparto de cuota fija).
+                            if (total > 0) {
+                                const neto = total - window.getBranchesFlatShare(uid);
+                                return Math.max(0, Math.round(neto * 100) / 100);
+                            }
                         } catch(e) {
                             console.warn('[FlatMonthly v2] error, fallback legacy:', e.message);
                         }
@@ -16387,7 +16414,8 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
 
                 // Fallback legacy: isFlatRate=true + flatRateAmount
                 if (uData.isFlatRate === true) {
-                    return Number(uData.flatRateAmount) || 0;
+                    const netoLegacy = (Number(uData.flatRateAmount) || 0) - window.getBranchesFlatShare(uid);
+                    return Math.max(0, Math.round(netoLegacy * 100) / 100);
                 }
 
                 return 0;
@@ -22283,7 +22311,7 @@ window.importTarifas50 = async () => {
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
 <script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260719_sucursal"></script>
+<script src="ficha_cliente.js?v=20260719_cuota"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260717_fiscal"></script>
@@ -22296,7 +22324,7 @@ window.importTarifas50 = async () => {
 <script src="auto_assign.js?v=20260504"></script>
 <script src="heatmap.js?v=20260504"></script>
 <script src="invoice_flatrate_multibranch.js?v=20260715_vf"></script>
-<script src="invoice_per_branch.js?v=20260717_fiscal"></script>
+<script src="invoice_per_branch.js?v=20260719_cuota"></script>
 <script src="entrada_rapida.js?v=20260719_tarifa"></script>
 <script src="pricing_engine.js?v=20260514_provinces"></script>
 <script src="tariff_editor.js?v=20260514_sync"></script>

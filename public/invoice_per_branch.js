@@ -515,6 +515,19 @@
         if (flatAmount <= 0) {
             if (!confirm('⚠️ El cliente padre NO tiene cuota plana configurada (ni en flatRateAmount legacy ni en items flat_monthly v2).\n\nEdita su ficha o su tarifa antes de emitir.\n\n¿Continuar con preview a 0 € de todos modos?')) return;
         }
+        // Si hay cuota repartida a sucursales, la CONSOLIDADA (una sola factura
+        // al padre) dejaría esa parte sin facturar a nadie. Avisar.
+        const _sharesF1 = (typeof window.getBranchesFlatShare === 'function')
+            ? window.getBranchesFlatShare(parent.id) : 0;
+        if (_sharesF1 > 0) {
+            if (!confirm('⚠️ REPARTO DE CUOTA DETECTADO\n\n'
+                + 'Este cliente tiene ' + _sharesF1.toFixed(2) + ' €/mes de su cuota asignados a sucursales '
+                + '(se facturan en la factura DE CADA SUCURSAL).\n\n'
+                + 'La factura CONSOLIDADA (Formato 1) emite un único documento al padre por '
+                + flatAmount.toFixed(2) + ' € y NO incluye esa parte — quedaría sin facturar.\n\n'
+                + 'Para repartir correctamente usa la facturación MENSUAL (cada sede su factura).\n\n'
+                + '¿Continuar igualmente con la consolidada?')) return;
+        }
         const fiscalSender = (typeof window.invCompanyData === 'object' && window.invCompanyData) ? window.invCompanyData : {};
         // GUARD: sin CIF de emisora no se emite (Verifactu)
         if (!window.requireEmitterCif(fiscalSender, 'factura consolidada F1')) return;
