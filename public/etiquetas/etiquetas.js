@@ -233,7 +233,7 @@ function updatePreview() {
             var qr = qrcode(0, 'M');
             var qrData = JSON.stringify({
                 r: d.receiver, a: d.address, cp: d.cp, p: d.province,
-                pk: d.packages, w: d.weight
+                pk: d.packages, w: d.weight, nif: d.receiverNif || ''
             });
             qr.addData(qrData.substring(0, 200));
             qr.make();

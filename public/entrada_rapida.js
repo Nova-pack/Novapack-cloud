@@ -471,6 +471,12 @@
 
     // ── numeración atómica ──
     async function _nextTicketId(idNum, compId, comp) {
+        // Motor compartido (billing_series.js): misma transacción atómica
+        // que usan el alta manual del admin y la app cliente.
+        if (typeof window.allocTicketId === 'function') {
+            return await window.allocTicketId(idNum, compId, comp || {});
+        }
+        // Fallback local (por si billing_series no cargó)
         // Saneado: sedes antiguas pueden traer un UID como prefijo
         const prefix = (typeof window.sanitizeTicketPrefix === 'function')
             ? window.sanitizeTicketPrefix(comp && comp.prefix, idNum)

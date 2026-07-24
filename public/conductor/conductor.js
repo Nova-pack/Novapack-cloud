@@ -347,7 +347,7 @@ function generateTicketHTML(t, footerLabel) {
                         <div style="font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${escapeHtml(t.id)}</div>
                     </div>
                     <div style="background: white; padding: 2px; border: 1px solid #eee;">
-                        <img src="${_conductorQrUrl(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}`)}"
+                        <img src="${_conductorQrUrl(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}`)}"
                              alt="QR" style="display: block; width: 110px; height: 110px; image-rendering: pixelated;">
                     </div>
                 </div>

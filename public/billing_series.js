@@ -215,6 +215,179 @@ window.peekNextTicketNumber = async function peekNextTicketNumber(idNum, compId,
     return { next: Math.max(hist, floor) + 1, source: (hist > floor) ? 'histórico' : 'configurado' };
 };
 
+// Asigna el SIGUIENTE nº de albarán de forma ATÓMICA (transacción sobre
+// ticket_counters), respetando el suelo configurado (startNum) y saneando
+// el prefijo. Es el MISMO motor que usan la app cliente y Entrada Rápida —
+// lo usa también el alta manual/escáner del admin para que no exista un
+// cuarto motor sin transacción que duplique números.
+// Devuelve el id de negocio completo: "PREFIJO-YY-N".
+window.allocTicketId = async function allocTicketId(idNum, compId, comp) {
+    comp = comp || {};
+    compId = compId || 'comp_main';
+    var idn = String(idNum);
+    var prefix = window.sanitizeTicketPrefix(comp.prefix, idn);
+    var yy = String(new Date().getFullYear()).slice(-2);
+    var yearPrefix = prefix + '-' + yy + '-';
+    var counterRef = db.doc(window.ticketCounterPath(compId, idn));
+
+    // Suelo configurado: el primer albarán del año sale con startNum (1001 por defecto)
+    var floor = window.ticketStartFloor(comp);
+
+    // Si el contador aún no existe, sembrar desde el histórico (probando
+    // variantes del nº de cliente: "60", "060", 60…)
+    var seed = floor;
+    try {
+        var cSnap = await counterRef.get();
+        if (!cSnap.exists) {
+            var variants = [idn];
+            var n = parseInt(idn, 10);
+            if (!isNaN(n)) variants.push(String(n), String(n).padStart(3, '0'));
+            variants = Array.from(new Set(variants)).slice(0, 10);
+            var snap = await db.collection('tickets').where('clientIdNum', 'in', variants).get();
+            snap.forEach(function (d) {
+                var t = d.data();
+                if ((t.compId || 'comp_main') !== compId) return;
+                var bid = t.id || '';
+                if (bid.indexOf(yearPrefix) === 0) {
+                    var seq = parseInt(bid.substring(yearPrefix.length), 10);
+                    if (!isNaN(seq) && seq > seed) seed = seq;
+                }
+            });
+        }
+    } catch (e) { console.warn('allocTicketId seed:', e && e.message); }
+
+    var next = await db.runTransaction(async function (tx) {
+        var dSnap = await tx.get(counterRef);
+        var cur = (dSnap.exists && typeof dSnap.data().currentMax === 'number')
+            ? Math.max(dSnap.data().currentMax, floor)
+            : seed;
+        var nx = cur + 1;
+        tx.set(counterRef, {
+            compId: compId,
+            clientIdNum: idn,
+            year: yy,
+            prefix: prefix,
+            currentMax: nx,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        return nx;
+    });
+    return yearPrefix + next;
+};
+
+// =============================================================
+// PARSER ÚNICO DE QR DE ALBARÁN
+// =============================================================
+// Entiende TODOS los formatos que circulan por el sistema:
+//   1. URL de seguimiento (https://…/track…?id=XXX) → { id }
+//   2. Pipe Novapack:  ID:x|DEST:x|ADDR:x|PROV:x|TEL:x|COD:x|BULTOS:x|
+//                      PESO:x|OBS:x|CLI:x|NIF:x|TIPO:D
+//   3. JSON del QR antiguo ({"id":…,"r":…})
+//   4. JSON "sucio" (lectores que pierden comillas) por regex
+// Devuelve null si no reconoce nada, o un objeto con:
+//   { id, r (destinatario), a (dirección), v (provincia), t (tel),
+//     c (reembolso), k (bultos), w (peso), n (obs), s (Pagados|Debidos),
+//     receiverNif, senderIdNum, billingEntityId }
+window.parseTicketQR = function parseTicketQR(raw) {
+    var text = String(raw == null ? '' : raw).replace(/[\r\n]+/g, ' ').trim();
+    if (!text) return null;
+
+    // 1) URL de tracking escaneada por error → al menos rescatar el ID
+    if (/^https?:\/\//i.test(text)) {
+        var mUrl = text.match(/[?&]id=([^&\s]+)/i) || text.match(/\/t(?:rack)?\/([^/?\s]+)/i);
+        if (mUrl) return { id: decodeURIComponent(mUrl[1]) };
+        return null;
+    }
+
+    // 2) Formato pipe (el QR impreso actual)
+    if (text.toUpperCase().indexOf('DEST:') >= 0 || (text.indexOf('|') >= 0 && text.toUpperCase().indexOf('ID:') >= 0)) {
+        var out = {};
+        text.split('|').forEach(function (p) {
+            var i = p.indexOf(':');
+            if (i < 0) return;
+            var key = p.substring(0, i).trim().toUpperCase();
+            var v = p.substring(i + 1).trim();
+            if (key === 'ID') out.id = v;
+            else if (key === 'DEST') out.r = v;
+            else if (key === 'ADDR') out.a = v;
+            else if (key === 'PROV') out.v = v;
+            else if (key === 'TEL') out.t = v;
+            else if (key === 'COD') out.c = v;
+            else if (key === 'BULTOS') out.k = v;
+            else if (key === 'PESO') out.w = v;
+            else if (key === 'OBS') out.n = v;
+            else if (key === 'CLI' || key === 'IDNUM') out.senderIdNum = v;
+            else if (key === 'NIF') out.receiverNif = v.toUpperCase();
+            else if (key === 'TIPO') out.s = (v.toUpperCase() === 'D' || v.toUpperCase() === 'DEBIDOS') ? 'Debidos' : 'Pagados';
+            else if (key === 'PAY') out.s = (v.toUpperCase() === 'DEBIDO' || v.toUpperCase() === 'D') ? 'Debidos' : 'Pagados';
+            else if (key === 'FIL' || key === 'EMP') out.billingEntityId = v;
+        });
+        if (out.id || out.r) return out;
+    }
+
+    // 3) JSON limpio
+    if (text.indexOf('{') >= 0) {
+        try {
+            var jsonMatch = text.match(/\{.*\}/);
+            var o = JSON.parse(jsonMatch ? jsonMatch[0] : text);
+            if (o && (o.id || o.docId || o.r)) {
+                if (o.docId && !o.id) o.id = o.docId;
+                if (o.nif && !o.receiverNif) o.receiverNif = String(o.nif).toUpperCase();
+                return o;
+            }
+        } catch (e) { /* sigue al regex */ }
+    }
+
+    // 4) JSON sucio por regex (lectores que se comen comillas)
+    var dirty = {};
+    var grab = function (key) {
+        // Los dos puntos son OBLIGATORIOS: los lectores pierden comillas,
+        // pero nunca los ':' — con ':' opcional, cualquier texto con una
+        // 'a' o una 'r' colaba como falso positivo.
+        var m = text.match(new RegExp('"?' + key + '"?\\s*:\\s*"?([^",}|]+)"?', 'i'));
+        return m ? m[1].trim() : null;
+    };
+    var dId = grab('id'); if (dId) dirty.id = dId;
+    var dR = grab('r'); if (dR) dirty.r = dR;
+    var dA = grab('a'); if (dA) dirty.a = dA;
+    var dV = grab('v'); if (dV) dirty.v = dV;
+    var dK = grab('k'); if (dK) dirty.k = dK;
+    var dC = grab('c'); if (dC) dirty.c = dC;
+    var dS = grab('s'); if (dS) dirty.s = dS;
+    var dN = grab('n'); if (dN) dirty.n = dN;
+    var dF = grab('(?:f|fil|emp)'); if (dF) dirty.billingEntityId = dF;
+    if (dirty.r || dirty.a) return dirty;
+
+    return null;
+};
+
+// Sanea un valor antes de meterlo en el QR pipe: sin '|' (rompería el
+// parseo) ni saltos de línea.
+window.qrField = function qrField(v) {
+    return String(v == null ? '' : v).replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+};
+
+// Pitido de confirmación de escaneo (WebAudio, sin ficheros). ok=false →
+// tono grave de error. En almacén el oído confirma antes que la vista.
+window.playScanBeep = function playScanBeep(ok) {
+    try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        window._npBeepCtx = window._npBeepCtx || new Ctx();
+        var ctx = window._npBeepCtx;
+        if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = (ok === false) ? 220 : 880;
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + ((ok === false) ? 0.25 : 0.09));
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + ((ok === false) ? 0.28 : 0.1));
+    } catch (e) { /* sin audio no pasa nada */ }
+};
+
 // Fija el próximo nº de albarán: guarda startNum en comp_main Y
 // sincroniza el contador atómico (currentMax = n-1) para que el
 // siguiente albarán salga con ese número exacto.
