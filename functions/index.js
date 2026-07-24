@@ -1279,3 +1279,139 @@ exports.ticketMirrorAndPod = onDocumentWritten({
         }
     }
 });
+
+// =============================================================
+// AUTO-ADJUDICACIÓN DE PORTES DEBIDOS
+// =============================================================
+// Un albarán DEBIDO se factura al DESTINATARIO. Si el destinatario es
+// cliente NOVAPACK (emparejado por NIF), se adjudica solo con los
+// MISMOS campos que la adjudicación manual del admin (billToUid =
+// docId del cliente, billToClientIdNum = su nº). Si no hay match, el
+// albarán queda sin billToUid y aparece en Portes Debidos →
+// Pendientes para que el admin lo adjudique a mano.
+//
+// Se hace en servidor porque las reglas de Firestore no permiten al
+// cliente leer las fichas de otros clientes para buscar el NIF.
+
+function dbNormNif(v) {
+    return String(v || '').replace(/[\s.\-]/g, '').toUpperCase();
+}
+function dbNormTxt(v) {
+    return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toUpperCase().replace(/[^A-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Elige el deudor entre candidatos con el mismo NIF. Un padre y sus
+// sucursales comparten NIF, así que desempata por el DESTINO del
+// albarán: CP exacto → localidad → si queda un único PADRE, el padre.
+// Devuelve null si sigue siendo ambiguo (mejor manual que mal).
+function dbPickDebtor(cands, ticket) {
+    let pool = (cands || []).slice();
+    if (!pool.length) return null;
+    if (pool.length === 1) return pool[0];
+
+    const cp = String(ticket.cp || '').trim();
+    if (cp) {
+        const byCp = pool.filter(c => String(c.cp || '').trim() === cp);
+        if (byCp.length === 1) return byCp[0];
+        if (byCp.length > 1) pool = byCp;
+    }
+    const loc = dbNormTxt(ticket.localidad);
+    if (loc) {
+        const byLoc = pool.filter(c => dbNormTxt(c.localidad) === loc);
+        if (byLoc.length === 1) return byLoc[0];
+        if (byLoc.length > 1) pool = byLoc;
+    }
+    const padres = pool.filter(c => !c.parentClientId);
+    if (padres.length === 1) return padres[0];
+    return null;
+}
+
+exports.ticketDebidoAutoAssign = onDocumentWritten({
+    document: 'tickets/{docId}',
+    memory: '256MiB',
+    timeoutSeconds: 60
+}, async (event) => {
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    if (after.shippingType !== 'Debidos') return;
+    if (after.billToUid) return;                                  // ya adjudicado
+    if (after.invoiceId || after.invoiceNum) return;              // ya facturado
+
+    const nif = dbNormNif(after.receiverNif);
+    if (!nif || nif.length < 8) return;                           // sin NIF → bandeja manual
+
+    // Solo evaluar en creación o cuando cambian los datos relevantes.
+    // IMPORTANTE: si el admin DESASIGNA (before tenía billToUid), NO
+    // re-adjudicar — la decisión manual manda.
+    const before = event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    if (before) {
+        if (before.billToUid) return;                             // desasignación manual
+        const same = dbNormNif(before.receiverNif) === nif && before.shippingType === 'Debidos';
+        if (same) return;                                         // update de estado sin cambios relevantes
+    }
+
+    const businessId = (after.id ? String(after.id).trim() : '') || event.params.docId;
+
+    // Candidatos por NIF: igualdad con el valor normalizado y con el crudo
+    // (hay fichas con puntos/guiones). Fallback: barrido completo.
+    const rawNif = String(after.receiverNif || '').trim().toUpperCase();
+    const found = {};
+    async function addByEquality(value) {
+        if (!value) return;
+        const s = await db.collection('users').where('nif', '==', value).limit(10).get();
+        s.forEach(d => { found[d.id] = { ...d.data(), _docId: d.id }; });
+    }
+    try {
+        await addByEquality(nif);
+        if (rawNif !== nif) await addByEquality(rawNif);
+        if (!Object.keys(found).length) {
+            // Barrido: solo llega aquí en creaciones/cambios de NIF, no en
+            // cada update de estado (guardas de arriba).
+            const all = await db.collection('users').get();
+            all.forEach(d => {
+                const u = d.data();
+                if (dbNormNif(u.nif || u.cif) === nif) found[d.id] = { ...u, _docId: d.id };
+            });
+        }
+    } catch (e) {
+        logger.warn('debidoAutoAssign: fallo consultando users', { msg: e.message });
+        return;
+    }
+
+    // Filtrar: ni globales, ni borrados, ni el propio REMITENTE
+    const senderKeys = new Set([after.uid, after.senderUid, String(after.clientIdNum || '')].filter(Boolean).map(String));
+    const cands = Object.values(found).filter(u => {
+        if (u.isGlobal) return false;
+        if (u.deleted === true || u.deletedAt || u.inTrash) return false;
+        if (u.role && u.role !== 'client') return false;
+        if (senderKeys.has(String(u._docId))) return false;
+        if (u.authUid && senderKeys.has(String(u.authUid))) return false;
+        if (u.idNum !== undefined && senderKeys.has(String(u.idNum))) return false;
+        return true;
+    });
+
+    if (!cands.length) {
+        logger.info('debidoAutoAssign: sin cliente para NIF ' + nif + ' (' + businessId + ') → bandeja manual');
+        return;
+    }
+
+    const elegido = dbPickDebtor(cands, after);
+    if (!elegido) {
+        logger.info('debidoAutoAssign: NIF ' + nif + ' ambiguo entre ' + cands.length + ' clientes (' + businessId + ') → bandeja manual');
+        return;
+    }
+
+    try {
+        await event.data.after.ref.update({
+            billToUid: elegido._docId,
+            billToClientIdNum: String(elegido.idNum || ''),
+            billToAuto: 'nif',
+            billToAutoAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        logger.info('debidoAutoAssign: ' + businessId + ' adjudicado a ' + (elegido.name || elegido._docId) +
+                    ' (#' + (elegido.idNum || '?') + ') por NIF ' + nif);
+    } catch (e) {
+        logger.warn('debidoAutoAssign: fallo escribiendo adjudicación ' + businessId, { msg: e.message });
+    }
+});

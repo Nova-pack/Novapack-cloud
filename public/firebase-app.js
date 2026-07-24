@@ -2594,7 +2594,7 @@ async function handleFormSubmit(e) {
             senderAddress: document.getElementById('ticket-sender-address').value,
             senderPhone: document.getElementById('ticket-sender-phone').value,
             receiver: document.getElementById('ticket-receiver').value.trim().toUpperCase(),
-            receiverNif: document.getElementById('ticket-receiver-nif') ? document.getElementById('ticket-receiver-nif').value.trim() : '',
+            receiverNif: document.getElementById('ticket-receiver-nif') ? document.getElementById('ticket-receiver-nif').value.trim().toUpperCase() : '',
             street: street,
             number: number,
             localidad: locality,

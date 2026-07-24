@@ -100,6 +100,7 @@ window.renderDebidosAssignedTable = (ticketsArray) => {
                 </td>
                 <td style="padding:10px;">
                     <span style="color:#4CAF50; font-weight:600; font-size:0.82rem;">${clientName}</span>
+                    ${t.billToAuto ? '<span title="Adjudicado automáticamente por NIF del destinatario" style="background:rgba(93,173,226,0.15); border:1px solid #5DADE2; color:#5DADE2; font-size:0.62rem; padding:1px 6px; border-radius:8px; margin-left:5px;">🤖 auto</span>' : ''}
                     <div style="font-size:0.7rem; color:#666;">Nº ${t.billToClientIdNum || ''}</div>
                 </td>
                 <td style="padding:10px; text-align:right;">
