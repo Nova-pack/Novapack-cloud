@@ -2542,4 +2542,286 @@ window.contaExportCSV = function() {
     document.body.removeChild(link);
 };
 
+// ════════════════════════════════════════════════════════════════
+//  📤 GESTORÍA — envío de la documentación del periodo por email
+// ════════════════════════════════════════════════════════════════
+// Compone un paquete con las facturas EMITIDAS y los GASTOS del
+// periodo (mes o trimestre, por emisora o todas), lo adjunta como
+// CSVs (separador ';' y coma decimal, listos para Excel es-ES) y lo
+// encola en /mailbox — el motor SMTP lo envía y queda visible en el
+// buzón (Salientes). El email de la gestoría se guarda en config/admin.
+
+function _gestoriaNum(n) {
+    return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',');
+}
+function _gestoriaCsvCell(v) {
+    var s = String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+    return (s.indexOf(';') >= 0 || s.indexOf('"') >= 0) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// Construye el paquete COMPLETO (puro, sin DOM ni Firestore: testeable).
+//   invs / gastos → arrays crudos de Firestore
+//   opts = { year, month (1-12) | quarter (1-4), emisoraNif ('' = todas) }
+// Devuelve { facturas, gastos, csvFacturas, csvGastos, totales, periodoLabel }
+window._gestoriaBuildPack = function (invs, gastos, opts) {
+    var year = opts.year;
+    var inPeriod = function (d) {
+        if (!d || d.getFullYear() !== year) return false;
+        if (opts.month) return (d.getMonth() + 1) === opts.month;
+        if (opts.quarter) return (Math.floor(d.getMonth() / 3) + 1) === opts.quarter;
+        return true;
+    };
+    var nifSel = _contaNifNorm(opts.emisoraNif || '');
+    var matchEmisora = function (nif) { return !nifSel || _contaNifNorm(nif) === nifSel; };
+
+    var F = [];
+    (invs || []).forEach(function (v) {
+        var d = _contaFechaFiscal(v);
+        if (!inPeriod(d)) return;
+        if (!matchEmisora(v.senderData && (v.senderData.cif || v.senderData.nif))) return;
+        var abono = _contaEsAbono(v);
+        F.push({
+            numero: String(v.invoiceId || v.number || v._id || ''),
+            fecha: d ? d.toLocaleDateString('es-ES') : '',
+            cliente: v.clientName || (v.clientData && v.clientData.name) || '',
+            nifCliente: v.clientNif || v.nif || (v.clientData && v.clientData.nif) || '',
+            base: _contaAbonoVal(v, v.subtotal),
+            tipoIva: (v.ivaRate !== undefined ? Number(v.ivaRate) : 21),
+            cuotaIva: _contaAbonoVal(v, v.iva),
+            irpf: Math.abs(Number(v.irpf) || 0) * (abono ? -1 : 1),
+            total: _contaAbonoVal(v, v.total),
+            cobrada: v.paid ? 'SI' : 'NO',
+            abono: abono ? 'SI' : '',
+            emisora: (v.senderData && v.senderData.name) || '',
+            nifEmisora: (v.senderData && (v.senderData.cif || v.senderData.nif)) || ''
+        });
+    });
+    F.sort(function (a, b) { return a.numero.localeCompare(b.numero, 'es', { numeric: true }); });
+
+    var G = [];
+    (gastos || []).forEach(function (e) {
+        var d = e.date ? (e.date.toDate ? e.date.toDate() : new Date(e.date)) : null;
+        if (!inPeriod(d)) return;
+        if (!matchEmisora(e.companyNif)) return;
+        G.push({
+            fecha: d ? d.toLocaleDateString('es-ES') : '',
+            proveedor: e.provider || e.proveedor || '',
+            nifProveedor: e.providerNif || '',
+            concepto: e.concept || e.concepto || e.description || '',
+            base: Number(e.base !== undefined ? e.base : e.subtotal) || 0,
+            iva: Number(e.iva) || 0,
+            irpfRet: Number(e.retencionIrpf) || 0,
+            total: Number(e.total || e.amount) || 0,
+            pagadora: e.companyName || '',
+            nifPagadora: e.companyNif || ''
+        });
+    });
+    G.sort(function (a, b) { return a.fecha.localeCompare(b.fecha); });
+
+    var t = { nFacturas: F.length, nAbonos: 0, base: 0, iva: 0, irpf: 0, total: 0, nGastos: G.length, gastosBase: 0, gastosIva: 0, gastosTotal: 0 };
+    F.forEach(function (f) { if (f.abono) t.nAbonos++; t.base += f.base; t.iva += f.cuotaIva; t.irpf += f.irpf; t.total += f.total; });
+    G.forEach(function (g) { t.gastosBase += g.base; t.gastosIva += g.iva; t.gastosTotal += g.total; });
+    ['base', 'iva', 'irpf', 'total', 'gastosBase', 'gastosIva', 'gastosTotal'].forEach(function (k) { t[k] = Math.round(t[k] * 100) / 100; });
+
+    var BOM = '﻿';
+    var csvF = BOM + 'Numero;Fecha;Cliente;NIF cliente;Base imponible;Tipo IVA %;Cuota IVA;Retencion IRPF;Total;Cobrada;Abono;Emisora;NIF emisora\n'
+        + F.map(function (f) {
+            return [_gestoriaCsvCell(f.numero), f.fecha, _gestoriaCsvCell(f.cliente), f.nifCliente,
+                _gestoriaNum(f.base), f.tipoIva, _gestoriaNum(f.cuotaIva), _gestoriaNum(f.irpf),
+                _gestoriaNum(f.total), f.cobrada, f.abono, _gestoriaCsvCell(f.emisora), f.nifEmisora].join(';');
+        }).join('\n');
+    var csvG = BOM + 'Fecha;Proveedor;NIF proveedor;Concepto;Base;IVA;Retencion IRPF;Total;Empresa pagadora;NIF pagadora\n'
+        + G.map(function (g) {
+            return [g.fecha, _gestoriaCsvCell(g.proveedor), g.nifProveedor, _gestoriaCsvCell(g.concepto),
+                _gestoriaNum(g.base), _gestoriaNum(g.iva), _gestoriaNum(g.irpfRet), _gestoriaNum(g.total),
+                _gestoriaCsvCell(g.pagadora), g.nifPagadora].join(';');
+        }).join('\n');
+
+    var periodoLabel = opts.month
+        ? (['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][opts.month - 1] + ' ' + year)
+        : (opts.quarter ? opts.quarter + 'T ' + year : String(year));
+
+    return { facturas: F, gastos: G, csvFacturas: csvF, csvGastos: csvG, totales: t, periodoLabel: periodoLabel };
+};
+
+function _gestoriaB64(s) {
+    // btoa unicode-safe (los CSVs llevan acentos y €)
+    return btoa(unescape(encodeURIComponent(s)));
+}
+
+window.contaLoadGestoria = async function () {
+    const container = document.getElementById('conta-content');
+    if (!container) return;
+    container.innerHTML = '<div style="text-align:center; padding:40px; color:#888;">Cargando…</div>';
+
+    let gestEmail = '';
+    try {
+        const cfg = await db.collection('config').doc('admin').get();
+        if (cfg.exists) gestEmail = (cfg.data().gestoriaEmail || '').trim();
+    } catch (e) { console.warn('[GESTORIA] config:', e.message); }
+
+    const now = new Date();
+    const year = window._contaGestYear || now.getFullYear();
+    const selType = window._contaGestType || 'month';
+    const selMonth = window._contaGestMonth || (now.getMonth() === 0 ? 12 : now.getMonth());        // mes ANTERIOR por defecto
+    const selQuarter = window._contaGestQuarter || (Math.floor(now.getMonth() / 3) || 4);           // trimestre anterior
+    const yearOpts = [0, 1, 2].map(i => { const y = now.getFullYear() - i; return '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+    container.innerHTML = `
+        <div style="padding:15px; max-width:760px;">
+            <h3 style="color:#4DB6AC; margin:0 0 4px;">📤 Envío de documentación a la GESTORÍA</h3>
+            <div style="color:#888; font-size:0.78rem; margin-bottom:14px;">
+                Compone el paquete del periodo (facturas emitidas + gastos) y lo envía por email con los CSV adjuntos.
+                El envío queda registrado en el <b>Buzón → Salientes</b>.
+            </div>
+
+            <div style="background:#252526; border:1px solid #3c3c3c; border-radius:8px; padding:14px; margin-bottom:12px;">
+                <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">EMAIL DE LA GESTORÍA</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="email" id="gest-email" value="${(gestEmail || '').replace(/"/g, '&quot;')}" placeholder="despacho@migestoria.es"
+                        style="flex:1; padding:9px 12px; background:#1e1e1e; border:1px solid #555; color:#fff; border-radius:6px; font-size:0.85rem;">
+                    <button onclick="window.contaGestoriaSaveEmail()" style="background:#333; border:1px solid #4DB6AC; color:#4DB6AC; padding:8px 14px; border-radius:6px; cursor:pointer; font-size:0.78rem;">💾 Guardar</button>
+                </div>
+            </div>
+
+            <div style="background:#252526; border:1px solid #3c3c3c; border-radius:8px; padding:14px; margin-bottom:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                    <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">PERIODO</label>
+                    <select id="gest-type" onchange="window._contaGestType=this.value; window.contaLoadGestoria();" style="background:#1e1e1e; border:1px solid #555; color:#fff; padding:8px 10px; border-radius:6px; font-size:0.82rem;">
+                        <option value="month" ${selType === 'month' ? 'selected' : ''}>Mes</option>
+                        <option value="quarter" ${selType === 'quarter' ? 'selected' : ''}>Trimestre</option>
+                    </select>
+                </div>
+                ${selType === 'month' ? `
+                <div>
+                    <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">MES</label>
+                    <select id="gest-month" onchange="window._contaGestMonth=parseInt(this.value);" style="background:#1e1e1e; border:1px solid #555; color:#fff; padding:8px 10px; border-radius:6px; font-size:0.82rem;">
+                        ${meses.map((m, i) => '<option value="' + (i + 1) + '"' + ((i + 1) === selMonth ? ' selected' : '') + '>' + m + '</option>').join('')}
+                    </select>
+                </div>` : `
+                <div>
+                    <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">TRIMESTRE</label>
+                    <select id="gest-quarter" onchange="window._contaGestQuarter=parseInt(this.value);" style="background:#1e1e1e; border:1px solid #555; color:#fff; padding:8px 10px; border-radius:6px; font-size:0.82rem;">
+                        ${[1, 2, 3, 4].map(q => '<option value="' + q + '"' + (q === selQuarter ? ' selected' : '') + '>' + q + 'T</option>').join('')}
+                    </select>
+                </div>`}
+                <div>
+                    <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">AÑO</label>
+                    <select id="gest-year" onchange="window._contaGestYear=parseInt(this.value);" style="background:#1e1e1e; border:1px solid #555; color:#fff; padding:8px 10px; border-radius:6px; font-size:0.82rem;">${yearOpts}</select>
+                </div>
+                <div>
+                    <label style="display:block; color:#aaa; font-size:0.72rem; margin-bottom:4px;">EMPRESA EMISORA</label>
+                    ${await _contaEmisoraSelectorHtml('contaLoadGestoria')}
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; align-items:center;">
+                <button onclick="window.contaGestoriaSend(false)" style="background:#333; border:1px solid #9cdcfe; color:#9cdcfe; padding:10px 16px; border-radius:6px; cursor:pointer; font-weight:700; font-size:0.82rem;">👁️ Previsualizar paquete</button>
+                <button onclick="window.contaGestoriaSend(true)" style="background:#4DB6AC; border:0; color:#000; padding:10px 20px; border-radius:6px; cursor:pointer; font-weight:800; font-size:0.85rem;">📤 ENVIAR A GESTORÍA</button>
+            </div>
+            <div id="gest-result" style="margin-top:14px;"></div>
+        </div>`;
+};
+
+window.contaGestoriaSaveEmail = async function () {
+    const el = document.getElementById('gest-email');
+    const v = (el && el.value || '').trim().toLowerCase();
+    if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { alert('Ese email no parece válido.'); return; }
+    try {
+        await db.collection('config').doc('admin').set({ gestoriaEmail: v }, { merge: true });
+        if (typeof showToast === 'function') showToast(v ? 'Email de gestoría guardado' : 'Email de gestoría borrado', 'success');
+    } catch (e) { alert('Error guardando: ' + e.message); }
+};
+
+window.contaGestoriaSend = async function (reallySend) {
+    const resEl = document.getElementById('gest-result');
+    const emailEl = document.getElementById('gest-email');
+    const to = (emailEl && emailEl.value || '').trim().toLowerCase();
+    if (reallySend && !to) { alert('Configura primero el email de la gestoría (y guárdalo).'); return; }
+
+    const now = new Date();
+    const opts = {
+        year: window._contaGestYear || now.getFullYear(),
+        emisoraNif: window._contaEmisoraNif || ''
+    };
+    if ((window._contaGestType || 'month') === 'month') opts.month = window._contaGestMonth || (now.getMonth() === 0 ? 12 : now.getMonth());
+    else opts.quarter = window._contaGestQuarter || (Math.floor(now.getMonth() / 3) || 4);
+
+    if (resEl) resEl.innerHTML = '<div style="color:#888;">Componiendo paquete…</div>';
+    try {
+        const [invSnap, gSnap] = await Promise.all([
+            db.collection('invoices').get(),
+            db.collection('expenses').get().catch(() => null)
+        ]);
+        const invs = []; invSnap.forEach(d => invs.push({ _id: d.id, ...d.data() }));
+        const gastos = []; if (gSnap) gSnap.forEach(d => gastos.push({ _id: d.id, ...d.data() }));
+
+        const pack = window._gestoriaBuildPack(invs, gastos, opts);
+        const t = pack.totales;
+        const emisoraLabel = opts.emisoraNif ? opts.emisoraNif : 'TODAS las empresas';
+
+        const resumenHtml =
+            '<div style="font-family:Arial,sans-serif; color:#222;">'
+          + '<h2 style="color:#147A4B; margin:0 0 4px;">NOVAPACK — Documentación ' + pack.periodoLabel + '</h2>'
+          + '<p style="margin:4px 0 14px; color:#555;">Emisora: <b>' + emisoraLabel + '</b> · Generado el ' + now.toLocaleDateString('es-ES') + '</p>'
+          + '<table cellpadding="7" cellspacing="0" style="border-collapse:collapse; font-size:14px; border:1px solid #ccc;">'
+          + '<tr style="background:#f2f2f2;"><th align="left" style="border:1px solid #ccc;">Concepto</th><th align="right" style="border:1px solid #ccc;">Importe</th></tr>'
+          + '<tr><td style="border:1px solid #ccc;">Facturas emitidas (' + t.nFacturas + (t.nAbonos ? ', de ellas ' + t.nAbonos + ' abonos' : '') + ') — Base imponible</td><td align="right" style="border:1px solid #ccc;">' + _gestoriaNum(t.base) + ' €</td></tr>'
+          + '<tr><td style="border:1px solid #ccc;">IVA repercutido</td><td align="right" style="border:1px solid #ccc;">' + _gestoriaNum(t.iva) + ' €</td></tr>'
+          + (t.irpf ? '<tr><td style="border:1px solid #ccc;">Retenciones IRPF practicadas al emisor</td><td align="right" style="border:1px solid #ccc;">' + _gestoriaNum(t.irpf) + ' €</td></tr>' : '')
+          + '<tr><td style="border:1px solid #ccc;"><b>Total facturado</b></td><td align="right" style="border:1px solid #ccc;"><b>' + _gestoriaNum(t.total) + ' €</b></td></tr>'
+          + '<tr><td style="border:1px solid #ccc;">Gastos (' + t.nGastos + ') — Base</td><td align="right" style="border:1px solid #ccc;">' + _gestoriaNum(t.gastosBase) + ' €</td></tr>'
+          + '<tr><td style="border:1px solid #ccc;">IVA soportado</td><td align="right" style="border:1px solid #ccc;">' + _gestoriaNum(t.gastosIva) + ' €</td></tr>'
+          + '</table>'
+          + '<p style="margin-top:14px; color:#555; font-size:13px;">Se adjuntan <b>facturas.csv</b> y <b>gastos.csv</b> (separador ";", decimales con coma — abrir directamente en Excel).<br>'
+          + 'Los abonos/rectificativas van con importes en negativo.</p>'
+          + '<p style="color:#999; font-size:12px;">Enviado automáticamente desde NOVAPACK CLOUD.</p>'
+          + '</div>';
+
+        if (!reallySend) {
+            if (resEl) resEl.innerHTML =
+                '<div style="background:#252526; border:1px solid #3c3c3c; border-radius:8px; padding:14px;">'
+              + '<div style="color:#4DB6AC; font-weight:700; margin-bottom:8px;">Previsualización — ' + pack.periodoLabel + ' · ' + emisoraLabel + '</div>'
+              + '<div style="color:#ddd; font-size:0.82rem; line-height:1.7;">'
+              + '📄 Facturas: <b>' + t.nFacturas + '</b>' + (t.nAbonos ? ' (' + t.nAbonos + ' abonos)' : '') + ' — base ' + _gestoriaNum(t.base) + ' € · IVA ' + _gestoriaNum(t.iva) + ' € · total ' + _gestoriaNum(t.total) + ' €<br>'
+              + '💸 Gastos: <b>' + t.nGastos + '</b> — base ' + _gestoriaNum(t.gastosBase) + ' € · IVA soportado ' + _gestoriaNum(t.gastosIva) + ' €<br>'
+              + '📎 Adjuntos: facturas.csv (' + (pack.csvFacturas.length / 1024).toFixed(1) + ' KB) + gastos.csv (' + (pack.csvGastos.length / 1024).toFixed(1) + ' KB)'
+              + '</div></div>';
+            return;
+        }
+
+        if (!t.nFacturas && !t.nGastos) {
+            alert('El periodo ' + pack.periodoLabel + ' no tiene facturas ni gastos' + (opts.emisoraNif ? ' para esa emisora' : '') + '. Nada que enviar.');
+            if (resEl) resEl.innerHTML = '';
+            return;
+        }
+        if (!confirm('Enviar a ' + to + ':\n\n· ' + pack.periodoLabel + ' — ' + emisoraLabel + '\n· ' + t.nFacturas + ' facturas (total ' + _gestoriaNum(t.total) + ' €)\n· ' + t.nGastos + ' gastos\n· Adjuntos: facturas.csv + gastos.csv\n\n¿Confirmar el envío?')) return;
+
+        const stamp = pack.periodoLabel.replace(/\s+/g, '_');
+        await db.collection('mailbox').add({
+            type: 'outgoing_gestoria',
+            direction: 'outgoing',
+            status: 'queued',
+            to: to,
+            subject: 'NOVAPACK — Documentación ' + pack.periodoLabel + (opts.emisoraNif ? ' (' + emisoraLabel + ')' : ''),
+            body: resumenHtml,
+            attachments: [
+                { filename: 'facturas_' + stamp + '.csv', contentBase64: _gestoriaB64(pack.csvFacturas), contentType: 'text/csv' },
+                { filename: 'gastos_' + stamp + '.csv', contentBase64: _gestoriaB64(pack.csvGastos), contentType: 'text/csv' }
+            ],
+            periodo: pack.periodoLabel,
+            emisoraNif: opts.emisoraNif || 'TODAS',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: 'admin-gestoria'
+        });
+
+        if (resEl) resEl.innerHTML = '<div style="background:rgba(76,175,80,0.1); border:1px solid #4CAF50; border-radius:8px; padding:14px; color:#4CAF50; font-weight:700;">✅ Encolado para ' + to + ' — el motor SMTP lo envía en el próximo ciclo y quedará en Buzón → Salientes.</div>';
+        if (typeof showToast === 'function') showToast('Documentación de ' + pack.periodoLabel + ' encolada para la gestoría', 'success');
+    } catch (e) {
+        console.error('[GESTORIA]', e);
+        if (resEl) resEl.innerHTML = '<div style="color:#f44;">Error: ' + e.message + '</div>';
+    }
+};
+
 console.log('[CONTA] ✅ Módulo de contabilidad cargado correctamente.');

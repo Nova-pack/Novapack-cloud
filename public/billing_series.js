@@ -132,12 +132,15 @@ window.allocInvoiceNumber = async function allocInvoiceNumber(senderData, kind, 
     var nif = String((senderData && (senderData.cif || senderData.nif)) || '').replace(/[\s.\-]/g, '').toUpperCase();
 
     if (!nif) {
-        // Sin NIF de emisor (no debería ocurrir): serie legacy compartida
-        var legacyN = await window.allocSequentialNumber(
-            'sequence_counters/' + counterPrefix + '_' + year,
-            async function () { return 0; }
-        );
-        return { invoiceId: kind + '-' + yy + '-' + legacyN, number: legacyN, serieCode: '' };
+        // GUARD ESTRICTO: sin NIF del emisor la factura sería formalmente
+        // nula, entraría en la cadena Verifactu 'SIN_NIF' y quedaría
+        // bloqueada en el envío a AEAT. Antes aquí había un fallback
+        // silencioso a una serie compartida sin NIF — un agujero: la
+        // factura salía numerada y el problema se descubría meses después.
+        // requireEmitterCif muestra el aviso explicativo; el throw corta
+        // la emisión en TODOS los flujos (todos pasan por aquí).
+        window.requireEmitterCif(senderData, 'numeración de factura');
+        throw new Error('EMISORA SIN CIF/NIF — factura no numerada. Configura la empresa emisora y reintenta.');
     }
 
     var serieCode = await window.billingSerieCode(nif);

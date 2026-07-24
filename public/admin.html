@@ -36,7 +36,7 @@
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
     <script src="verifactu.js?v=20260717_fiscal"></script>
-    <script src="billing_series.js?v=20260724_scanner"></script>
+    <script src="billing_series.js?v=20260724_gestoria"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="phantom-engine.js?v=1" defer></script>
@@ -20063,7 +20063,7 @@ window.importTarifas50 = async () => {
 
 
 <script src="debidos_manager.js?v=20260724_debidos"></script>
-<script src="contabilidad.js?v=20260717_fiscal"></script>
+<script src="contabilidad.js?v=20260724_gestoria"></script>
 
 <!-- Contabilidad Workspace (inside adv-billing, hidden by default) -->
 <script>
@@ -20095,6 +20095,7 @@ window.importTarifas50 = async () => {
                 <button onclick="contaLoadGastos()" style="background:#333; border:1px solid #555; color:#ffab91; padding:5px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px;">💸 Gastos</button>
                 <button onclick="contaLoadPyG()" style="background:#333; border:1px solid #555; color:#00E5FF; padding:5px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px;">📈 PyG</button>
                 <button onclick="contaLoadSEPA()" style="background:#333; border:1px solid #555; color:#2196F3; padding:5px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px;">🏦 SEPA</button>
+                <button onclick="contaLoadGestoria()" style="background:#333; border:1px solid #4DB6AC; color:#4DB6AC; padding:5px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px;" title="Enviar la documentación del periodo (facturas + gastos en CSV) por email a la gestoría">📤 Gestoría</button>
                 <button onclick="window.openMailEngineHealth()" style="background:#333; border:1px solid #555; color:#FFB74D; padding:5px 12px; font-size:0.78rem; cursor:pointer; border-radius:3px;" title="Estado del motor SMTP (Cloud Function)">📧 Motor SMTP</button>
             </div>
         </div>
