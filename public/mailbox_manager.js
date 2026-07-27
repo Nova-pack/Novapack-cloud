@@ -28,6 +28,34 @@ function getCategoryText(cat) {
     return `${c.emoji} ${c.label}`;
 }
 
+// ── Modo de aviso de entregas (POD) ────────────────────────────
+// Global del sistema (config/admin.podEmailMode): 'resumen' (un email
+// diario por cliente a las 20:30) | 'individual' | 'off'. El trigger
+// del servidor lo lee con caché de 60 s; cada cliente puede tener su
+// propio ajuste en su ficha.
+window.setPodEmailMode = async function(mode) {
+    if (['resumen', 'individual', 'off'].indexOf(mode) < 0) return;
+    try {
+        await window.db.collection('config').doc('admin').set({ podEmailMode: mode }, { merge: true });
+        var label = mode === 'resumen' ? 'RESUMEN DIARIO (un email por cliente a las 20:30)'
+                  : mode === 'individual' ? 'EMAIL POR CADA ENTREGA'
+                  : 'SIN EMAIL (solo notificación en la app y tracking)';
+        if (typeof showMailboxToast === 'function') showMailboxToast('Aviso de entregas: ' + label, 'success');
+        console.log('[MAILBOX] podEmailMode →', mode);
+    } catch (e) {
+        alert('No se pudo guardar el modo de aviso: ' + e.message);
+    }
+};
+
+async function _loadPodEmailMode() {
+    try {
+        var c = await window.db.collection('config').doc('admin').get();
+        var m = (c.exists && c.data().podEmailMode) || 'resumen';
+        var sel = document.getElementById('mailbox-pod-mode');
+        if (sel) sel.value = (['resumen', 'individual', 'off'].indexOf(m) >= 0) ? m : 'resumen';
+    } catch (e) { console.warn('[MAILBOX] podEmailMode load:', e.message); }
+}
+
 function _isOutgoing(item) {
     // Cualquier campo que delate dirección saliente:
     //  - type prefijado con 'outgoing_' (outgoing_campaign, outgoing_welcome, outgoing_pod...)
@@ -104,6 +132,7 @@ window.loadMailbox = function() {
     }
 
     console.log("[MAILBOX] Inicializando escucha de correos... (user: " + currentUser.uid + ")");
+    _loadPodEmailMode();
     const tbody = document.getElementById('mailbox-list-body');
     if (tbody) tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:30px; color:#aaa;">Rastreando buzón de entrada... <span class="material-symbols-outlined" style="animation: spin 1s linear infinite;">sync</span></td></tr>';
 

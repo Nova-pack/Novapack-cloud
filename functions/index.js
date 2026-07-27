@@ -1195,6 +1195,143 @@ function tkPodEmailHtml(t, businessId) {
         + '</div></div>';
 }
 
+// ── Modo de email POD (global con caché de 60 s + override por cliente) ──
+let _podCfgCache = { at: 0, mode: 'resumen' };
+async function tkGlobalPodMode() {
+    if (Date.now() - _podCfgCache.at < 60000) return _podCfgCache.mode;
+    let mode = 'resumen';
+    try {
+        const c = await db.collection('config').doc('admin').get();
+        const m = c.exists && c.data().podEmailMode;
+        if (m === 'individual' || m === 'off' || m === 'resumen') mode = m;
+    } catch (e) { /* por defecto resumen */ }
+    _podCfgCache = { at: Date.now(), mode };
+    return mode;
+}
+async function tkResolvePodMode(t) {
+    const uid = t.uid || t.senderUid || '';
+    try {
+        if (uid) {
+            const u = await db.collection('users').doc(String(uid)).get();
+            const m = u.exists && u.data().podEmailMode;
+            if (m === 'individual' || m === 'off' || m === 'resumen') return m;
+        }
+    } catch (e) { /* hereda global */ }
+    return tkGlobalPodMode();
+}
+
+function tkMadridDateKey(d) {
+    // YYYY-MM-DD en Europe/Madrid (en-CA da ISO)
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d || new Date());
+}
+function tkMadridTime(iso) {
+    try {
+        return new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    } catch (e) { return ''; }
+}
+
+// Acumula una entrega en el resumen diario del cliente (un doc por email+día)
+async function tkAppendPodDigest(to, t, businessId) {
+    const day = tkMadridDateKey();
+    const key = (String(to).toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + day).slice(0, 900);
+    await db.collection('pod_digests').doc(key).set({
+        to: String(to).toLowerCase(),
+        day: day,
+        status: 'open',
+        clientName: t.sender || '',
+        clientIdNum: t.clientIdNum || '',
+        items: admin.firestore.FieldValue.arrayUnion({
+            id: businessId,
+            receiver: t.receiver || '',
+            receiverName: t.deliveryReceiverName || '',
+            at: new Date().toISOString()
+        }),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+}
+
+// Deduplica por nº de albarán y ordena por hora — los reintentos del
+// trigger pueden acumular la misma entrega dos veces.
+function tkDigestCleanItems(items) {
+    const seen = new Set(); const out = [];
+    (items || []).forEach(it => {
+        if (!it || !it.id || seen.has(it.id)) return;
+        seen.add(it.id); out.push(it);
+    });
+    out.sort((a, b) => String(a.at || '').localeCompare(String(b.at || '')));
+    return out;
+}
+
+function tkPodDigestHtml(g, items) {
+    const rows = items.map(it => {
+        const track = 'https://novapaack.com/track.html?id=' + encodeURIComponent(it.id);
+        return '<tr>'
+            + '<td style="padding:7px 10px; border-bottom:1px solid #eee;"><a href="' + track + '" style="color:#FF6600; font-weight:700; text-decoration:none;">' + it.id + '</a></td>'
+            + '<td style="padding:7px 10px; border-bottom:1px solid #eee;">' + (it.receiver || '—') + '</td>'
+            + '<td style="padding:7px 10px; border-bottom:1px solid #eee;">' + (it.receiverName || '—') + '</td>'
+            + '<td style="padding:7px 10px; border-bottom:1px solid #eee; white-space:nowrap;">' + tkMadridTime(it.at) + '</td>'
+            + '</tr>';
+    }).join('');
+    return ''
+        + '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif; max-width:640px; margin:0 auto; color:#222;">'
+        + '<div style="background:#FF6600; padding:18px 24px; border-radius:10px 10px 0 0;">'
+        + '<span style="color:#fff; font-size:1.25rem; font-weight:800; letter-spacing:1px;">NOVAPACK</span>'
+        + '<span style="color:#fff; opacity:0.85; font-size:0.8rem; margin-left:8px;">Resumen diario de entregas</span>'
+        + '</div>'
+        + '<div style="border:1px solid #eee; border-top:none; border-radius:0 0 10px 10px; padding:24px;">'
+        + '<p style="font-size:1rem; margin:0 0 14px;">Hoy hemos entregado <strong style="color:#2E7D32;">' + items.length + ' envío' + (items.length === 1 ? '' : 's') + '</strong>' + (g.clientName ? ' de <strong>' + g.clientName + '</strong>' : '') + ':</p>'
+        + '<table style="width:100%; font-size:0.88rem; border-collapse:collapse;">'
+        + '<tr style="background:#f7f7f7;">'
+        + '<th align="left" style="padding:7px 10px;">Envío</th><th align="left" style="padding:7px 10px;">Destinatario</th><th align="left" style="padding:7px 10px;">Recibió</th><th align="left" style="padding:7px 10px;">Hora</th>'
+        + '</tr>'
+        + rows
+        + '</table>'
+        + '<p style="color:#888; font-size:0.78rem; margin-top:16px;">Pulsa cualquier envío para ver su justificante y seguimiento. Este resumen se envía una vez al día; si prefieres un email por cada entrega (o ninguno), dínoslo y lo cambiamos.</p>'
+        + '</div></div>';
+}
+
+// Envío del resumen diario: 20:30 Madrid, un email por cliente con todas
+// las entregas del día (y arrastra pendientes de días anteriores si el
+// envío de ayer falló).
+exports.podDigestDaily = onSchedule({
+    schedule: '30 20 * * *',
+    timeZone: 'Europe/Madrid',
+    memory: '256MiB',
+    timeoutSeconds: 300
+}, async () => {
+    const snap = await db.collection('pod_digests').where('status', '==', 'open').get();
+    if (snap.empty) { logger.info('podDigestDaily: nada que enviar'); return; }
+    let sent = 0;
+    for (const d of snap.docs) {
+        const g = d.data();
+        const items = tkDigestCleanItems(g.items);
+        if (!items.length) {
+            await d.ref.update({ status: 'sent', sentAt: admin.firestore.FieldValue.serverTimestamp(), sentCount: 0 });
+            continue;
+        }
+        try {
+            const fecha = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'long' }).format(new Date(g.day + 'T12:00:00Z'));
+            await db.collection('mailbox').add({
+                type: 'outgoing_pod_digest',
+                direction: 'outgoing',
+                status: 'queued',
+                to: g.to,
+                subject: 'NOVAPACK — ' + items.length + ' entrega' + (items.length === 1 ? '' : 's') + ' del ' + fecha,
+                body: tkPodDigestHtml(g, items),
+                clientIdNum: g.clientIdNum || null,
+                digestDay: g.day,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                createdBy: 'trigger:podDigestDaily'
+            });
+            await d.ref.update({ status: 'sent', sentAt: admin.firestore.FieldValue.serverTimestamp(), sentCount: items.length });
+            sent++;
+        } catch (e) {
+            logger.warn('podDigestDaily: fallo con ' + d.id, { msg: e.message });
+        }
+    }
+    logger.info('podDigestDaily: ' + sent + ' resúmenes encolados');
+});
+
 exports.ticketMirrorAndPod = onDocumentWritten({
     document: 'tickets/{docId}',
     memory: '256MiB',
@@ -1253,24 +1390,40 @@ exports.ticketMirrorAndPod = onDocumentWritten({
             logger.warn('ticketPod: fallo notif in-app ' + businessId, { msg: e.message });
         }
 
-        // 2b) Email POD con enlace de seguimiento (si hay email real)
+        // 2b) Email POD según el MODO configurado. Un email por entrega
+        //     saturaba el buzón del cliente y la cuota SMTP de IONOS
+        //     (30 entregas/día = 30 correos). Modos:
+        //       'resumen'    (por defecto) → se acumula en pod_digests y a las
+        //                    20:30 sale UN email por cliente con el día entero
+        //       'individual' → email por entrega (comportamiento antiguo)
+        //       'off'        → sin email (quedan la notif in-app y el tracking)
+        //     Global en config/admin.podEmailMode; por cliente en
+        //     users.podEmailMode ('global' = hereda).
         try {
             const to = await tkResolveClientEmail(after);
             if (to) {
-                await db.collection('mailbox').add({
-                    type: 'outgoing_pod',
-                    status: 'queued',
-                    to: to,
-                    subject: 'Entrega confirmada — envío ' + businessId,
-                    body: tkPodEmailHtml(after, businessId),
-                    clientId: after.uid || after.senderUid || null,
-                    clientIdNum: after.clientIdNum || null,
-                    ticketBusinessId: businessId,
-                    direction: 'outgoing',
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    createdBy: 'trigger:ticketMirrorAndPod'
-                });
-                logger.info('POD email encolado → ' + to + ' (' + businessId + ')');
+                const mode = await tkResolvePodMode(after);
+                if (mode === 'individual') {
+                    await db.collection('mailbox').add({
+                        type: 'outgoing_pod',
+                        status: 'queued',
+                        to: to,
+                        subject: 'Entrega confirmada — envío ' + businessId,
+                        body: tkPodEmailHtml(after, businessId),
+                        clientId: after.uid || after.senderUid || null,
+                        clientIdNum: after.clientIdNum || null,
+                        ticketBusinessId: businessId,
+                        direction: 'outgoing',
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        createdBy: 'trigger:ticketMirrorAndPod'
+                    });
+                    logger.info('POD email individual → ' + to + ' (' + businessId + ')');
+                } else if (mode === 'off') {
+                    logger.info('POD email OFF (' + businessId + ') — solo notif in-app');
+                } else {
+                    await tkAppendPodDigest(to, after, businessId);
+                    logger.info('POD acumulado en resumen diario → ' + to + ' (' + businessId + ')');
+                }
             } else {
                 logger.info('POD sin email real para ' + businessId + ' — no se envía');
             }

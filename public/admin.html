@@ -3698,6 +3698,11 @@ window.runPublicTicketsBackfill = async function() {
         <div style="display:flex; gap:10px; margin-bottom: 10px; flex-wrap:wrap; align-items:flex-end;">
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <label style="font-size:0.75rem; color:var(--text-dim);">Estado</label>
+                <select id="mailbox-pod-mode" class="form-control" style="width:230px; padding:10px;" title="Cómo se avisa a los clientes de sus entregas por email. El resumen diario agrupa todas las entregas del día en UN correo por cliente (a las 20:30). Cada cliente puede tener su propio ajuste en su ficha." onchange="window.setPodEmailMode && window.setPodEmailMode(this.value)">
+                    <option value="resumen">📬 Entregas: resumen diario</option>
+                    <option value="individual">📨 Entregas: email por entrega</option>
+                    <option value="off">🔕 Entregas: sin email</option>
+                </select>
                 <select id="mailbox-filter-status" class="form-control" style="width:180px; padding:10px;" onchange="renderMailbox()">
                     <option value="todas" selected>Todas</option>
                     <option value="nueva">Nuevas (🔴)</option>
@@ -22477,8 +22482,8 @@ window.importTarifas50 = async () => {
 
 <script src="export_engine.js?v=20260402"></script>
 <script src="phones_manager.js?v=20260516_contacts_btn"></script>
-<script src="mailbox_manager.js?v=20260515_pickup_no_doc"></script>
-<script src="ficha_cliente.js?v=20260723_catalogo3"></script>
+<script src="mailbox_manager.js?v=20260724_pod"></script>
+<script src="ficha_cliente.js?v=20260724_pod"></script>
 <script src="albaranes_central.js?v=20260717_er"></script>
 <script src="facturas_central.js?v=20260717_fiscal"></script>
 <script src="monthly_billing_flow.js?v=20260719_v2cuota"></script>

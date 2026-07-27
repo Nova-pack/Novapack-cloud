@@ -996,6 +996,16 @@
                 <div id="fc-albaran-preview" style="padding:5px 7px; background:rgba(76,175,80,0.06); border:1px solid rgba(76,175,80,0.25); border-radius:4px; font-family:monospace; font-size:0.85rem; color:#4CAF50; font-weight:700; text-align:center;">—</div>
             </div>
         </div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+            <label style="color:#888; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.5px; margin:0;">Email de entregas (POD)</label>
+            <select id="fc-pod-mode" style="background:#1e1e1e; border:1px solid #444; color:#fff; padding:5px 9px; border-radius:5px; font-size:0.75rem;"
+                    title="Cómo se avisa a ESTE cliente de sus entregas. 'Según ajuste global' hereda lo configurado en el Buzón (por defecto: resumen diario a las 20:30).">
+                <option value="global" ${!d.podEmailMode || d.podEmailMode === 'global' ? 'selected' : ''}>Según ajuste global</option>
+                <option value="resumen" ${d.podEmailMode === 'resumen' ? 'selected' : ''}>Resumen diario (20:30)</option>
+                <option value="individual" ${d.podEmailMode === 'individual' ? 'selected' : ''}>Un email por entrega</option>
+                <option value="off" ${d.podEmailMode === 'off' ? 'selected' : ''}>Sin email (solo app)</option>
+            </select>
+        </div>
         `;
 
         // Hooks de preview y carga asíncrona de comp_main + estado de acceso
@@ -3219,6 +3229,8 @@
         if (getVal('fc-flatrate-amt') !== null) updates.flatRateAmount = parseFloat(getVal('fc-flatrate-amt')) || 0;
         // Sucursal: parte de la cuota del padre que se le factura a ella
         if (getVal('fc-flat-share') !== null) updates.flatMonthlyShare = parseFloat(getVal('fc-flat-share')) || 0;
+        // Aviso de entregas por email (POD): global | resumen | individual | off
+        if (getVal('fc-pod-mode') !== null) updates.podEmailMode = getVal('fc-pod-mode');
 
         // Acceso online (fc-access-active)
         const accCb = document.getElementById('fc-access-active');
