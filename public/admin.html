@@ -10733,9 +10733,18 @@ window.runPublicTicketsBackfill = async function() {
                     body { font-family: ${sf}; color: #333; background: #f5f5f5; padding: 20px; }
                     .wrap { max-width: 1100px; margin: 0 auto; background: white; padding: 40px; box-shadow: 0 0 10px rgba(0,0,0,0.05); }
                     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                    th { padding: 6px 4px; text-align: left; font-size: 0.65rem; color: #999; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #ccc; font-weight: 400; }
-                    td { padding: 5px 4px; font-size: 0.8rem; color: #444; border-bottom: 1px solid #f0f0f0; font-weight: 300; }
+                    th { padding: 6px 4px; text-align: left; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 400; }
+                    td { padding: 5px 4px; font-size: 0.8rem; }
                     .totals { border-top: 1px solid #ccc; margin-top: 10px; padding-top: 10px; font-weight: 700; font-size: 1rem; text-align: right; }
+                    /* ─── TEMA DE IMPRESIÓN FORZADO ───────────────────────────
+                       La tabla se copia de la pantalla, que es de TEMA OSCURO:
+                       trae inline texto gris claro (#d4d4d4), amarillos (#FFD700)
+                       y fondos negros — sobre papel blanco no se lee nada.
+                       Los !important de hoja SÍ ganan a los estilos inline. */
+                    .wrap table, .wrap thead, .wrap tbody, .wrap tr, .wrap th, .wrap td, .wrap tbody + div, .wrap table + div { background: transparent !important; }
+                    .wrap th { color: #333 !important; border-bottom: 2px solid #333 !important; }
+                    .wrap td { color: #222 !important; border-bottom: 1px solid #e2e2e2 !important; }
+                    .wrap table + div { color: #1b5e20 !important; border: 1px solid #ccc !important; }
                 </style></head><body>
                 <div class="wrap">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:25px;">
