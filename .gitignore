@@ -18,3 +18,9 @@ secrets/
 tools/verifactu/certs.json
 certificados digitales/
 tools/backups/
+
+# Candado de instancia unica del motor de correo (local, no versionar)
+.mail_engine.lock
+
+# Scripts de diagnostico temporales contra produccion
+_tmp_*.js

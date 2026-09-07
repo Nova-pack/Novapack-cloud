@@ -286,6 +286,12 @@ const SMTP_BCC  = process.env.SMTP_BCC  || SMTP_USER; // copia oculta al admin
 const SMTP_FROM_NAME = process.env.SMTP_FROM_NAME || 'NOVAPACK';
 // Tope por ejecución para no saturar IONOS ni Firestore en un único disparo.
 const OUTGOING_BATCH_MAX = parseInt(process.env.OUTGOING_BATCH_MAX || '20', 10);
+// Máximo de intentos de envío por email. Cortafuegos contra cualquier
+// amplificación futura: si un doc se reclama más veces de la cuenta, se marca
+// fallido en vez de seguir enviando copias al cliente.
+const MAX_SEND_ATTEMPTS = parseInt(process.env.MAX_SEND_ATTEMPTS || '3', 10);
+// Identidad de este motor, para saber en el doc QUIÉN lo envió.
+const ENGINE_ID = (process.env.COMPUTERNAME || process.env.HOSTNAME || 'host') + ':' + process.pid;
 
 let _smtpTransporter = null;
 function getSmtpTransporter() {
@@ -370,21 +376,46 @@ async function processOutgoingQueue(db) {
             continue;
         }
 
-        // Marca 'sending' (anti doble envío). Si ya está en 'sending' por otro
-        // proceso, lo saltamos.
+        // Reclama el email EN TRANSACCIÓN (anti doble envío).
+        // OJO — esto DEBE ser transaccional. Con un get()+update() suelto queda
+        // una ventana en la que N emisores leen 'queued' a la vez, los N escriben
+        // 'sending' y los N envían: el cliente recibe N copias del mismo correo
+        // y el documento sólo conserva la huella del último (parece un envío
+        // limpio). Es exactamente lo que le pasó a LUIS MOLEON el 2026-09-04:
+        // 16 copias del mismo email, una por cada motor vivo.
+        let claimed = false;
+        let attempts = 0;
         try {
-            const fresh = await doc.ref.get();
-            const st = (fresh.exists && fresh.data().status) || '';
-            if (st !== 'queued' && st !== 'outgoing') {
-                skipped++;
-                continue;
-            }
-            await doc.ref.update({
-                status: 'sending',
-                sendingAt: firebase.firestore.FieldValue.serverTimestamp()
+            await db.runTransaction(async (tx) => {
+                claimed = false;   // la transacción puede reintentarse: reevaluar siempre
+                const fresh = await tx.get(doc.ref);
+                const data = fresh.exists ? fresh.data() : {};
+                const st = data.status || '';
+                if (st !== 'queued' && st !== 'outgoing') return;  // otro se lo llevó
+                attempts = (data.sendAttempts || 0) + 1;
+                if (attempts > MAX_SEND_ATTEMPTS) {
+                    tx.update(doc.ref, {
+                        status: 'failed',
+                        errorMessage: 'Demasiados intentos de envío (' + attempts + '). Bloqueado para no duplicar al cliente.',
+                        errorCode: 'TOO_MANY_ATTEMPTS',
+                        failedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    return;
+                }
+                tx.update(doc.ref, {
+                    status: 'sending',
+                    sendingAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    sendingBy: ENGINE_ID,
+                    sendAttempts: attempts
+                });
+                claimed = true;
             });
         } catch(e) {
-            console.warn('[MAIL ENGINE] No pude marcar sending ' + id + ':', e.message);
+            console.warn('[MAIL ENGINE] No pude reclamar ' + id + ':', e.message);
+            skipped++;
+            continue;
+        }
+        if (!claimed) {
             skipped++;
             continue;
         }
@@ -739,6 +770,63 @@ async function run() {
 const WATCH_MODE = process.argv.includes('--watch') || process.env.WATCH_MODE === 'true';
 const IMAP_INTERVAL_MIN = parseInt(process.env.IMAP_INTERVAL_MIN || '5', 10);
 
+// ────────────────────────────────────────────────────────────────────
+// CANDADO DE INSTANCIA ÚNICA (sólo modo --watch)
+// ────────────────────────────────────────────────────────────────────
+// La tarea programada de Windows (NovapackMailEngine) dispara este motor cada
+// 5 minutos. Eso valía cuando el motor era de UNA PASADA y se moría al acabar;
+// desde que existe --watch el proceso NO termina nunca, así que se acumulaban
+// (53 motores vivos el 2026-09-07, uno cada 5 min desde el arranque del PC) y
+// cada uno enviaba SU copia de cada correo.
+// Con el candado, el primero manda y los demás se retiran al instante: la tarea
+// de 5 minutos pasa a ser un VIGILANTE que resucita el motor si se ha caído.
+const LOCK_FILE = path.join(__dirname, '.mail_engine.lock');
+const LOCK_HEARTBEAT_MS = 60 * 1000;
+const LOCK_STALE_MS = 4 * 60 * 1000;   // 4 min sin latido = motor muerto
+
+function pidAlive(pid) {
+    if (!pid || pid === process.pid) return false;
+    try { process.kill(pid, 0); return true; }
+    catch(e) { return e.code === 'EPERM'; }   // existe, pero es de otro usuario
+}
+
+function writeLock() {
+    try {
+        fs.writeFileSync(LOCK_FILE, JSON.stringify({
+            pid: process.pid,
+            engine: ENGINE_ID,
+            startedAt: new Date().toISOString(),
+            heartbeat: Date.now()
+        }));
+    } catch(_) {}
+}
+
+function acquireEngineLock() {
+    try {
+        if (fs.existsSync(LOCK_FILE)) {
+            const raw = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8') || '{}');
+            const age = Date.now() - (raw.heartbeat || 0);
+            if (pidAlive(raw.pid) && age < LOCK_STALE_MS) {
+                console.log('[MAIL ENGINE] 🔒 Ya hay un motor vivo (PID ' + raw.pid + ', último latido hace ' +
+                            Math.round(age / 1000) + 's). Me retiro para no duplicar correos.');
+                return false;
+            }
+            console.log('[MAIL ENGINE] 🔓 Candado caducado (PID ' + (raw.pid || '?') + '). Tomo el relevo.');
+        }
+    } catch(e) {
+        console.warn('[MAIL ENGINE] Candado ilegible, lo sobrescribo:', e.message);
+    }
+    writeLock();
+    return true;
+}
+
+function releaseEngineLock() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8') || '{}');
+        if (raw.pid === process.pid) fs.unlinkSync(LOCK_FILE);
+    } catch(_) {}
+}
+
 // Anti doble-procesado de la cola: si hay un envío en curso y llegan
 // más cambios, no lanzamos múltiples procesos en paralelo (evita rate
 // limits de IONOS y race conditions sobre el doc).
@@ -777,6 +865,13 @@ async function runImapOnce() {
 
 // Run and handle Firebase auth
 async function main() {
+    // Candado de instancia única ANTES de tocar nada (Firebase, IMAP, SMTP).
+    // El modo de una pasada queda libre: sirve de pasada manual de emergencia y
+    // ya no puede duplicar nada gracias a la reclamación transaccional.
+    if (WATCH_MODE && !acquireEngineLock()) {
+        process.exit(0);
+    }
+
     // Init Firebase
     if (!firebase.apps.length) {
         firebase.initializeApp(FIREBASE_CONFIG);
@@ -848,7 +943,17 @@ async function main() {
     if (WATCH_MODE) {
         console.log('[MAIL ENGINE] 🟢 MODO WATCH — quedo escuchando cambios en tiempo real');
         console.log('[MAIL ENGINE]    IMAP cada ' + IMAP_INTERVAL_MIN + ' min · SMTP al instante via Firestore listener');
+        console.log('[MAIL ENGINE] 🔒 Candado tomado (PID ' + process.pid + '). Soy el ÚNICO motor.');
         const db = firebase.firestore();
+
+        // Latido del candado: mientras yo viva, los disparos de la tarea
+        // programada verán el candado fresco y se retirarán solos.
+        setInterval(writeLock, LOCK_HEARTBEAT_MS);
+        // Si me matan o me caigo, suelto el candado para que el siguiente
+        // disparo (máx. 5 min) me sustituya sin esperar a que caduque.
+        process.on('SIGINT',  () => { releaseEngineLock(); process.exit(0); });
+        process.on('SIGTERM', () => { releaseEngineLock(); process.exit(0); });
+        process.on('exit',    () => { releaseEngineLock(); });
 
         // 1) Pasada inicial IMAP (si no está pausado)
         if (!skipImap) {

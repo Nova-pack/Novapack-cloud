@@ -40,6 +40,9 @@ const SMTP_PORT = 465;
 const SMTP_FROM_NAME = 'NOVAPACK Logística';
 const OUTGOING_BATCH_MAX = 20;
 const SMTP_BCC = ''; // opcional: si quieres recibir copia de TODO
+// Cortafuegos anti-avalancha: si un email se reclama más veces de la cuenta,
+// se bloquea en vez de seguir mandando copias al cliente.
+const MAX_SEND_ATTEMPTS = 3;
 
 function looksLikeHtml(s) {
     return typeof s === 'string' && /<(html|body|table|div|p|br|h[1-6]|strong|a\s)/i.test(s);
@@ -122,21 +125,46 @@ async function processQueue() {
             continue;
         }
 
-        // Compare-and-swap: marcar 'sending' atómicamente
+        // Compare-and-swap REAL: reclamar 'sending' dentro de una transacción.
+        // Antes esto era un get()+update() suelto — decía "atómicamente" pero no
+        // lo era: entre la lectura y la escritura cabían N emisores (los motores
+        // locales del PC del admin + este scheduler), todos leían 'queued' y todos
+        // enviaban. Resultado real el 2026-09-04: LUIS MOLEON recibió 16 copias
+        // del mismo correo. El documento sólo guarda la huella del último envío,
+        // así que el duplicado no deja rastro visible. Debe ser transaccional.
+        let claimed = false;
+        let attempts = 0;
         try {
-            const fresh = await doc.ref.get();
-            const st = (fresh.exists && fresh.data().status) || '';
-            if (st !== 'queued' && st !== 'outgoing') { skipped++; continue; }
-            await doc.ref.update({
-                status: 'sending',
-                sendingAt: admin.firestore.FieldValue.serverTimestamp(),
-                sendingBy: 'cloud_function'
+            await db.runTransaction(async (tx) => {
+                claimed = false;   // la transacción puede reintentarse: reevaluar siempre
+                const fresh = await tx.get(doc.ref);
+                const data = fresh.exists ? fresh.data() : {};
+                const st = data.status || '';
+                if (st !== 'queued' && st !== 'outgoing') return;   // otro emisor se lo llevó
+                attempts = (data.sendAttempts || 0) + 1;
+                if (attempts > MAX_SEND_ATTEMPTS) {
+                    tx.update(doc.ref, {
+                        status: 'failed',
+                        errorMessage: `Demasiados intentos de envío (${attempts}). Bloqueado para no duplicar al cliente.`,
+                        errorCode: 'TOO_MANY_ATTEMPTS',
+                        failedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    return;
+                }
+                tx.update(doc.ref, {
+                    status: 'sending',
+                    sendingAt: admin.firestore.FieldValue.serverTimestamp(),
+                    sendingBy: 'cloud_function',
+                    sendAttempts: attempts
+                });
+                claimed = true;
             });
         } catch (e) {
-            logger.warn(`no pude marcar sending ${id}`, { msg: e.message });
+            logger.warn(`no pude reclamar ${id}`, { msg: e.message });
             skipped++;
             continue;
         }
+        if (!claimed) { skipped++; continue; }
 
         const isHtml = looksLikeHtml(body);
         const mailOpts = {
