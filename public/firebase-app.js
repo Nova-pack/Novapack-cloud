@@ -101,6 +101,11 @@ let currentUser = null;
 let userData = null; // Stored profile data (idNum, name, etc.)
 let currentCompanyId = 'default';
 let effectiveStorageUid = null;
+// Raíz de la AGENDA COMPARTIDA de empresa (docId maestro del PADRE).
+// El libro de clientes es UNO por empresa: padre y sucursales leen y
+// escriben el mismo. Antes cada cuenta usaba su propio uid → agendas
+// aisladas ("creo clientes y no se guardan" al mirar desde otra cuenta).
+let agendaRootUid = null;
 let companies = [];
 let editingId = null;
 let editingClientId = null;
@@ -457,6 +462,28 @@ auth.onAuthStateChanged(async (user) => {
 
         console.log("[SYNC] Effective Storage UID set to:", effectiveStorageUid);
 
+        // ───── AGENDA COMPARTIDA DE EMPRESA ─────
+        // Resolución de la raíz: sucursal → docId maestro de su PADRE
+        // (parentClientId puede venir como docId o como nº de cliente);
+        // padre o independiente → su propio docId maestro (userData.id).
+        // Cubre también el modo super-admin (userData ya reescrito arriba).
+        agendaRootUid = effectiveStorageUid;
+        try {
+            let _aRoot = (userData && userData.id) || effectiveStorageUid;
+            const _pcid = userData && userData.parentClientId;
+            if (_pcid) {
+                const _pDoc = await db.collection('users').doc(String(_pcid)).get();
+                if (_pDoc.exists) {
+                    _aRoot = _pDoc.id;
+                } else {
+                    const _pq = await db.collection('users').where('idNum', '==', String(_pcid)).limit(1).get();
+                    if (!_pq.empty) _aRoot = _pq.docs[0].id;
+                }
+            }
+            if (_aRoot) agendaRootUid = _aRoot;
+        } catch (e) { console.warn('[AGENDA] resolución de raíz compartida:', e.message); }
+        console.log('[SYNC] Agenda compartida de empresa en users/' + agendaRootUid + '/destinations');
+
         if (userData) {
             const userDisplay = document.getElementById('user-display-name');
             if (userDisplay) {
@@ -645,7 +672,12 @@ const getCollection = (name) => {
     const storageId = effectiveStorageUid || currentUser.uid;
     const userRef = db.collection('users').doc(storageId);
 
-    if (name === 'destinations' || name === 'nextId') {
+    if (name === 'destinations') {
+        // Agenda COMPARTIDA de la empresa: SIEMPRE la del docId maestro del
+        // padre (agendaRootUid), no la del uid de la cuenta que ha entrado.
+        return db.collection('users').doc(agendaRootUid || storageId).collection(name);
+    }
+    if (name === 'nextId') {
         return userRef.collection(name);
     }
 
@@ -3512,9 +3544,12 @@ async function importOfflineBackup(event) {
             let totalDestImported = 0;
             
             const myIdNum = String(userData.idNum || "0");
-            // CRITICAL: Use effectiveStorageUid to match the path used by getCollection('destinations')
+            // CRITICAL: los tickets van bajo el uid de almacenamiento; la
+            // AGENDA va bajo la raíz compartida de empresa (agendaRootUid),
+            // la misma que usa getCollection('destinations').
             const storageUid = effectiveStorageUid || auth.currentUser.uid;
             const userRef = db.collection('users').doc(storageUid);
+            const agendaRef = db.collection('users').doc(agendaRootUid || storageUid);
 
             // 1. IMPORT TICKETS
             for (const t of allTickets) {
@@ -3565,7 +3600,7 @@ async function importOfflineBackup(event) {
                     }
                 }
 
-                batch.set(userRef.collection('destinations').doc(destId), payload, { merge: true });
+                batch.set(agendaRef.collection('destinations').doc(destId), payload, { merge: true });
                 count++;
                 totalDestImported++;
 
@@ -3651,6 +3686,8 @@ async function importCloudBackupInClient(raw) {
         const myIdNum = String(userData.idNum || "0");
         const storageUid = effectiveStorageUid || auth.currentUser.uid;
         const userRef = db.collection('users').doc(storageUid);
+        // Agenda → raíz COMPARTIDA de empresa (misma que getCollection)
+        const agendaRef = db.collection('users').doc(agendaRootUid || storageUid);
 
         // 1. IMPORT TICKETS — Only import tickets that belong to this user
         for (const t of allTickets) {
@@ -3696,7 +3733,7 @@ async function importCloudBackupInClient(raw) {
             const destId = d.id || `cli_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
             const payload = { ...d };
 
-            batch.set(userRef.collection('destinations').doc(destId), payload, { merge: true });
+            batch.set(agendaRef.collection('destinations').doc(destId), payload, { merge: true });
             count++;
             totalDestImported++;
 
@@ -6410,7 +6447,9 @@ window.saveThirdPartyToAgenda = async function() {
     if (!name) { alert('Introduce al menos el nombre.'); return; }
     try {
         var docId = name.replace(/[^a-z0-9\-_]/gi, '_').toLowerCase();
-        await db.collection('users').doc(currentUser.uid).collection('destinations').doc(docId).set({
+        // Agenda COMPARTIDA de empresa (antes escribía bajo currentUser.uid:
+        // el contacto se guardaba en una raíz que nadie volvía a leer)
+        await getCollection('destinations').doc(docId).set({
             name: name, phone: phone,
             addresses: [{ id: 'addr_' + Date.now(), address: address, cp: cp }]
         }, { merge: true });
