@@ -37,7 +37,9 @@ const SMTP_PASS = defineSecret('SMTP_PASS');
 
 const SMTP_HOST = 'smtp.ionos.es';
 const SMTP_PORT = 465;
-const SMTP_FROM_NAME = 'NOVAPACK Logística';
+// Debe coincidir con el del motor local (mail_engine.js): si los dos emisores
+// firman distinto, el cliente ve dos remitentes para el mismo servicio.
+const SMTP_FROM_NAME = 'NOVAPACK';
 const OUTGOING_BATCH_MAX = 20;
 const SMTP_BCC = ''; // opcional: si quieres recibir copia de TODO
 // Cortafuegos anti-avalancha: si un email se reclama más veces de la cuenta,
