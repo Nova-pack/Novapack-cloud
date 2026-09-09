@@ -4369,13 +4369,42 @@ const NOVAPACK_CARRIER = {
     email: 'administracion@novapack.info'
 };
 
-// Bultos totales de un albarán. Sin packagesList (o vacío) manda t.packages:
-// devolver 1 a secas imprimía UNA sola etiqueta para envíos de varios bultos.
-function npTotalBultos(t) {
+// Expande packagesList (líneas AGRUPADAS con qty) a UNA entrada por bulto real.
+// generateLabelHTML recibe un índice de BULTO (0..total-1) pero indexaba
+// packagesList directamente: con qty>1 las etiquetas salían con el peso de la
+// línea equivocada (3 paquetes de 5kg + 2 palets de 80kg → los palets se
+// imprimían con 5 kg). Sin packagesList manda t.packages.
+function npBultosExpandidos(t) {
+    const out = [];
     if (t && t.packagesList && t.packagesList.length > 0) {
-        return t.packagesList.reduce(function (acc, p) { return acc + (parseInt(p.qty) || 1); }, 0);
+        t.packagesList.forEach(function (p) {
+            const q = parseInt(p.qty) || 1;
+            for (let i = 0; i < q; i++) {
+                out.push({ weight: parseFloat(p.weight) || 0, size: p.size || 'Bulto' });
+            }
+        });
     }
-    return parseInt(t && t.packages) || 1;
+    if (out.length === 0) {
+        const q = parseInt(t && t.packages) || 1;
+        for (let i = 0; i < q; i++) {
+            out.push({ weight: parseFloat(t && t.weight) || 0, size: (t && t.size) || 'Bulto' });
+        }
+    }
+    return out;
+}
+
+// Bultos totales. Devolver 1 a secas sin packagesList imprimía UNA sola
+// etiqueta para envíos de varios bultos.
+function npTotalBultos(t) {
+    return npBultosExpandidos(t).length;
+}
+
+// Sanea un valor antes de meterlo en el QR de pipes: un '|' en un nombre o una
+// dirección parte el campo y el escáner del almacén lee basura.
+// (Mismo criterio que window.qrField de billing_series.js, que la app de
+// cliente no carga.)
+function npQrField(v) {
+    return String(v == null ? '' : v).replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
 }
 
 function generateTicketHTML(t, footerLabel) {
@@ -4902,7 +4931,9 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
     const companyEmail = NOVAPACK_CARRIER.email;
 
     if (!weightStr) {
-        let w = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : t.weight;
+        const _bultos = npBultosExpandidos(t);
+        const _b = _bultos[index] || _bultos[0] || { weight: 0 };
+        let w = _b.weight;
         if (typeof w === 'number') w = w + " kg";
         if (typeof w === 'string' && !w.includes('kg')) w = w + " kg";
         weightStr = w;
@@ -4941,7 +4972,7 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
                 
                 <!-- Label QR (local) -->
                 <div style="position: absolute; bottom: 0; right: 0;">
-                     <img src="${window.npGenerateQrUrl(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${total}|PESO:${t.weight || 0}|PKG:${index+1}/${total}`, 250)}"
+                     <img src="${window.npGenerateQrUrl(`ID:${npQrField(t.id)}|DEST:${npQrField(t.receiver)}|ADDR:${npQrField(t.address)}|PROV:${npQrField(t.province)}|TEL:${npQrField(t.phone)}|COD:${t.cod || 0}|BULTOS:${total}|PESO:${npBultosExpandidos(t).reduce((a, b) => a + b.weight, 0).toFixed(0)}|CLI:${npQrField(t.clientIdNum)}|NIF:${npQrField(t.receiverNif)}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}|PKG:${index+1}/${total}`, 250)}"
                          style="width: 100px !important; height: 100px !important; display: block; background: white; padding: 4px; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; max-width: none !important; max-height: none !important; min-width: 100px !important; min-height: 100px !important;">
                 </div>
             </div>
