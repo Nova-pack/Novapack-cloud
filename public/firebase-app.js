@@ -1048,7 +1048,7 @@ function renderTicketsList() {
             const isToday = ticketDate === todayStr;
             if (isToday) return true; // Siempre mostrar los de hoy
             // De días anteriores: ocultar si ya están impresos O entregados
-            const isDone = t.printed || t.delivered || t.status === 'Entregado';
+            const isDone = t.printed || t.labelsPrinted || t.delivered || t.status === 'Entregado';
             return !isDone;
         });
         const hiddenCount = beforeClean - filtered.length;
@@ -1099,7 +1099,7 @@ if (dateFilter) dateFilter.onchange = renderTicketsList;
 
 function renderTicketItem(t, list) {
     const div = document.createElement('div');
-    div.className = `ticket-list-item ${t.printed ? 'printed' : ''} ${editingId === t.id ? 'active' : ''}`;
+    div.className = `ticket-list-item ${(t.printed || t.labelsPrinted) ? 'printed' : ''} ${editingId === t.id ? 'active' : ''}`;
 
     const d = parseSafeDate(t.createdAt);
     const dateStr = d.toLocaleDateString();
@@ -1119,6 +1119,7 @@ function renderTicketItem(t, list) {
     else if (t.status === 'Devuelto') { badgeClass = 'billed'; badgeText = '↩️ DEVUELTO'; }
     else if (isDelivered) { badgeClass = 'delivered'; badgeText = '✅ ENTREGADO'; }
     else if (t.printed) { badgeClass = 'printed'; badgeText = 'IMPRESO'; }
+    else if (t.labelsPrinted) { badgeClass = 'printed'; badgeText = '🏷️ ETIQUETAS'; }
 
     const sfFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif";
     div.innerHTML = `
@@ -4354,22 +4355,39 @@ function generateQRCode(text, size = 512) {
 }
 
 
+// ── TRANSPORTISTA (emisor del albarán) ──────────────────────────
+// El albarán es el documento de transporte de NOVAPACK, no del cliente: bajo el
+// logo van SIEMPRE el CIF y el email de NOVAPACK. Los datos del cliente van en
+// el bloque REMITENTE, que es su sitio.
+// OJO: en la app del cliente, users/{uid}/companies/comp_main son los datos del
+// PROPIO CLIENTE (el código los llama "remitente principal"). Usarlos aquí ponía
+// "LUIS MOLEON RECAMBIOS, S.L." y su NIF bajo el logo de NOVAPACK, como si el
+// transportista fuese el cliente.
+const NOVAPACK_CARRIER = {
+    name:  'NOVAPACK SERVI INMEDIATO DE PAQUETERIA S.L.',
+    nif:   'B93587194',
+    email: 'administracion@novapack.info'
+};
+
+// Bultos totales de un albarán. Sin packagesList (o vacío) manda t.packages:
+// devolver 1 a secas imprimía UNA sola etiqueta para envíos de varios bultos.
+function npTotalBultos(t) {
+    if (t && t.packagesList && t.packagesList.length > 0) {
+        return t.packagesList.reduce(function (acc, p) { return acc + (parseInt(p.qty) || 1); }, 0);
+    }
+    return parseInt(t && t.packages) || 1;
+}
+
 function generateTicketHTML(t, footerLabel) {
     const ts = (t.createdAt && typeof t.createdAt.toDate === 'function') ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : new Date());
     const validDateStr = !isNaN(ts.getTime())
         ? (ts.toLocaleDateString('es-ES') + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
         : "Fecha pendiente";
 
-    // ── Empresa facturadora ──
-    // Prioriza t.compId del ticket (la empresa REAL a la que va la factura),
-    // no currentCompanyId (la del admin que está navegando).
-    const _comp = (typeof companies !== 'undefined' && Array.isArray(companies))
-        ? companies.find(c => c.id === (t.compId || t.compID))
-          || companies.find(c => c.id === (typeof currentCompanyId !== 'undefined' ? currentCompanyId : null))
-        : null;
-    const billingName  = (_comp && _comp.name)  ? _comp.name  : (t.compName  || 'NOVAPACK Logística');
-    const billingNif   = (_comp && _comp.nif)   ? _comp.nif   : (t.compNif   || '');
-    const billingEmail = (_comp && _comp.email) ? _comp.email : (t.compEmail || t.senderEmail || 'administracion@novapack.info');
+    // ── Emisor del albarán: SIEMPRE NOVAPACK (ver NOVAPACK_CARRIER) ──
+    const billingName  = NOVAPACK_CARRIER.name;
+    const billingNif   = NOVAPACK_CARRIER.nif;
+    const billingEmail = NOVAPACK_CARRIER.email;
 
     // ── Auto-agrupar items por size+peso ──
     let rawList = [];
@@ -4567,7 +4585,11 @@ async function printTicket(t) {
         }
     } catch(_) {}
 
-    const includeManifest = confirm("¿Deseas imprimir también el Manifiesto para este albarán?");
+    // El manifiesto es un documento CONSOLIDADO (la relación de envíos que se
+    // entrega al conductor), no uno por albarán. Antes se preguntaba en cada
+    // impresión y salía un manifiesto de UNA sola línea cada vez. Para el del
+    // día está el botón "IMPRIMIR MANIFIESTO" (con selector de turno), que los
+    // agrupa todos — y printShiftBatch ya añade el suyo al final del lote.
 
     const page = document.createElement('div');
     page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box;";
@@ -4585,12 +4607,6 @@ async function printTicket(t) {
 
     area.appendChild(page);
 
-    if (includeManifest) {
-        const manifestDiv = document.createElement('div');
-        manifestDiv.style.pageBreakBefore = 'always';
-        manifestDiv.innerHTML = generateManifestHTML([t]);
-        area.appendChild(manifestDiv);
-    }
 
 
 
@@ -4881,10 +4897,9 @@ document.getElementById('btn-print-labels-morning').onclick = () => printLabelSh
 document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
 function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
-    // Company name for label header
-    const _lComp = (typeof companies !== 'undefined' && typeof currentCompanyId !== 'undefined') ? companies.find(c => c.id === currentCompanyId) : null;
-    const companyName = (_lComp && _lComp.name) ? _lComp.name : (t.compName || t.sender || 'NOVAPACK');
-    const companyEmail = (_lComp && _lComp.email) ? _lComp.email : (t.senderEmail || 'administracion@novapack.info');
+    // Cabecera de la etiqueta: el email es el del TRANSPORTISTA (NOVAPACK), no el
+    // del cliente — que ya sale a la derecha, en su bloque REMITENTE.
+    const companyEmail = NOVAPACK_CARRIER.email;
 
     if (!weightStr) {
         let w = t.packagesList ? (t.packagesList[index] ? t.packagesList[index].weight : (t.packagesList[0] ? t.packagesList[0].weight : 0)) : t.weight;
@@ -4974,7 +4989,9 @@ async function printLabelShiftBatch(slot) {
                 const ts = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt);
                 if (!isNaN(ts.getTime())) dStr = formatDateLocal(ts);
             }
-            if (dStr === today && d.timeSlot === slot && !d.printed) tickets.push({ ...d });
+            // Filtra por labelsPrinted, NO por printed: imprimir el albarán no
+            // debe hacer desaparecer sus etiquetas del lote (y viceversa).
+            if (dStr === today && d.timeSlot === slot && !d.labelsPrinted) tickets.push({ ...d });
         });
         hideLoading();
 
@@ -4999,7 +5016,7 @@ async function printLabelShiftBatch(slot) {
 
             let labelsHtml = [];
             tickets.forEach(t => {
-                const totalPkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+                const totalPkgs = npTotalBultos(t);
                 for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs, null, isA4));
             });
 
@@ -5008,9 +5025,9 @@ async function printLabelShiftBatch(slot) {
             document.body.classList.add('printing-labels');
 
             tickets.forEach(t => {
-                t.printed = true;
+                t.labelsPrinted = true;
                 if (t.docId) {
-                    db.collection('tickets').doc(t.docId).update({ printed: true }).catch(e => console.error("Labels batch update fail:", e));
+                    db.collection('tickets').doc(t.docId).update({ labelsPrinted: true }).catch(e => console.error("Labels batch update fail:", e));
                 }
             });
             renderTicketsList();
@@ -5172,7 +5189,7 @@ async function printLabel(t) {
             setPrintPageSize('60mm 90mm');
         }
 
-        const totalPkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : 1;
+        const totalPkgs = npTotalBultos(t);
         let labelsHtml = [];
         const isA4 = (paperMode === 'a4' || paperMode === 'pdf');
         for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs, null, isA4));
@@ -5181,12 +5198,12 @@ async function printLabel(t) {
 
         document.body.classList.add('printing-labels');
 
-        t.printed = true;
+        t.labelsPrinted = true;
         renderTicketsList();
 
         try {
             const docId = t.docId || t.id;
-            await db.collection('tickets').doc(docId).update({ printed: true });
+            await db.collection('tickets').doc(docId).update({ labelsPrinted: true });
             console.log("Label marked as printed in DB:", docId);
         } catch (e) {
             console.error("Error updating label print status:", e);

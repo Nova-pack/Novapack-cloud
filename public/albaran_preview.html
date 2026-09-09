@@ -96,9 +96,11 @@ function generateTicketHTML(t, footerLabel) {
         ? (ts.toLocaleDateString('es-ES') + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
         : "Fecha pendiente";
 
-    const billingName  = t.compName  || 'NOVAPACK Logística';
-    const billingNif   = t.compNif   || '';
-    const billingEmail = t.compEmail || t.senderEmail || 'administracion@novapack.info';
+    // Emisor del albarán: SIEMPRE NOVAPACK (igual que en firebase-app.js).
+    // El transportista no cambia según el cliente; sus datos van en REMITENTE.
+    const billingName  = 'NOVAPACK SERVI INMEDIATO DE PAQUETERIA S.L.';
+    const billingNif   = 'B93587194';
+    const billingEmail = 'administracion@novapack.info';
 
     let rawList = t.packagesList || [];
     const groupMap = {};
