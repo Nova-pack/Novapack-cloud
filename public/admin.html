@@ -9090,6 +9090,18 @@ window.runPublicTicketsBackfill = async function() {
                             const data = { ...doc.data(), id: doc.id }; // STRICT ENFORCEMENT: doc.id must override any rogue inner json properties
                             if (data.idNum !== undefined) data.idNum = String(data.idNum);
 
+                            // Documentos de SESIÓN, no clientes: el acceso del cliente
+                            // cuelga de su propio identificador y ahí viven su sede y su
+                            // agenda, pero eso no es una ficha de cliente. Antes se
+                            // copiaba la ficha entera y aparecía como un cliente más:
+                            // mismo número, mismo NIF, mismo login (SCORA #1746,
+                            // DAVASA #104). Aquí se ignoran.
+                            if (data.isLinkDoc === true || data.isSystemAccount === true) {
+                                delete userMap[data.id];
+                                delete userCompaniesMap[data.id];
+                                return;
+                            }
+
                             if (change.type === 'removed') {
                                 delete userMap[data.id];
                                 if (data.authUid) delete userMap[data.authUid];

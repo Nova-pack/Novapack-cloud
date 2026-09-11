@@ -161,13 +161,22 @@ window.npGenerateQrUrl = function(data, fallbackSize) {
     return 'https://api.qrserver.com/v1/create-qr-code/?size=' + fallbackSize + 'x' + fallbackSize + '&data=' + encodeURIComponent(data) + '&qzone=4';
 };
 
-// Al clonar una ficha maestra en users/{uid} NO se copia el campo 'id': el
-// docId ES la identidad, y guardarlo dentro es justo lo que crea los alias
-// obsoletos que luego apuntan a fichas ajenas.
-function _sinIdInterno(profile, authUid) {
-    const copia = { ...profile, authUid: authUid };
-    delete copia.id;
-    return copia;
+// ENLACE, NO CLON.
+// Antes, al entrar, la app copiaba la FICHA ENTERA del cliente a users/{uid}.
+// Resultado: cada cliente acababa con DOS documentos y el segundo aparecía en
+// el admin como un cliente más — mismo número, mismo NIF, mismo login. De ahí
+// los números repetidos (#1746 SCORA, #104 DAVASA), los NIF ambiguos que
+// dejaban los portes debidos sin adjudicar, y los alias de identidad.
+// Ahora se escribe sólo un PUNTERO a la ficha buena. El documento sigue
+// existiendo (debajo cuelgan la sede, la agenda y los ajustes del cliente,
+// que es donde la app los lee), pero ya no suplanta a un cliente.
+function _enlaceAFicha(profile, authUid) {
+    return {
+        authUid: authUid,
+        masterDocId: profile.id || null,
+        isLinkDoc: true,
+        linkedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
 }
 
 // --- PRINT HELPERS ---
@@ -286,7 +295,7 @@ auth.onAuthStateChanged(async (user) => {
                     profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Forzar vinculación en documento de UID para búsquedas rápidas secundarias
-                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
+                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch (err) {
                  console.warn("Fallo búsqueda where email:", err.message);
@@ -308,7 +317,7 @@ auth.onAuthStateChanged(async (user) => {
                     profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Clona al docId del uid para acelerar futuros logins
-                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
+                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch(err) {
                 console.warn('Fallo búsqueda where authUid:', err.message);
@@ -319,7 +328,17 @@ auth.onAuthStateChanged(async (user) => {
         // cliente cuya cuenta auth se creó con su email real).
         if (!profile) {
              let userDoc = await db.collection('users').doc(user.uid).get();
-             if (userDoc.exists) {
+             // Si es un puntero, la ficha buena es la que señala.
+             if (userDoc.exists && userDoc.data().isLinkDoc && userDoc.data().masterDocId) {
+                 try {
+                     const _maestra = await db.collection('users').doc(String(userDoc.data().masterDocId)).get();
+                     if (_maestra.exists) {
+                         profile = { ..._maestra.data(), id: _maestra.id };
+                         profile.isLinked = true;
+                     }
+                 } catch (e) { console.warn('[SYNC] puntero roto:', e.message); }
+             }
+             if (!profile && userDoc.exists) {
                  profile = { ...userDoc.data(), id: user.uid };
                  // Autocuración: si la ficha arrastra un 'id' obsoleto, se borra.
                  // Es el caso de SCORA: users/20nEis... guardaba id='0mJvB...',
@@ -340,7 +359,7 @@ auth.onAuthStateChanged(async (user) => {
                 let directDoc = await db.collection('users').doc(user.email.toLowerCase()).get();
                 if (directDoc.exists) {
                     profile = { ...directDoc.data(), id: user.email.toLowerCase() };
-                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
+                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch(e) {}
         }
