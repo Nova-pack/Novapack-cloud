@@ -90,7 +90,7 @@
             body * { visibility: hidden !important; }
             #print-area, #print-area * { visibility: visible !important; }
             #print-area { display: block !important; position: absolute; top: 0; left: 0; width: 100%; background: white; }
-            @page { size: A4 portrait; margin: 5mm; }
+            @page { size: A4 portrait; margin: 0; }   /* 0, como el resto del sistema */
         }
 
         /* Mobile responsive */
@@ -162,7 +162,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="../firebase-config.js"></script>
 <script src="../libs/qrcode.min.js"></script>
-<script src="conductor.js?v=20260724_scanner"></script>
+<script src="../albaran_render.js?v=20260911_unificado"></script>
+<script src="conductor.js?v=20260911_unificado"></script>
 
 <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 </body>

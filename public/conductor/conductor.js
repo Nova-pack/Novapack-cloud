@@ -26,6 +26,14 @@ function _conductorQrUrl(data, fallbackSize) {
     return 'https://api.qrserver.com/v1/create-qr-code/?size=' + fallbackSize + 'x' + fallbackSize + '&data=' + encodeURIComponent(data);
 }
 
+// El renderizador compartido (albaran_render.js) pide este generador de QR.
+// El del conductor ya existe y hace lo mismo: lo prestamos.
+window.npGenerateQrUrl = window.npGenerateQrUrl || _conductorQrUrl;
+
+// Formato del albarán: FUENTE ÚNICA en albaran_render.js. Antes había aquí
+// una copia con el formato viejo de 110mm, distinto al de la app de cliente.
+const generateTicketHTML = window.npGenerateTicketHTML;
+
 // --- State ---
 let allRoutes = [];          // { id, label, number, driverName }
 let routeTickets = {};       // routeId -> [ticket, ...]
@@ -289,112 +297,11 @@ function renderTicketList(routeId) {
 function route_esc(s) { return String(s).replace(/'/g, "\\'"); }
 
 // --- Ticket Print HTML (ported from firebase-app.js) ---
-function generateTicketHTML(t, footerLabel) {
-    const ts = (t.createdAt && typeof t.createdAt.toDate === 'function') ? t.createdAt.toDate() : (t.createdAt ? new Date(t.createdAt) : new Date());
-    const validDateStr = !isNaN(ts.getTime()) ? (ts.toLocaleDateString() + " " + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : "Fecha pendiente";
-
-    const companyEmail = t.senderEmail || 'administracion@novapack.info';
-
-    let displayList = [];
-    if (t.packagesList && t.packagesList.length > 0) {
-        displayList = t.packagesList;
-    } else {
-        displayList = [{ qty: parseInt(t.packages) || 1, weight: t.weight, size: t.size }];
-    }
-
-    const hasCod = t.cod && t.cod.toString().trim() !== '' && t.cod.toString() !== '0';
-
-    let rowsHtml = '';
-    displayList.forEach((p) => {
-        let w = p.weight;
-        if (typeof w === 'number') w = w + " kg";
-        if (typeof w === 'string' && !w.includes('kg')) w = w + " kg";
-        const qty = p.qty || 1;
-        rowsHtml += `
-            <tr>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(qty)}</td>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(w)}</td>
-               <td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(p.size || 'Bulto')}</td>
-               ${hasCod ? `<td style="border: 1px solid #000; padding: 1px 3px; text-align: center; font-size: 8pt;">${escapeHtml(t.cod)} &euro;</td>` : ''}
-            </tr>`;
-    });
-
-    return `
-    <div style="font-family: Arial, sans-serif; padding: 4px; border: 2px solid #000; min-height: 110mm; height: 110mm; position: relative; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; background: white;">
-        ${t.province ? `<div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%) rotate(-25deg); font-size:4.5rem; color:#000; font-weight:900; white-space:nowrap; z-index:0; pointer-events:none; width: 100%; text-align: center; font-family: 'Arial Black', sans-serif; opacity: 0.04; text-transform: uppercase;">${escapeHtml(t.province)}</div>` : ''}
-        <div style="z-index: 2;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; position:relative;">
-                <div style="flex: 0 0 auto; max-width: 130px;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 14pt; color: #FF6600; line-height: 1;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
-                    <div style="font-size: 0.6rem; letter-spacing: 0.3px; color:#333; margin-top: 2px;">${escapeHtml(companyEmail)}</div>
-                </div>
-                <div style="flex: 1; text-align: center; padding: 0 10px;">
-                    <div style="padding: 5px; background:#FFF; display: inline-block; min-width: 140px;">
-                        <div style="font-size: 0.9rem; font-weight: bold; color: #000; margin-bottom: 5px;">
-                            PORTES ${t.shippingType === 'Debidos' ? 'DEBIDOS' : 'PAGADOS'}
-                        </div>
-                        <div style="font-size: 1.6rem; font-weight: 900; color: #FF6600; text-transform:uppercase; line-height: 1.1;">
-                            ${t.province ? escapeHtml(t.province) : '&nbsp;'}
-                        </div>
-                        ${t.timeSlot ? `<div style="font-size: 0.9rem; font-weight: 900; background: #EEE; color: #000; text-align: center; padding: 3px 5px; margin-top: 4px; border-radius: 4px;">TURNO: ${escapeHtml(t.timeSlot)}</div>` : ''}
-                        ${hasCod ? `<div style="font-size: 1.1rem; font-weight: 900; color: #FF3B30; margin-top: 5px; border-top: 1px solid #FF6600; padding-top:4px;">REEMBOLSO: ${escapeHtml(t.cod)} &euro;</div>` : ''}
-                    </div>
-                </div>
-                <div style="flex: 1; text-align: right; display: flex; flex-direction: row-reverse; gap: 10px; align-items: start;">
-                    <div style="text-align: right;">
-                        <div style="font-size: 1rem; font-weight: bold; margin-bottom: 5px;">${validDateStr}</div>
-                        <div style="font-size: 0.75rem; color: #555; text-transform:uppercase; font-weight: 800;">Albar&aacute;n N&ordm;</div>
-                        <div style="font-size: 1.6rem; color: #000; font-weight: 800; letter-spacing: -1px;">${escapeHtml(t.id)}</div>
-                    </div>
-                    <div style="background: white; padding: 2px; border: 1px solid #eee;">
-                        <img src="${_conductorQrUrl(`ID:${t.id}|DEST:${t.receiver || ''}|ADDR:${t.address || ''}|PROV:${t.province || ''}|TEL:${t.phone || ''}|COD:${t.cod || 0}|BULTOS:${t.packages || 1}|PESO:${t.weight || 0}|OBS:${t.notes || ''}|CLI:${t.clientIdNum || ''}|NIF:${t.receiverNif || ''}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}`)}"
-                             alt="QR" style="display: block; width: 110px; height: 110px; image-rendering: pixelated;">
-                    </div>
-                </div>
-            </div>
-            <div style="margin-top: 5px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div style="border: 1px solid #ccc; padding: 5px; font-size: 0.8rem;">
-                    <strong>REMITENTE:</strong><br>
-                    ${escapeHtml(t.sender)}<br>
-                    ${escapeHtml(t.senderAddress || '')}<br>
-                    ${t.senderPhone ? `Telf: ${escapeHtml(t.senderPhone)}` : ''}
-                </div>
-                <div style="border: 1px solid #000; padding: 5px; font-size: 10pt;">
-                    <strong>DESTINATARIO:</strong><br>
-                    <div style="font-weight:bold; font-size:1.1em;">${escapeHtml(t.receiver)}</div>
-                    ${escapeHtml(t.address)}
-                </div>
-            </div>
-            <table style="width: 100%; margin-top: 5px; border-collapse: collapse; border: 1px solid #ccc;">
-                <thead>
-                    <tr style="border-bottom: 1px solid #ccc; color: #000;">
-                        <th style="border: 1px solid #ccc; padding: 1px; font-size: 0.7rem;">BULTOS</th>
-                        <th style="border: 1px solid #ccc; padding: 1px; font-size: 0.7rem;">PESO</th>
-                        <th style="border: 1px solid #ccc; padding: 1px; font-size: 0.7rem;">MEDIDA</th>
-                        ${hasCod ? '<th style="border: 1px solid #ccc; padding: 1px; font-size: 0.7rem;">REEMBOLSO</th>' : ''}
-                    </tr>
-                </thead>
-                <tbody>${rowsHtml}</tbody>
-            </table>
-            <div style="margin-top: 5px; border: 1px solid #ccc; padding: 5px; background:transparent; display:flex; justify-content:space-around; font-weight:bold; font-size:1rem;">
-                <span>TOTAL BULTOS: ${displayList.reduce((sum, p) => sum + (parseInt(p.qty) || 1), 0)}</span>
-                <span>TOTAL PESO: ${displayList.reduce((sum, p) => sum + ((parseFloat(p.weight) || 0) * (parseInt(p.qty) || 1)), 0).toFixed(2)} kg</span>
-            </div>
-            <div style="margin-top: 4px; border: 1px solid #ccc; padding: 2px 5px; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; overflow: hidden; max-height: 50px;">
-                <strong>Observaciones:</strong> ${escapeHtml(t.notes)}
-            </div>
-        </div>
-        <div style="margin-top: 5px; font-size: 0.7rem; width: 100%; display: flex; justify-content: flex-end; padding-right: 10px;">
-            <div style="text-align:right;">
-                <span>Firma y Sello:</span><br>
-                <span style="font-weight: bold; text-transform: uppercase;">${escapeHtml(footerLabel)}</span>
-            </div>
-        </div>
-    </div>`;
-}
 
 // --- Print Functions ---
 function printSingleTicket(routeId, docId) {
+    // Misma CSS de impresión forzada que la app de cliente y el admin.
+    window.npSetPrintPageSize('A4 portrait');
     const tickets = routeTickets[routeId] || [];
     const t = tickets.find(tk => tk.docId === docId);
     if (!t) { alert('Albarán no encontrado'); return; }
@@ -406,10 +313,10 @@ function printSingleTicket(routeId, docId) {
     page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box;";
 
     page.innerHTML = `
-        <div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
+        <div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
             ${generateTicketHTML(t, "Ejemplar para Administración")}
         </div>
-        <div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+        <div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
             ${generateTicketHTML(t, "Ejemplar para el Cliente")}
         </div>`;
 
@@ -422,6 +329,7 @@ function printSingleTicket(routeId, docId) {
 }
 
 function printAllTickets() {
+    window.npSetPrintPageSize('A4 portrait');
     if (!currentRouteId) return;
     const tickets = routeTickets[currentRouteId] || [];
     if (tickets.length === 0) { alert('No hay albaranes para imprimir'); return; }
@@ -434,10 +342,10 @@ function printAllTickets() {
         page.style = "width: 210mm; height: 297mm; display: flex; flex-direction: column; background: white; margin: 0 auto; box-sizing: border-box; page-break-after: always;";
 
         page.innerHTML = `
-            <div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
+            <div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center; border-bottom: 2px dashed #bbb;">
                 ${generateTicketHTML(t, "Ejemplar para Administración")}
             </div>
-            <div style="height: 50%; width: 100%; box-sizing: border-box; padding: 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+            <div style="flex: 1; width: 100%; box-sizing: border-box; padding: 8mm 10mm; display: flex; flex-direction: column; justify-content: center; align-items: center;">
                 ${generateTicketHTML(t, "Ejemplar para el Cliente")}
             </div>`;
 
