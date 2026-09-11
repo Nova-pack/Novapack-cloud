@@ -2733,24 +2733,32 @@ async function saveClientToAgenda(t) {
         const docRef = agenda.doc(docId);
         const doc = await docRef.get();
 
+        // Contador de uso: cada albarán a este destinatario suma uno. Es lo que
+        // ordena la agenda por LOS MÁS USADOS en el buscador.
+        const _usoInc = firebase.firestore.FieldValue.increment(1);
+        const _ahora  = firebase.firestore.FieldValue.serverTimestamp();
+
         if (!doc.exists) {
             await docRef.set({
                 name: t.receiver.toUpperCase(),
                 phone: (t.phone || "").trim(),
-                addresses: [newAddr]
+                addresses: [newAddr],
+                useCount: 1,
+                lastUsedAt: _ahora
             });
         } else {
             const data = doc.data();
             const sigNew = getAddressSignature(newAddr);
             const exists = (data.addresses || []).some(a => getAddressSignature(a) === sigNew);
 
+            // El contador sube SIEMPRE, aunque la dirección ya estuviera: lo que
+            // cuenta es cuántas veces se le envía, no cuántas direcciones tiene.
+            const _upd = { useCount: _usoInc, lastUsedAt: _ahora };
             if (!exists) {
-                const updatedAddrs = [...(data.addresses || []), newAddr];
-                await docRef.update({
-                    addresses: updatedAddrs,
-                    phone: (t.phone || data.phone || "").trim()
-                });
+                _upd.addresses = [...(data.addresses || []), newAddr];
+                _upd.phone = (t.phone || data.phone || "").trim();
             }
+            await docRef.update(_upd);
         }
     } finally {
         isSubmittingAgenda = false;
@@ -3822,14 +3830,18 @@ function _searchNovapackGlobal() { return []; }
 
 if (clientPickerInput) {
     clientPickerInput.oninput = () => {
-    if (agendaSearchTimer) clearTimeout(agendaSearchTimer);
+        if (agendaSearchTimer) clearTimeout(agendaSearchTimer);
+        agendaSearchTimer = setTimeout(_runClientPicker, 300); // 300ms debounce
+    };
+    // Al ENFOCAR con el campo vacío se abren LOS MÁS USADOS, que es lo que el
+    // cliente quiere casi siempre: sus habituales, sin teclear nada.
+    clientPickerInput.onfocus = () => {
+        if ((clientPickerInput.value || '').trim().length === 0) _runClientPicker();
+    };
 
-    agendaSearchTimer = setTimeout(async () => {
+    async function _runClientPicker() {
         const q = clientPickerInput.value.toLowerCase().trim();
-        if (q.length < 1) {
-            clientPickerResults.classList.add('hidden');
-            return;
-        }
+        const topMode = (q.length < 1);   // campo vacío → los más usados
 
         // Carga inicial de cache si está vacío
         if (!agendaCache) {
@@ -3845,6 +3857,13 @@ if (clientPickerInput) {
         }
 
         let matches = [];
+        // Cada coincidencia arrastra el uso de SU ficha para poder ordenar.
+        const _mkMatch = (c, a) => Object.assign({
+            name: c.name, phone: c.phone, nif: c.nif || '', isGlobal: false,
+            _uses: parseInt(c.useCount) || 0,
+            _last: (c.lastUsedAt && c.lastUsedAt.toMillis) ? c.lastUsedAt.toMillis() : 0
+        }, a);
+
         agendaCache.forEach(c => {
             // Normalize addresses for older clients that don't have the array structure
             const addrs = (c.addresses && Array.isArray(c.addresses)) ? c.addresses : [{
@@ -3852,11 +3871,14 @@ if (clientPickerInput) {
                 localidad: c.localidad || '', cp: c.cp || '', province: c.province || ''
             }];
 
-            if ((c.name || '').toLowerCase().includes(q)) {
-                addrs.forEach(a => matches.push({ name: c.name, phone: c.phone, nif: c.nif || '', isGlobal: false, ...a }));
+            if (topMode) {
+                // Sin búsqueda: una entrada por destinatario (su dirección principal)
+                matches.push(_mkMatch(c, addrs[0] || {}));
+            } else if ((c.name || '').toLowerCase().includes(q)) {
+                addrs.forEach(a => matches.push(_mkMatch(c, a)));
             } else {
                 addrs.forEach(a => {
-                    if ((a.address || '').toLowerCase().includes(q)) matches.push({ name: c.name, phone: c.phone, nif: c.nif || '', isGlobal: false, ...a });
+                    if ((a.address || '').toLowerCase().includes(q)) matches.push(_mkMatch(c, a));
                 });
             }
         });
@@ -3867,6 +3889,7 @@ if (clientPickerInput) {
         // Si coincide con uno de "Mi Agenda" → ENRIQUECE (preserva tu agenda).
         // ----------------------------------------------------
         try {
+            if (topMode) throw { _saltar: true };   // los más usados son de TU agenda
             await _loadContactsCache();
             const cResults = _searchContacts(q, 15);
             cResults.forEach(c => {
@@ -3901,12 +3924,29 @@ if (clientPickerInput) {
                     });
                 }
             });
-        } catch(cErr) { console.warn('[contacts] search fail:', cErr); }
+        } catch(cErr) { if (!cErr || !cErr._saltar) console.warn('[contacts] search fail:', cErr); }
+
+        // ORDEN: primero MI agenda (el directorio global va detrás) y, dentro,
+        // por número de envíos; a igualdad, el más reciente; luego alfabético.
+        matches.sort((a, b) => {
+            if (!!a.isGlobal !== !!b.isGlobal) return a.isGlobal ? 1 : -1;
+            const du = (b._uses || 0) - (a._uses || 0);
+            if (du) return du;
+            const dl = (b._last || 0) - (a._last || 0);
+            if (dl) return dl;
+            return (a.name || '').localeCompare(b.name || '');
+        });
 
         if (matches.length > 0) {
             clientPickerResults.innerHTML = '';
             clientPickerResults.classList.remove('hidden');
-            matches.slice(0, 15).forEach(m => {
+            if (topMode) {
+                const cab = document.createElement('div');
+                cab.style = "padding:7px 10px; font-size:0.62rem; letter-spacing:1.2px; text-transform:uppercase; color:var(--text-dim); border-bottom:1px solid var(--border-glass); font-weight:700;";
+                cab.textContent = '⭐ Tus destinatarios más usados';
+                clientPickerResults.appendChild(cab);
+            }
+            matches.slice(0, topMode ? 8 : 15).forEach(m => {
                 const div = document.createElement('div');
                 div.className = 'suggestion-item';
                 div.style = "padding:10px; border-bottom:1px solid var(--border-glass); cursor:pointer;";
@@ -3922,8 +3962,12 @@ if (clientPickerInput) {
                 }
                 // Indicador NIF (verde tick si presente)
                 const nifBadge = m.nif ? `<span style="font-size:0.62rem; color:#4CAF50; margin-left:6px;" title="NIF: ${escapeHtml(m.nif)}">🆔 NIF ✓</span>` : '';
+                // Cuántos albaranes le has hecho: justifica por qué sale arriba
+                const usoBadge = (m._uses > 0)
+                    ? `<span style="font-size:0.62rem; color:#FF9F0A; margin-left:6px;" title="${m._uses} albarán(es) a este destinatario">★ ${m._uses}</span>`
+                    : '';
                 
-                div.innerHTML = `<strong>${escapeHtml(m.name)}</strong> ${badge}${nifBadge}<br><span style="font-size:0.8rem; color:#888;">${escapeHtml(m.address || '')}${m.localidad ? ' - ' + escapeHtml(m.localidad) : ''}${m.cp ? ' (' + escapeHtml(m.cp) + ')' : ''}</span>`;
+                div.innerHTML = `<strong>${escapeHtml(m.name)}</strong> ${badge}${nifBadge}${usoBadge}<br><span style="font-size:0.8rem; color:#888;">${escapeHtml(m.address || '')}${m.localidad ? ' - ' + escapeHtml(m.localidad) : ''}${m.cp ? ' (' + escapeHtml(m.cp) + ')' : ''}</span>`;
                 div.onclick = () => {
                     // DEBUG: log completo del objeto seleccionado
                     console.log('[client-picker] selected match:', JSON.parse(JSON.stringify(m)));
@@ -3934,7 +3978,19 @@ if (clientPickerInput) {
                     document.getElementById('ticket-localidad').value = m.localidad || '';
                     document.getElementById('ticket-cp').value = m.cp || '';
                     document.getElementById('ticket-phone').value = m.phone || '';
-                    document.getElementById('ticket-province').value = m.province || '';
+                    // El <select> de provincia puede no tener esa opción (p.ej. si
+                    // viene del directorio global): asignar .value no haría nada y
+                    // la provincia se perdería en silencio.
+                    const _ps = document.getElementById('ticket-province');
+                    const _pv = m.province || '';
+                    if (_ps) {
+                        if (_pv && !Array.from(_ps.options).some(o => o.value === _pv)) {
+                            const _o = document.createElement('option');
+                            _o.value = _pv; _o.textContent = _pv;
+                            _ps.appendChild(_o);
+                        }
+                        _ps.value = _pv;
+                    }
 
                     // NIF — búsqueda defensiva en varios nombres de campo posibles
                     var nifInput = document.getElementById('ticket-receiver-nif');
@@ -3985,8 +4041,7 @@ if (clientPickerInput) {
         } else {
             clientPickerResults.classList.add('hidden');
         }
-    }, 300); // 300ms debounce
-    };
+    }
 }
 
 // --- PROVINCES ---
