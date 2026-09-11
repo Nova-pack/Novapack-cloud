@@ -161,6 +161,15 @@ window.npGenerateQrUrl = function(data, fallbackSize) {
     return 'https://api.qrserver.com/v1/create-qr-code/?size=' + fallbackSize + 'x' + fallbackSize + '&data=' + encodeURIComponent(data) + '&qzone=4';
 };
 
+// Al clonar una ficha maestra en users/{uid} NO se copia el campo 'id': el
+// docId ES la identidad, y guardarlo dentro es justo lo que crea los alias
+// obsoletos que luego apuntan a fichas ajenas.
+function _sinIdInterno(profile, authUid) {
+    const copia = { ...profile, authUid: authUid };
+    delete copia.id;
+    return copia;
+}
+
 // --- PRINT HELPERS ---
 // Fuerza el formato a la impresora del cliente (cada navegador/driver pinta como
 // le da la gana — neutralizamos sus defaults). Esta versión es AGRESIVA:
@@ -272,10 +281,12 @@ auth.onAuthStateChanged(async (user) => {
                     // We must ignore the clone we make at `user.uid`, unless it is the ONLY document.
                     let masterDoc = emailSnap.docs.find(d => d.id !== user.uid) || emailSnap.docs[0];
                     
-                    profile = { id: masterDoc.id, ...masterDoc.data() };
+                    // El docId real va DETRÁS del spread: si no, el campo 'id'
+                    // guardado dentro del documento (obsoleto en 7 fichas) lo machaca.
+                    profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Forzar vinculación en documento de UID para búsquedas rápidas secundarias
-                    await db.collection('users').doc(user.uid).set({ ...profile, authUid: user.uid }, { merge: true });
+                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
                 }
             } catch (err) {
                  console.warn("Fallo búsqueda where email:", err.message);
@@ -290,10 +301,14 @@ auth.onAuthStateChanged(async (user) => {
                 const authUidSnap = await db.collection('users').where('authUid', '==', user.uid).limit(1).get();
                 if (!authUidSnap.empty) {
                     const masterDoc = authUidSnap.docs[0];
-                    profile = { id: masterDoc.id, ...masterDoc.data() };
+                    // OJO AL ORDEN: el spread va DETRÁS de nada y el id DELANTE de
+                    // nada — el docId real debe ir SIEMPRE el último. Con
+                    // { id: ..., ...data() } el campo 'id' guardado dentro del
+                    // documento (obsoleto en varias fichas) machacaba al docId real.
+                    profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Clona al docId del uid para acelerar futuros logins
-                    await db.collection('users').doc(user.uid).set({ ...profile, authUid: user.uid }, { merge: true });
+                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
                 }
             } catch(err) {
                 console.warn('Fallo búsqueda where authUid:', err.message);
@@ -305,7 +320,17 @@ auth.onAuthStateChanged(async (user) => {
         if (!profile) {
              let userDoc = await db.collection('users').doc(user.uid).get();
              if (userDoc.exists) {
-                 profile = { id: user.uid, ...userDoc.data() };
+                 profile = { ...userDoc.data(), id: user.uid };
+                 // Autocuración: si la ficha arrastra un 'id' obsoleto, se borra.
+                 // Es el caso de SCORA: users/20nEis... guardaba id='0mJvB...',
+                 // así que agendaRootUid apuntaba a una ficha ajena y Firestore
+                 // denegaba la lectura → "Error al cargar agenda".
+                 if (userDoc.data().id && userDoc.data().id !== user.uid) {
+                     console.warn('[SYNC] Campo id obsoleto en users/' + user.uid + ' ("' + userDoc.data().id + '") — lo borro.');
+                     db.collection('users').doc(user.uid)
+                       .update({ id: firebase.firestore.FieldValue.delete() })
+                       .catch(e => console.warn('[SYNC] no pude limpiarlo:', e.message));
+                 }
              }
         }
 
@@ -314,8 +339,8 @@ auth.onAuthStateChanged(async (user) => {
             try {
                 let directDoc = await db.collection('users').doc(user.email.toLowerCase()).get();
                 if (directDoc.exists) {
-                    profile = { id: user.email.toLowerCase(), ...directDoc.data() };
-                    await db.collection('users').doc(user.uid).set({ ...profile, authUid: user.uid }, { merge: true });
+                    profile = { ...directDoc.data(), id: user.email.toLowerCase() };
+                    await db.collection('users').doc(user.uid).set(_sinIdInterno(profile, user.uid), { merge: true });
                 }
             } catch(e) {}
         }
@@ -415,13 +440,18 @@ auth.onAuthStateChanged(async (user) => {
         console.log("[SYNC] Effective Storage UID set to:", effectiveStorageUid);
 
         // ───── AGENDA COMPARTIDA DE EMPRESA ─────
-        // Resolución de la raíz: sucursal → docId maestro de su PADRE
-        // (parentClientId puede venir como docId o como nº de cliente);
-        // padre o independiente → su propio docId maestro (userData.id).
-        // Cubre también el modo super-admin (userData ya reescrito arriba).
+        // Sucursal → libro del PADRE (parentClientId, por docId o por nº).
+        // Padre o independiente → su ficha maestra, PERO sólo si esa ficha está
+        // realmente VINCULADA a este acceso (authUid). Si no lo está, las reglas
+        // deniegan la lectura y el cliente veía "Error al cargar agenda":
+        // le pasó a SCORA y a otros cinco cuyo campo 'id' interno es un alias
+        // obsoleto que apunta a una ficha ajena — o directamente inexistente
+        // (REAL DE LA VEGA apuntaba a gesco_1013, que no existe, con 5114
+        // clientes guardados en su propio espacio). Ante la duda, su uid: es
+        // donde están sus datos y donde seguro tiene permiso.
         agendaRootUid = effectiveStorageUid;
         try {
-            let _aRoot = (userData && userData.id) || effectiveStorageUid;
+            let _aRoot = null;
             const _pcid = userData && userData.parentClientId;
             if (_pcid) {
                 const _pDoc = await db.collection('users').doc(String(_pcid)).get();
@@ -430,6 +460,21 @@ auth.onAuthStateChanged(async (user) => {
                 } else {
                     const _pq = await db.collection('users').where('idNum', '==', String(_pcid)).limit(1).get();
                     if (!_pq.empty) _aRoot = _pq.docs[0].id;
+                }
+            } else {
+                const _mid = userData && userData.id;
+                if (_mid && String(_mid) !== String(effectiveStorageUid)) {
+                    const _m = await db.collection('users').doc(String(_mid)).get();
+                    const _vinculada = _m.exists && _m.data().authUid === effectiveStorageUid;
+                    if (_vinculada) {
+                        _aRoot = _m.id;
+                    } else {
+                        console.warn('[AGENDA] la ficha maestra ' + _mid + ' no está vinculada a este acceso'
+                                   + (_m.exists ? '' : ' (ni siquiera existe)') + ' — uso mi propia agenda.');
+                        _aRoot = effectiveStorageUid;
+                    }
+                } else {
+                    _aRoot = _mid || effectiveStorageUid;
                 }
             }
             if (_aRoot) agendaRootUid = _aRoot;
@@ -2773,7 +2818,23 @@ async function renderClientsList() {
     list.innerHTML = '<div style="padding:20px; text-align:center;">Cargando clientes...</div>';
 
     try {
-        const snap = await getCollection('destinations').get();
+        let snap;
+        try {
+            snap = await getCollection('destinations').get();
+        } catch (errLectura) {
+            // Red de seguridad: si el libro compartido no es legible (raíz mal
+            // resuelta, ficha maestra sin vincular, reglas), mejor mostrar la
+            // agenda PROPIA que una pantalla de error.
+            const _propio = effectiveStorageUid || (currentUser && currentUser.uid);
+            if (_propio && agendaRootUid !== _propio) {
+                console.warn('[AGENDA] no puedo leer users/' + agendaRootUid + '/destinations ('
+                           + (errLectura.code || errLectura.message) + '). Caigo a la mía: ' + _propio);
+                agendaRootUid = _propio;
+                snap = await db.collection('users').doc(_propio).collection('destinations').get();
+            } else {
+                throw errLectura;
+            }
+        }
 
         let clients = [];
         snap.forEach(doc => clients.push({ ...doc.data(), id: doc.id })); // doc.id manda
