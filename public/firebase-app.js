@@ -176,6 +176,22 @@ function setPrintPageSize(size) {
 // Global reference to current afterprint handler so we can remove stale listeners
 let _currentAfterPrintHandler = null;
 
+// Temporizador de seguridad del área de impresión.
+// Cada trabajo armaba un setTimeout a 60s que VACIABA #print-area, y nadie los
+// cancelaba: si imprimías los albaranes y menos de un minuto después manda-
+// bas las etiquetas, el temporizador del trabajo ANTERIOR borraba las etique-
+// tas recién montadas y salían HOJAS EN BLANCO. De una en una funcionaba
+// porque para entonces el temporizador viejo ya había saltado.
+let _printSafetyTimer = null;
+function armPrintSafetyTimer() {
+    if (_printSafetyTimer) clearTimeout(_printSafetyTimer);
+    _printSafetyTimer = setTimeout(() => {
+        _printSafetyTimer = null;
+        const a = document.getElementById('print-area');
+        if (a && a.innerHTML.length > 0) cleanPrintArea();
+    }, 60000);
+}
+
 function cleanPrintArea() {
     const area = document.getElementById('print-area');
     if (area) area.innerHTML = '';
@@ -189,6 +205,9 @@ function cleanPrintArea() {
     // declarar el suyo en setPrintPageSize().
     const styleEl = document.getElementById('print-page-size');
     if (styleEl) styleEl.remove();
+    // Cancelar el temporizador de seguridad: si no, el de un trabajo anterior
+    // vaciaría el área del trabajo siguiente.
+    if (_printSafetyTimer) { clearTimeout(_printSafetyTimer); _printSafetyTimer = null; }
 }
 
 function registerAfterPrint(handler) {
@@ -1433,7 +1452,32 @@ async function loadEditor(t) {
     document.getElementById('ticket-address').value = t.street || t.address || '';
     document.getElementById('ticket-number').value = t.number || '';
     document.getElementById('ticket-phone').value = t.phone || '';
-    document.getElementById('ticket-province').value = t.province || '';
+    // CP, localidad y NIF: hay que reponerlos SÍ O SÍ. No se reponían, y como
+    // el guardado EXIGE código postal y NIF, abrir un albarán para añadirle un
+    // bulto acababa en "Debe indicar el CÓDIGO POSTAL": el formulario pedía un
+    // dato que él mismo acababa de vaciar. Y si el usuario los retecleaba, la
+    // agenda guardaba el destinatario sin localidad ni CP.
+    document.getElementById('ticket-localidad').value = t.localidad || '';
+    document.getElementById('ticket-cp').value = t.cp || '';
+    const _nifIn = document.getElementById('ticket-receiver-nif');
+    if (_nifIn) {
+        _nifIn.value = t.receiverNif || '';
+        // Si el albarán trae NIF, que se vea la casilla (viene oculta por defecto)
+        const _nifBox = document.getElementById('box-receiver-nif');
+        if (_nifBox && t.receiverNif) _nifBox.style.display = 'block';
+    }
+    // La provincia es un <select> que se rellena en diferido: si la opción aún
+    // no existe, asignar .value no hace nada y el albarán perdería la provincia.
+    const _provSel = document.getElementById('ticket-province');
+    if (_provSel) {
+        const _prov = t.province || '';
+        if (_prov && !Array.from(_provSel.options).some(o => o.value === _prov)) {
+            const _opt = document.createElement('option');
+            _opt.value = _prov; _opt.textContent = _prov;
+            _provSel.appendChild(_opt);
+        }
+        _provSel.value = _prov;
+    }
     document.getElementById('ticket-shipping-type').value = t.shippingType || 'Pagados';
     document.getElementById('ticket-cod').value = t.cod || '';
     document.getElementById('ticket-notes').value = t.notes || '';
@@ -4255,7 +4299,7 @@ function printReportResults() {
         };
         registerAfterPrint(handleAfterPrint);
         window.print();
-        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+        armPrintSafetyTimer();
     }, 600);
 }
 
@@ -4391,7 +4435,7 @@ async function printTicket(t) {
         };
         registerAfterPrint(handleAfterPrint);
         window.print();
-        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+        armPrintSafetyTimer();
     }, 800);
 }
 
@@ -4557,7 +4601,7 @@ async function printManifestOnlyBatch(slot = 'AMBOS') {
         };
         registerAfterPrint(handleAfterPrint);
         window.print();
-        setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+        armPrintSafetyTimer();
     }, 250);
 }
 function handleExportCSV() {
@@ -4644,7 +4688,7 @@ async function printShiftBatch(slot, reprint = false) {
             };
             registerAfterPrint(handleAfterPrint);
             window.print();
-            setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+            armPrintSafetyTimer();
         }, 800);
     } catch (e) {
         console.error("Print batch error:", e);
@@ -4662,6 +4706,10 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
     // Cabecera de la etiqueta: el email es el del TRANSPORTISTA (NOVAPACK), no el
     // del cliente — que ya sale a la derecha, en su bloque REMITENTE.
     const companyEmail = NOVAPACK_CARRIER.email;
+
+    // createdAt viene de Firestore como Timestamp: new Date(Timestamp) da
+    // "Invalid Date" y eso es lo que se imprimía en cada etiqueta.
+    const _lblFecha = parseSafeDate(t.createdAt);
 
     if (!weightStr) {
         const _bultos = npBultosExpandidos(t);
@@ -4682,7 +4730,7 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
                 <div style="width: 40%;">
                     <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
                     <div style="font-size: 0.5rem; letter-spacing: 0.5px; color:#333;">${companyEmail}</div>
-                    <div style="font-size: 0.65rem; color:#666; margin-top: 4px;">${new Date(t.createdAt).toLocaleDateString()} ${new Date(t.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div style="font-size: 0.65rem; color:#666; margin-top: 4px;">${_lblFecha.toLocaleDateString('es-ES')} ${_lblFecha.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                 </div>
                 <div style="width: 60%; text-align: right; font-size: 0.7rem; color: #000; line-height: 1.1;">
                     <strong style="font-size:0.6rem; color:#666;">REMITENTE:</strong><br>
@@ -4819,7 +4867,7 @@ async function printLabelShiftBatch(slot) {
                 };
                 registerAfterPrint(handleAfterPrint);
                 window.print();
-                setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+                armPrintSafetyTimer();
             }, 800);
         });
     } catch (e) {
@@ -4998,7 +5046,7 @@ async function printLabel(t) {
             }
             registerAfterPrint(handleAfterPrint);
             window.print();
-            setTimeout(() => { if (area.innerHTML.length > 0) cleanPrintArea(); }, 60000);
+            armPrintSafetyTimer();
         }, 800);
     });
 }
