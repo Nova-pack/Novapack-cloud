@@ -63,8 +63,10 @@ const A_PAPELERA = [
 
 const A_SISTEMA = [
     ['qzs4dFFKxtZ1kwmtgfprElt5Udk1', 'Cuenta del propio administrador'],
-    ['xwBggin3dVM0feyTPf1uqD1SQXN2', 'Cuenta de pruebas USER'],
-    ['FONc5LEEQvSedUA8xl4SCYyOAzo2', 'Perfil sintetico LUISMOLEON (el cliente real es gesco_106)']
+    ['xwBggin3dVM0feyTPf1uqD1SQXN2', 'Cuenta de pruebas USER']
+    // FONc5... (perfil sintetico del padre de MOLEON) NO va aqui: tiene que ser un
+    // PUNTERO a gesco_106, y eso lo hace solo el admin al abrir el listado
+    // (_repararPunterosAcceso). Marcarlo como sistema lo dejaria desconectado.
 ];
 
 // Numeros de cliente del ruido: sirven para barrer albaranes que no lleven uid.

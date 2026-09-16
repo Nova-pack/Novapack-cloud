@@ -1605,6 +1605,62 @@
             window.open(url, '_blank');
         };
 
+        // ─────────────────────────────────────────────────────────────────
+        // PUNTERO DE ACCESO
+        // ─────────────────────────────────────────────────────────────────
+        // Un cliente NO puede buscar su ficha: las reglas le prohiben listar
+        // /users (solo el admin puede). Lo unico que puede hacer es LEER un
+        // documento por su id, y el login lee users/{su uid}. Si la ficha se
+        // llama gesco_106 y el acceso es FONc5..., el cliente no la encuentra
+        // nunca, y la app le fabrica un perfil sintetico vacio. Le paso al padre
+        // de LUIS MOLEON — y le habria pasado a cada ficha importada (gesco_NNN)
+        // al activarle el acceso. Por eso, al vincular, se deja en users/{uid}
+        // un puntero a la ficha buena, que el login ya sabe seguir.
+        window._escribirPunteroAcceso = async function (fichaDocId, authUid) {
+            if (!fichaDocId || !authUid || authUid === fichaDocId) return false;   // la ficha ES el acceso
+            const ref = db.collection('users').doc(authUid);
+            const snap = await ref.get();
+            const d = snap.exists ? snap.data() : null;
+            // Nunca convertir en puntero la ficha real de OTRO cliente
+            if (d && !d.isLinkDoc && d.idNum && String(d.idNum) !== String(authUid)) {
+                console.warn('[ACCESO] users/' + authUid + ' es una ficha real (#' + d.idNum + '); no la toco.');
+                return false;
+            }
+            const upd = {
+                isLinkDoc: true,
+                masterDocId: fichaDocId,
+                authUid: authUid,
+                linkedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            // Si alli habia un perfil sintetico, se le quitan los campos de cliente
+            if (d) ['name', 'idNum', 'email', 'isSynthetic', 'id'].forEach(k => {
+                if (d[k] !== undefined) upd[k] = firebase.firestore.FieldValue.delete();
+            });
+            await ref.set(upd, { merge: true });
+            console.log('[ACCESO] puntero users/' + authUid + ' -> ' + fichaDocId);
+            return true;
+        };
+
+        // Autocuracion de los accesos YA vinculados sin puntero. Trabaja sobre la
+        // foto de /users que el admin ya tiene cargada: no hace lecturas extra.
+        window._repararPunterosAcceso = async function (crudos) {
+            let n = 0;
+            for (const id of Object.keys(crudos)) {
+                const f = crudos[id];
+                if (!f || !f.authUid || f.authUid === id) continue;
+                if (f.deleted || f.isLinkDoc || f.isSystemAccount) continue;
+                if (String(f.idNum) === String(id)) continue;          // esta ficha es sintetica
+                const acc = crudos[f.authUid];
+                if (acc && acc.isLinkDoc && acc.masterDocId === id) continue;   // ya bien
+                const sintetico = acc && String(acc.idNum) === String(f.authUid);
+                if (acc && !acc.isLinkDoc && !sintetico) continue;     // ficha real de otro: no tocar
+                try { if (await window._escribirPunteroAcceso(id, f.authUid)) n++; }
+                catch (e) { console.warn('[ACCESO] no pude reparar ' + id + ':', e.message); }
+            }
+            if (n) console.warn('[ACCESO] ' + n + ' acceso(s) de cliente reparado(s) con puntero.');
+            return n;
+        };
+
         // Link an EXISTING Firebase Auth account to an EXISTING users/{docId}
         // record. Used when:
         //   • The client created their auth via a previous portal / import.
@@ -1654,6 +1710,8 @@
                     accessLinkedAt: firebase.firestore.FieldValue.serverTimestamp(),
                     accessLinkedBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin'
                 });
+                // Sin este puntero el cliente NO podria encontrar su ficha al entrar
+                await window._escribirPunteroAcceso(docId, uidClean);
                 if (window.userMap && window.userMap[docId]) {
                     window.userMap[docId].loginEmail = loginEmailClean;
                     window.userMap[docId].authUid = uidClean;
@@ -1663,7 +1721,7 @@
                     if (cached) { cached.loginEmail = loginEmailClean; cached.authUid = uidClean; }
                 }
                 hideLoading();
-                alert('✅ Cuenta Auth vinculada al cliente.\n\nLa próxima vez que el usuario haga login con ' + loginEmailClean + ', la app encontrará su ficha (por authUid) y cargará sus datos.');
+                alert('✅ Cuenta Auth vinculada al cliente.\n\nLa próxima vez que el usuario haga login con ' + loginEmailClean + ', la app seguirá el puntero hasta su ficha y cargará sus datos.');
                 if (typeof loadUsers === 'function') loadUsers('current');
             } catch(e) {
                 hideLoading();
@@ -1767,6 +1825,9 @@
                     loginPasswordPlain: password,   // necesario para el email consolidado de accesos
                     accessActivatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
+                // El acceso recien creado NUNCA coincide con una ficha gesco_NNN:
+                // sin puntero, el cliente entraria a un perfil sintetico vacio.
+                await window._escribirPunteroAcceso(docId, newUid);
                 if (window.userMap && window.userMap[docId]) {
                     window.userMap[docId].loginEmail = loginEmail;
                     window.userMap[docId].authUid = newUid;
@@ -9085,6 +9146,13 @@ window.runPublicTicketsBackfill = async function() {
                 try {
                     // Escucha incremental para eficiencia en grandes volúmenes
                     usersListener = db.collection('users').onSnapshot(snapshot => {
+                        // Una vez por sesion: repara accesos vinculados sin puntero
+                        if (!window._punterosRevisados && typeof window._repararPunterosAcceso === 'function') {
+                            window._punterosRevisados = true;
+                            const crudos = {};
+                            snapshot.docs.forEach(d => { crudos[d.id] = d.data(); });
+                            setTimeout(() => window._repararPunterosAcceso(crudos), 2500);
+                        }
                         snapshot.docChanges().forEach(change => {
                             const doc = change.doc;
                             const data = { ...doc.data(), id: doc.id }; // STRICT ENFORCEMENT: doc.id must override any rogue inner json properties
@@ -9681,6 +9749,7 @@ window.runPublicTicketsBackfill = async function() {
                                                 authUid: cred.user.uid,
                                                 accessActivatedAt: firebase.firestore.FieldValue.serverTimestamp()
                                             });
+                                            if (window._escribirPunteroAcceso) await window._escribirPunteroAcceso(targetDocId, cred.user.uid);
                                         } catch(authErr) {
                                             if (authErr.code === 'auth/email-already-in-use') {
                                                 alert('⚠️ El email ' + email + ' ya tiene Auth. Pulsa 🔓 en la fila para gestionarlo con email sintético si es una sucursal.');

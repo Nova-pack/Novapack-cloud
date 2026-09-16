@@ -2778,18 +2778,71 @@ function getAddressSignature(a) {
     return norm(a.address) + norm(a.street) + norm(a.number) + norm(a.localidad) + norm(a.cp);
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// IDENTIDAD DE UN DESTINATARIO EN LA AGENDA
+// ─────────────────────────────────────────────────────────────────────────
+// Un destinatario es UNO por nombre, tenga el identificador que tenga.
+// Antes cada camino de escritura inventaba el suyo: el guardado automatico al
+// hacer un albaran lo sacaba del nombre sin acentos ("luis_moleon_granada"),
+// el formulario manual lo sacaba del nombre CON acentos y espacios dobles, y
+// las importaciones usaban "cli_1771411732620". Resultado: el mismo cliente
+// dos veces (MOLEON 3 repetidos, SCO/[\u0300-\u036f]/g 12, AUTOCRISTAL 7). Borrabas uno y el
+// otro seguia ahi ("no me deja eliminar"), y el siguiente albaran lo volvia a
+// crear ("vuelve a aparecer").
+function agendaClave(nombre) {
+    return (nombre || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, ' ').trim().toLowerCase();
+}
+function agendaDocId(nombre) {
+    return agendaClave(nombre).replace(/[^a-z0-9\-_]/gi, '_');
+}
+
+// Fusiona varias fichas del MISMO destinatario en una.
+// Direcciones: union sin repetir. Usos: la SUMA (cada copia contaba por su
+// lado). Ultimo uso: el mas reciente. Resto: el primero no vacio, empezando
+// por la ficha canonica.
+function agendaFusionar(fichas, idCanonico) {
+    const orden = fichas.slice().sort((a, b) => (a.id === idCanonico ? -1 : (b.id === idCanonico ? 1 : 0)));
+    const fusion = { addresses: [], useCount: 0 };
+    const firmas = new Set();
+    let ultimo = null;
+    orden.forEach(f => {
+        const d = f.data || {};
+        ['name', 'phone', 'nif', 'email', 'notes'].forEach(k => { if (!fusion[k] && d[k]) fusion[k] = d[k]; });
+        (d.addresses || []).forEach(a => {
+            const firma = getAddressSignature(a);
+            if (!firmas.has(firma)) { firmas.add(firma); fusion.addresses.push(a); }
+        });
+        fusion.useCount += parseInt(d.useCount) || 0;
+        if (d.lastUsedAt && d.lastUsedAt.toMillis && (!ultimo || d.lastUsedAt.toMillis() > ultimo.toMillis())) ultimo = d.lastUsedAt;
+    });
+    if (ultimo) fusion.lastUsedAt = ultimo;
+    return fusion;
+}
+
+// Destinatarios BOR/[\u0300-\u036f]/gDOS a proposito. El guardado automatico de un albaran no
+// los resucita; solo vuelven si se dan de alta a mano en el formulario.
+function agendaBorrados() {
+    return db.collection('users').doc(agendaRootUid || effectiveStorageUid || currentUser.uid).collection('destinations_borrados');
+}
+
+// Todas las fichas de un nombre, tengan el identificador que tengan.
+async function agendaFichasDe(nombre) {
+    const clave = agendaClave(nombre);
+    const snap = await getCollection('destinations').get();
+    const out = [];
+    snap.forEach(d => { if (agendaClave(d.data().name) === clave) out.push({ id: d.id, ref: d.ref, data: d.data() }); });
+    return out;
+}
+
 async function saveClientToAgenda(t) {
     if (!t.receiver || isSubmittingAgenda) return;
     const agenda = getCollection('destinations');
-    
-    // SANITIZACIÓN ESTRICTA:
-    // 1. Quitar acentos 
-    // 2. Convertir múltiples espacios seguidos en un solo espacio 
-    // 3. Trim y minúsculas
-    let cleanName = (t.receiver || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, ' ').trim().toLowerCase();
-    
-    // Luego se quitan caracteres raros y se usa "_"
-    const docId = cleanName.replace(/[^a-z0-9\-_]/gi, '_');
+    const docId = agendaDocId(t.receiver);
+
+    // Borrado a proposito: el guardado automatico no lo resucita
+    try {
+        if ((await agendaBorrados().doc(docId).get()).exists) return;
+    } catch (_) { /* sin lapida legible: se guarda con normalidad */ }
 
     const newAddr = {
         id: "addr_" + Date.now().toString(36),
@@ -2803,36 +2856,45 @@ async function saveClientToAgenda(t) {
 
     isSubmittingAgenda = true;
     try {
-        const docRef = agenda.doc(docId);
-        const doc = await docRef.get();
-
-        // Contador de uso: cada albarán a este destinatario suma uno. Es lo que
-        // ordena la agenda por LOS MÁS USADOS en el buscador.
+        // Contador de uso: cada albaran a este destinatario suma uno (ordena la
+        // agenda por LOS MAS USADOS).
         const _usoInc = firebase.firestore.FieldValue.increment(1);
         const _ahora  = firebase.firestore.FieldValue.serverTimestamp();
 
-        if (!doc.exists) {
-            await docRef.set({
+        const mismas = await agendaFichasDe(t.receiver);
+
+        if (mismas.length === 0) {
+            await agenda.doc(docId).set({
                 name: t.receiver.toUpperCase(),
                 phone: (t.phone || "").trim(),
                 addresses: [newAddr],
                 useCount: 1,
                 lastUsedAt: _ahora
             });
-        } else {
-            const data = doc.data();
-            const sigNew = getAddressSignature(newAddr);
-            const exists = (data.addresses || []).some(a => getAddressSignature(a) === sigNew);
-
-            // El contador sube SIEMPRE, aunque la dirección ya estuviera: lo que
-            // cuenta es cuántas veces se le envía, no cuántas direcciones tiene.
-            const _upd = { useCount: _usoInc, lastUsedAt: _ahora };
-            if (!exists) {
-                _upd.addresses = [...(data.addresses || []), newAddr];
-                _upd.phone = (t.phone || data.phone || "").trim();
-            }
-            await docRef.update(_upd);
+            return;
         }
+
+        // Canonica: la del identificador derivado del nombre, o la primera
+        const canon = mismas.find(m => m.id === docId) || mismas[0];
+        if (mismas.length > 1) {
+            // Habia copias: se funden en la canonica y se borran las demas
+            const fusion = agendaFusionar(mismas, canon.id);
+            const lote = db.batch();
+            lote.set(canon.ref, fusion, { merge: true });
+            mismas.forEach(m => { if (m.id !== canon.id) lote.delete(m.ref); });
+            await lote.commit();
+            canon.data = Object.assign({}, canon.data, fusion);
+        }
+
+        // El contador sube SIEMP/\s+/g, aunque la direccion ya estuviera
+        const firmaNueva = getAddressSignature(newAddr);
+        const yaEsta = (canon.data.addresses || []).some(a => getAddressSignature(a) === firmaNueva);
+        const upd = { useCount: _usoInc, lastUsedAt: _ahora };
+        if (!yaEsta) {
+            upd.addresses = [...(canon.data.addresses || []), newAddr];
+            upd.phone = (t.phone || canon.data.phone || "").trim();
+        }
+        await canon.ref.update(upd);
     } finally {
         isSubmittingAgenda = false;
         agendaCache = null; // Invalidar cache tras guardar
@@ -2866,6 +2928,29 @@ async function renderClientsList() {
 
         let clients = [];
         snap.forEach(doc => clients.push({ ...doc.data(), id: doc.id })); // doc.id manda
+
+        // AUTOCURACION: si un nombre aparece mas de una vez (copias con distinto
+        // identificador), se funden en una sola ficha y se borran las demas.
+        const _grupos = {};
+        snap.forEach(doc => { const k = agendaClave(doc.data().name); (_grupos[k] = _grupos[k] || []).push({ id: doc.id, ref: doc.ref, data: doc.data() }); });
+        const _conCopias = Object.values(_grupos).filter(g => g.length > 1);
+        if (_conCopias.length) {
+            try {
+                const lote = db.batch();
+                _conCopias.forEach(g => {
+                    const canon = g.find(x => x.id === agendaDocId(x.data.name)) || g[0];
+                    lote.set(canon.ref, agendaFusionar(g, canon.id), { merge: true });
+                    g.forEach(x => { if (x.id !== canon.id) lote.delete(x.ref); });
+                });
+                await lote.commit();
+                console.warn('[AGENDA] ' + _conCopias.length + ' destinatario(s) repetido(s) fusionado(s).');
+                agendaCache = null;
+                return renderClientsList();
+            } catch (eFusion) {
+                console.warn('[AGENDA] no pude fusionar copias:', eFusion.message);
+            }
+        }
+
         clients.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 
         if (search) {
@@ -2917,22 +3002,37 @@ window.deleteSelectedClients = async function() {
     if (confirm(`¿Estás seguro de ELIMINAR ${checks.length} clientes de tu agenda para siempre?`)) {
         showLoading();
         try {
-            const batch = db.batch();
-            checks.forEach(c => {
-                batch.delete(getCollection('destinations').doc(c.value));
+            // Se borran TODAS las copias de cada nombre (no solo la marcada) y se
+            // deja lapida para que un albaran no lo vuelva a crear.
+            const snap = await getCollection('destinations').get();
+            const porId = {};
+            snap.forEach(d => { porId[d.id] = d; });
+            const claves = new Set();
+            checks.forEach(c => { const d = porId[c.value]; if (d) claves.add(agendaClave(d.data().name)); });
+
+            const lote = db.batch();
+            let n = 0;
+            snap.forEach(d => {
+                if (claves.has(agendaClave(d.data().name))) { lote.delete(d.ref); n++; }
             });
-            await batch.commit();
+            claves.forEach(k => {
+                const nombre = (Object.values(porId).find(d => agendaClave(d.data().name) === k) || { data: () => ({}) }).data().name || k;
+                lote.set(agendaBorrados().doc(agendaDocId(nombre)), {
+                    name: nombre, deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+            await lote.commit();
             alert("Clientes eliminados de la agenda.");
-            
+
             const selectAll = document.getElementById('client-select-all');
             if (selectAll) selectAll.checked = false;
-            
+
             agendaCache = null;
             document.getElementById('client-edit-id').value = '';
             document.getElementById('client-edit-name').value = '';
             const btnDel = document.getElementById('btn-client-delete');
             if (btnDel) btnDel.classList.add('hidden');
-            
+
             await renderClientsList();
         } catch (e) {
             console.error(e);
@@ -3180,8 +3280,17 @@ document.getElementById('btn-client-save').onclick = async () => {
     isSubmittingClientForm = true;
     try {
         const agenda = getCollection('destinations');
-        // Respetar el ID original si estamos editando para evitar duplicar al cambiar el nombre
-        const docId = editingClientId || name.replace(/[^a-z0-9\-_]/gi, '_').toLowerCase();
+        // Editando: se respeta su identificador. Alta nueva: si ya existe ese
+        // nombre (con cualquier identificador) se completa esa ficha en vez de
+        // crear otra; si no, se usa el MISMO identificador que el guardado
+        // automatico, para que nunca vuelvan a coexistir dos copias.
+        let docId = editingClientId;
+        if (!docId) {
+            const existentes = await agendaFichasDe(name);
+            docId = existentes.length ? (existentes.find(e => e.id === agendaDocId(name)) || existentes[0]).id : agendaDocId(name);
+        }
+        // Darlo de alta a mano levanta la lapida si lo habian borrado
+        try { await agendaBorrados().doc(agendaDocId(name)).delete(); } catch (_) {}
 
         await agenda.doc(docId).set({
             name: name.toUpperCase(),
@@ -3207,7 +3316,18 @@ window.deleteEditingClient = async () => {
     if (confirm("¿Estás seguro de que quieres ELIMINAR a este cliente de tu agenda para siempre?")) {
         showLoading();
         try {
-            await getCollection('destinations').doc(editingClientId).delete();
+            const ficha = await getCollection('destinations').doc(editingClientId).get();
+            const nombre = ficha.exists ? ficha.data().name : document.getElementById('client-edit-name').value;
+            // Todas las copias de ese nombre, y lapida para que no resucite
+            const copias = await agendaFichasDe(nombre);
+            const lote = db.batch();
+            copias.forEach(c => lote.delete(c.ref));
+            if (ficha.exists && !copias.some(c => c.id === editingClientId)) lote.delete(ficha.ref);
+            lote.set(agendaBorrados().doc(agendaDocId(nombre)), {
+                name: nombre, deletedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            await lote.commit();
+            agendaCache = null;
             alert("Cliente eliminado de la agenda.");
             document.getElementById('btn-client-new').click(); // Reset form
             await renderClientsList();
@@ -4934,92 +5054,122 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
     return `<div class="label-page-4x6">${contentBox}</div>`;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// IMPRESION DE ETIQUETAS — UN SOLO CAMINO, EN UN DOCUMENTO AISLADO
+// ─────────────────────────────────────────────────────────────────────────
+// La etiqueta suelta y el lote del turno eran dos funciones casi iguales que
+// se comportaban distinto: de una en una salian bien y en lote la hoja de
+// etiquetas salia EN BLANCO. Impresas fuera de la app con el mismo codigo, las
+// etiquetas del lote salen perfectas (verificado con el motor de impresion de
+// Chrome): lo que fallaba era el ENTORNO de la pagina — la CSS global de
+// impresion, modales, temporizadores de otros trabajos y, sobre todo, los N
+// guardados en base de datos que el lote lanzaba SIN ESPERAR justo mientras
+// Chrome preparaba la hoja (la suelta si esperaba a su unico guardado).
+// Ahora las dos imprimen dentro de un iframe con su propio documento: nada de
+// la app puede tocar lo que se imprime, y suelta y lote son el MISMO codigo.
+
+// Documento completo de la hoja de etiquetas (puro: se puede probar aparte).
+function documentoEtiquetas(hojaHtml, isA4) {
+    const tam = isA4 ? 'A4 portrait' : '60mm 90mm';
+    const pagina = isA4 ? '.print-a4-page' : '.print-label-page';
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas NOVAPACK</title><style>'
+        + '@page{size:' + tam + ';margin:0}'
+        + 'html,body{margin:0;padding:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+        + '*{box-sizing:border-box}'
+        + pagina + '{page-break-after:always!important;break-after:page!important}'
+        // la ultima pagina NO fuerza salto: si no, sale una hoja en blanco al final
+        + pagina + ':last-child{page-break-after:auto!important;break-after:auto!important}'
+        + 'img{image-rendering:pixelated}'
+        + '</style></head><body>' + hojaHtml + '</body></html>';
+}
+
+async function imprimirEtiquetas(tickets, paperMode, nombrePdf) {
+    const isA4 = (paperMode === 'a4' || paperMode === 'pdf');
+    const labelsHtml = [];
+    tickets.forEach(t => {
+        const n = npTotalBultos(t);
+        for (let i = 0; i < n; i++) labelsHtml.push(generateLabelHTML(t, i, n, null, isA4));
+    });
+    if (!labelsHtml.length) { alert('No hay etiquetas que imprimir.'); return; }
+
+    // Maquetacion con la funcion de siempre, en un contenedor suelto
+    const hoja = document.createElement('div');
+    renderLabelsInA4Grid(hoja, labelsHtml, isA4 ? 'a4' : 'label');
+
+    // Marcas en base de datos ANTES de imprimir, y ESPERANDO a que terminen
+    await Promise.all(tickets.map(t => {
+        t.labelsPrinted = true;
+        const id = t.docId || t.id;
+        return id ? db.collection('tickets').doc(id).update({ labelsPrinted: true })
+                        .catch(e => console.error('labelsPrinted:', e.message)) : null;
+    }));
+    renderTicketsList();
+
+    if (paperMode === 'pdf' && typeof html2pdf === 'function') {
+        hoja.style.position = 'fixed'; hoja.style.left = '-10000px'; hoja.style.top = '0';
+        document.body.appendChild(hoja);
+        try {
+            await html2pdf().from(hoja).set({
+                margin: 0, filename: nombrePdf,
+                image: { type: 'jpeg', quality: 0.95 },
+                html2canvas: { scale: 2, useCORS: true, allowTaint: true },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            }).save();
+        } catch (e) {
+            alert('Error generando PDF: ' + e.message);
+        } finally {
+            hoja.remove();
+        }
+        return;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(documentoEtiquetas(hoja.innerHTML, isA4));
+    doc.close();
+
+    // Esperar a que carguen los QR (por si alguno viene de red), con tope
+    const imgs = Array.from(doc.images || []);
+    await Promise.race([
+        Promise.all(imgs.map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r; }))),
+        new Promise(r => setTimeout(r, 4000))
+    ]);
+
+    const quitar = () => { try { iframe.remove(); } catch (_) {} };
+    iframe.contentWindow.addEventListener('afterprint', () => setTimeout(quitar, 500));
+    setTimeout(quitar, 120000);   // red de seguridad si afterprint no llega
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+}
+
 async function printLabelShiftBatch(slot) {
     const today = getTodayLocal();
-    showLoading();
-    try {
-        let tickets = [];
-        (lastTicketsBatch || []).forEach(d => {
-            let dStr = today;
-            if (d.createdAt) {
-                const ts = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt);
-                if (!isNaN(ts.getTime())) dStr = formatDateLocal(ts);
-            }
-            // Filtra por labelsPrinted, NO por printed: imprimir el albarán no
-            // debe hacer desaparecer sus etiquetas del lote (y viceversa).
-            if (dStr === today && d.timeSlot === slot && !d.labelsPrinted) tickets.push({ ...d });
-        });
-        hideLoading();
+    const tickets = [];
+    (lastTicketsBatch || []).forEach(d => {
+        let dStr = today;
+        if (d.createdAt) {
+            const ts = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt);
+            if (!isNaN(ts.getTime())) dStr = formatDateLocal(ts);
+        }
+        // Filtra por labelsPrinted, NO por printed: imprimir el albaran no
+        // debe hacer desaparecer sus etiquetas del lote (y viceversa).
+        if (dStr === today && d.timeSlot === slot && !d.labelsPrinted) tickets.push({ ...d });
+    });
+    if (tickets.length === 0) { alert(`No hay etiquetas para el turno ${slot} hoy.`); return; }
 
-        if (tickets.length === 0) { alert(`No hay etiquetas para el turno ${slot} hoy.`); return; }
-        
-        // Show paper selector before printing
-        showPaperSelectModal((paperMode) => {
-            cleanPrintArea();
-            const area = document.getElementById('print-area');
-            window.printingTickets = tickets;
-            
-            if (paperMode === 'a4' || paperMode === 'pdf') {
-                setPrintPageSize('A4 portrait');
-            } else {
-                setPrintPageSize('60mm 90mm');
-            }
-
-            // PDF reusa el mismo renderizado que A4 (grid 2x2) — sale como
-            // PDF descargable que el cliente abre en su visor preferido y
-            // donde sí puede afinar exactamente el tamaño desde Adobe/Edge.
-            const isA4 = (paperMode === 'a4' || paperMode === 'pdf');
-
-            let labelsHtml = [];
-            tickets.forEach(t => {
-                const totalPkgs = npTotalBultos(t);
-                for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs, null, isA4));
-            });
-
-            renderLabelsInA4Grid(area, labelsHtml, isA4 ? 'a4' : 'label');
-
-            document.body.classList.add('printing-labels');
-
-            tickets.forEach(t => {
-                t.labelsPrinted = true;
-                if (t.docId) {
-                    db.collection('tickets').doc(t.docId).update({ labelsPrinted: true }).catch(e => console.error("Labels batch update fail:", e));
-                }
-            });
-            renderTicketsList();
-
-            setTimeout(async () => {
-                if (paperMode === 'pdf' && typeof html2pdf === 'function') {
-                    try {
-                        await html2pdf().from(area).set({
-                            margin: 0,
-                            filename: 'Etiquetas_' + slot + '_' + new Date().toISOString().slice(0,10) + '.pdf',
-                            image: { type: 'jpeg', quality: 0.95 },
-                            html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-                            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                        }).save();
-                    } catch(e) {
-                        alert('Error generando PDF: ' + e.message + '\nUsando impresión normal como fallback.');
-                        window.print();
-                    } finally {
-                        cleanPrintArea();
-                    }
-                    return;
-                }
-                const handleAfterPrint = () => {
-                    cleanPrintArea();
-                };
-                registerAfterPrint(handleAfterPrint);
-                window.print();
-                armPrintSafetyTimer();
-            }, 800);
-        });
-    } catch (e) {
-        console.error("Print labels error:", e);
-        alert("Error preparando etiquetas: " + e.message);
-    } finally {
-        hideLoading();
-    }
+    showPaperSelectModal(async (paperMode) => {
+        try {
+            await imprimirEtiquetas(tickets, paperMode,
+                'Etiquetas_' + slot + '_' + new Date().toISOString().slice(0, 10) + '.pdf');
+        } catch (e) {
+            console.error('Print labels error:', e);
+            alert('Error preparando etiquetas: ' + e.message);
+        }
+    });
 }
 
 function renderLabelsInA4Grid(container, labelsHtml, paperMode) {
@@ -5134,64 +5284,15 @@ function showPaperSelectModal(callback) {
 }
 
 async function printLabel(t) {
-    // Show paper type selection first
+    // Mismo camino que el lote (imprimirEtiquetas): suelta y lote no pueden
+    // volver a comportarse distinto.
     showPaperSelectModal(async (paperMode) => {
-        cleanPrintArea();
-        const area = document.getElementById('print-area');
-
-        if (paperMode === 'a4' || paperMode === 'pdf') {
-            setPrintPageSize('A4 portrait');
-        } else {
-            setPrintPageSize('60mm 90mm');
-        }
-
-        const totalPkgs = npTotalBultos(t);
-        let labelsHtml = [];
-        const isA4 = (paperMode === 'a4' || paperMode === 'pdf');
-        for (let i = 0; i < totalPkgs; i++) labelsHtml.push(generateLabelHTML(t, i, totalPkgs, null, isA4));
-
-        renderLabelsInA4Grid(area, labelsHtml, isA4 ? 'a4' : 'label');
-
-        document.body.classList.add('printing-labels');
-
-        t.labelsPrinted = true;
-        renderTicketsList();
-
         try {
-            const docId = t.docId || t.id;
-            await db.collection('tickets').doc(docId).update({ labelsPrinted: true });
-            console.log("Label marked as printed in DB:", docId);
+            await imprimirEtiquetas([t], paperMode, 'Etiqueta_' + (t.id || t.docId || 'NP') + '.pdf');
         } catch (e) {
-            console.error("Error updating label print status:", e);
+            console.error('Print label error:', e);
+            alert('Error preparando la etiqueta: ' + e.message);
         }
-
-        // Improved printing sequence for mobile
-        const handleAfterPrint = () => {
-            cleanPrintArea();
-        };
-
-        setTimeout(async () => {
-            if (paperMode === 'pdf' && typeof html2pdf === 'function') {
-                try {
-                    await html2pdf().from(area).set({
-                        margin: 0,
-                        filename: 'Etiqueta_' + (t.id || t.docId || 'NP') + '.pdf',
-                        image: { type: 'jpeg', quality: 0.95 },
-                        html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-                    }).save();
-                } catch(e) {
-                    alert('Error generando PDF: ' + e.message + '\nUsando impresión normal como fallback.');
-                    window.print();
-                } finally {
-                    cleanPrintArea();
-                }
-                return;
-            }
-            registerAfterPrint(handleAfterPrint);
-            window.print();
-            armPrintSafetyTimer();
-        }, 800);
     });
 }
 
