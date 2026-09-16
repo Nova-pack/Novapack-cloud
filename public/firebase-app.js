@@ -295,7 +295,10 @@ auth.onAuthStateChanged(async (user) => {
                     profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Forzar vinculación en documento de UID para búsquedas rápidas secundarias
-                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
+                    // NUNCA si la ficha buena ES este mismo documento: pasa con las
+                    // sucursales de MOLEON (su authUid es su propio docId). Escribir el
+                    // puntero ahí la marcaría isLinkDoc y el admin la ocultaría.
+                    if (profile.id !== user.uid) await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch (err) {
                  console.warn("Fallo búsqueda where email:", err.message);
@@ -317,7 +320,10 @@ auth.onAuthStateChanged(async (user) => {
                     profile = { ...masterDoc.data(), id: masterDoc.id };
                     profile.isLinked = true;
                     // Clona al docId del uid para acelerar futuros logins
-                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
+                    // NUNCA si la ficha buena ES este mismo documento: pasa con las
+                    // sucursales de MOLEON (su authUid es su propio docId). Escribir el
+                    // puntero ahí la marcaría isLinkDoc y el admin la ocultaría.
+                    if (profile.id !== user.uid) await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch(err) {
                 console.warn('Fallo búsqueda where authUid:', err.message);
@@ -359,7 +365,10 @@ auth.onAuthStateChanged(async (user) => {
                 let directDoc = await db.collection('users').doc(user.email.toLowerCase()).get();
                 if (directDoc.exists) {
                     profile = { ...directDoc.data(), id: user.email.toLowerCase() };
-                    await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
+                    // NUNCA si la ficha buena ES este mismo documento: pasa con las
+                    // sucursales de MOLEON (su authUid es su propio docId). Escribir el
+                    // puntero ahí la marcaría isLinkDoc y el admin la ocultaría.
+                    if (profile.id !== user.uid) await db.collection('users').doc(user.uid).set(_enlaceAFicha(profile, user.uid), { merge: true });
                 }
             } catch(e) {}
         }

@@ -9096,7 +9096,9 @@ window.runPublicTicketsBackfill = async function() {
                             // copiaba la ficha entera y aparecía como un cliente más:
                             // mismo número, mismo NIF, mismo login (SCORA #1746,
                             // DAVASA #104). Aquí se ignoran.
-                            if (data.isLinkDoc === true || data.isSystemAccount === true) {
+                            // Un puntero de verdad no lleva número de cliente: si lo lleva, es
+                            // una ficha real mal marcada y NO se oculta.
+                            if ((data.isLinkDoc === true && !data.idNum) || data.isSystemAccount === true) {
                                 delete userMap[data.id];
                                 delete userCompaniesMap[data.id];
                                 return;
