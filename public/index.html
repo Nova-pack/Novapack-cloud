@@ -281,7 +281,9 @@
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const email = document.getElementById('email').value;
+            // Sin espacios: un espacio pegado al copiar el email ya impedía entrar
+            // (Firebase lo trata como email inválido).
+            const email = (document.getElementById('email').value || '').trim();
             const password = document.getElementById('password').value;
 
             errorMsg.innerText = '';
@@ -298,8 +300,19 @@
                     errorMsg.innerText = 'Error: Problema de configuración en Firebase.';
                 } else if (error.code === 'auth/operation-not-allowed') {
                     errorMsg.innerText = 'Error: El método Email/Password no está habilitado en Firebase.';
-                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password'
+                        || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-login-credentials') {
+                    // Firebase ya no distingue "no existe" de "contraseña mala" y
+                    // devuelve invalid-credential: antes salía un error técnico en inglés.
                     errorMsg.innerText = 'Email o contraseña incorrectos.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMsg.innerText = 'El email no tiene un formato válido. Revisa que no falte ni sobre nada.';
+                } else if (error.code === 'auth/too-many-requests') {
+                    errorMsg.innerText = 'Demasiados intentos fallidos. Espera unos minutos o usa "¿Olvidaste tu contraseña?".';
+                } else if (error.code === 'auth/user-disabled') {
+                    errorMsg.innerText = 'Este acceso está desactivado. Contacta con NOVAPACK.';
+                } else if (error.code === 'auth/network-request-failed') {
+                    errorMsg.innerText = 'Sin conexión. Comprueba tu internet e inténtalo de nuevo.';
                 } else {
                     errorMsg.innerText = 'Error: ' + error.message;
                 }

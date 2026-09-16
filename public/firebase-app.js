@@ -341,6 +341,7 @@ auth.onAuthStateChanged(async (user) => {
                      if (_maestra.exists) {
                          profile = { ..._maestra.data(), id: _maestra.id };
                          profile.isLinked = true;
+                         profile._viaPuntero = true;   // decide dónde vive su sede (ver effectiveStorageUid)
                      }
                  } catch (e) { console.warn('[SYNC] puntero roto:', e.message); }
              }
@@ -424,9 +425,15 @@ auth.onAuthStateChanged(async (user) => {
             }
         } catch(e) { console.warn('accessActive check:', e); }
 
-        // CRITICAL FIX: effectiveStorageUid MUST be the user.uid to comply with Firestore security rules.
-        // It cannot be the email, otherwise the user is denied permission to save their own companies and tariffs.
-        effectiveStorageUid = user.uid;
+        // Dónde viven la sede, la configuración y los contadores del cliente.
+        // Por defecto su uid: NUNCA el email, que las reglas rechazan.
+        // EXCEPCIÓN: si el perfil llegó por PUNTERO (el acceso es distinto de la
+        // ficha — todos los que se activan desde el admin), va a la FICHA. Las
+        // reglas lo permiten (isOwnerOrLinked: ficha.authUid == su uid) y es la
+        // sede que el admin configura. Con el uid, la app leía una sede vacía y
+        // fabricaba otra: ECOALBORAN habría numerado con "1754" en vez del "175"
+        // de su ficha, y el padre de MOLEON con "106" en vez de "106G".
+        effectiveStorageUid = (profile && profile._viaPuntero && profile.id) ? profile.id : user.uid;
 
         // ───── SUPER-ADMIN: modo "Entrar como cliente" ─────
         // El admin abre app.html?adminAs={docId}. Verificamos que el user
