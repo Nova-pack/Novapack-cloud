@@ -12,8 +12,9 @@
  * cargan este fichero: un solo formato, imposible que vuelvan a divergir.
  *
  * Lo carga: app.html, admin.html, conductor/index.html y albaran_preview.html.
- * No depende de Firebase ni de ninguna variable global de la app: lo único que
- * necesita del anfitrión es window.npGenerateQrUrl (generador de QR local).
+ * No depende de Firebase ni de ninguna variable global de la app. Para el QR
+ * necesita libs/qrcode.min.js cargado en la página (todas lo cargan), y es
+ * AQUÍ donde vive el generador de QR de todo el sistema: npGenerateQrUrl.
  *
  * OJO al tocar: el albarán es el documento de transporte de NOVAPACK. El
  * membrete es SIEMPRE NOVAPACK; los datos del cliente van en REMITENTE.
@@ -59,6 +60,122 @@ function npTotalBultos(t) {
 
 function npQrField(v) {
     return String(v == null ? '' : v).replace(/\|/g, '/').replace(/[\r\n]+/g, ' ').trim();
+}
+
+// ── QR LOCAL, SIN INTERNET ─────────────────────────────────────────────
+// Las apps pedían el QR con qrcode(0,'M'): la forma de usar OTRA librería
+// (qrcode-generator). La que cargan las páginas, libs/qrcode.min.js, es
+// QRCode.js y se llama QRCode; "qrcode" no existía nunca. Así que TODOS los QR
+// se pedían a un servicio de internet (api.qrserver.com): si tardaba o el
+// ordenador del cliente lo tenía bloqueado, la etiqueta salía sin QR. Por eso
+// en unos clientes salía y en otros no. En el admin y en la previsualización ni
+// siquiera había generador, y el albarán fallaba al imprimirse.
+//
+// Ahora el QR se calcula aquí con el motor de QRCode.js, con los datos en
+// UTF-8 SIN la marca BOM que esa librería pone delante cuando hay tildes o Ñ
+// (las pistolas lectoras la escriben como basura), y sale como dibujo
+// vectorial: nítido en cualquier impresora, térmica incluida.
+let qrPrototipoCache;   // undefined: sin comprobar · null: no hay motor
+
+function qrPrototipo() {
+    if (qrPrototipoCache !== undefined) return qrPrototipoCache;
+    qrPrototipoCache = null;
+    try {
+        const Q = global.QRCode;
+        if (typeof Q === 'function' && Q.CorrectLevel && Q.prototype && typeof Q.prototype.makeCode === 'function') {
+            // makeCode sobre un objeto de pega: construye el modelo sin tocar el DOM
+            const falso = {
+                _htOption: { correctLevel: Q.CorrectLevel.M },
+                _el: {},
+                _oDrawing: { draw: function () {} },
+                makeImage: function () {}
+            };
+            Q.prototype.makeCode.call(falso, 'NP');
+            const p = falso._oQRCode && Object.getPrototypeOf(falso._oQRCode);
+            if (p && typeof p.make === 'function' && typeof p.isDark === 'function'
+                  && typeof p.getModuleCount === 'function') {
+                qrPrototipoCache = p;
+            }
+        }
+    } catch (e) {
+        console.warn('[QR] motor local no disponible:', e.message);
+    }
+    return qrPrototipoCache;
+}
+
+function utf8Bytes(texto) {
+    if (typeof TextEncoder === 'function') return Array.from(new TextEncoder().encode(texto));
+    const bin = unescape(encodeURIComponent(texto));
+    const out = new Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+
+// Matriz del QR: corrección M, la versión más pequeña en la que quepa.
+function npQrMatriz(texto) {
+    const proto = qrPrototipo();
+    if (!proto) return null;
+    const bytes = utf8Bytes(String(texto == null ? '' : texto));
+    const segmento = {
+        mode: 4,   // modo byte (8 bits)
+        getLength: function () { return bytes.length; },
+        write: function (buf) { for (let i = 0; i < bytes.length; i++) buf.put(bytes[i], 8); }
+    };
+    for (let version = 1; version <= 40; version++) {
+        const m = Object.create(proto);
+        m.typeNumber = version;
+        m.errorCorrectLevel = global.QRCode.CorrectLevel.M;
+        m.modules = null;
+        m.moduleCount = 0;
+        m.dataCache = null;
+        m.dataList = [segmento];
+        try {
+            m.make();
+        } catch (e) {
+            if (/overflow/i.test(e.message)) continue;   // no cabe: siguiente versión
+            throw e;
+        }
+        return m;
+    }
+    throw new Error('datos demasiado largos para un QR');
+}
+
+// Devuelve la URL (data:) de la imagen del QR. margen = módulos de blanco
+// alrededor (4 es el estándar; en la etiqueta pequeña basta con 2 porque el
+// QR ya va rodeado de blanco).
+function npGenerateQrUrl(data, fallbackSize, margen) {
+    fallbackSize = fallbackSize || 400;
+    const quiet = (margen == null) ? 4 : margen;
+    const texto = String(data == null ? '' : data);
+    try {
+        const m = npQrMatriz(texto);
+        if (m) {
+            const n = m.getModuleCount();
+            const lado = n + 2 * quiet;
+            let d = '';
+            for (let f = 0; f < n; f++) {
+                for (let c = 0; c < n; c++) {
+                    if (!m.isDark(f, c)) continue;
+                    const c0 = c;
+                    while (c + 1 < n && m.isDark(f, c + 1)) c++;
+                    d += 'M' + (c0 + quiet) + ' ' + (f + quiet) + 'h' + (c - c0 + 1) + 'v1H' + (c0 + quiet) + 'z';
+                }
+            }
+            // width/height explícitos: sin ellos, al pasar a PDF (html2canvas)
+            // la imagen se rasterizaba a 300×150 y salía deformada
+            const px = lado * 10;
+            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + px + '" height="' + px
+                + '" viewBox="0 0 ' + lado + ' ' + lado + '" shape-rendering="crispEdges">'
+                + '<rect width="' + lado + '" height="' + lado + '" fill="#fff"/>'
+                + '<path fill="#000" d="' + d + '"/></svg>';
+            return 'data:image/svg+xml;base64,' + btoa(svg);
+        }
+    } catch (e) {
+        console.warn('[QR] generación local fallida, uso el servicio externo:', e.message);
+    }
+    // Último recurso: solo si la página no tiene cargada la librería
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=' + fallbackSize + 'x' + fallbackSize
+        + '&margin=0&qzone=' + quiet + '&data=' + encodeURIComponent(texto);
 }
 
 function setPrintPageSize(size) {
@@ -202,7 +319,7 @@ function generateTicketHTML(t, footerLabel) {
         `|COMP:${t.compId || ''}`;
 
     // QR local (sin dependencia externa) vía helper compartido
-    const qrUrl = window.npGenerateQrUrl(qrData, 400);
+    const qrUrl = npGenerateQrUrl(qrData, 400);
 
     // Bandas (cada artículo agrupado) — compactas para caber en media página A4
     const bandsHtml = grouped.map((p) => {
@@ -323,6 +440,7 @@ global.NOVAPACK_CARRIER      = NOVAPACK_CARRIER;
 global.npBultosExpandidos    = npBultosExpandidos;
 global.npTotalBultos         = npTotalBultos;
 global.npQrField             = npQrField;
+global.npGenerateQrUrl       = npGenerateQrUrl;
 global.npSetPrintPageSize    = setPrintPageSize;
 global.npGenerateTicketHTML  = generateTicketHTML;
 

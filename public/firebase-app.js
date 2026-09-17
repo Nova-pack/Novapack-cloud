@@ -134,32 +134,11 @@ setTimeout(() => { if (typeof hideLoading === 'function') hideLoading(); }, 8000
 
 const DEFAULT_SIZES = "Pequeño, Mediano, Grande, Sobre, Palet, BATERIA 45AH, BATERIA 75AH, BATERIA 100AH, BATERIA CAMION, TAMBOR CAMION, CALIPER DE CAMION, CAJAS DE ACEITE O AGUA, GARRAFAS ADBLUE";
 
-// --- QR HELPER (local primero, fallback API externa) ---
-// Genera el QR usando qrcode.min.js cargado localmente. Si por alguna razón
-// la lib no está disponible o falla, cae al endpoint externo de qrserver.com.
-// Usar SIEMPRE este helper en vez de URLs directas hardcoded de qrserver.
-//
-// PARÁMETROS de qrcode.createDataURL(cellSize, margin):
-//   - cellSize = pixels por módulo. 6 → render alta resolución (impresión nítida)
-//   - margin   = módulos de "quiet zone" alrededor del QR. 4 es el mínimo del
-//                estándar ISO 18004 — sin esto los escáneres móviles fallan
-//                aunque el QR esté técnicamente bien.
-window.npGenerateQrUrl = function(data, fallbackSize) {
-    fallbackSize = fallbackSize || 400;
-    try {
-        if (typeof qrcode !== 'undefined') {
-            // 'M' error correction (~15%) — equilibrio entre tamaño y tolerancia
-            // a manchas/dobleces. Suficiente para impresión normal.
-            var qr = qrcode(0, 'M');
-            qr.addData(data);
-            qr.make();
-            return qr.createDataURL(6, 4);  // cell 6px + quiet zone 4 módulos
-        }
-    } catch (e) {
-        console.warn('[QR] local fail, fallback API:', e.message);
-    }
-    return 'https://api.qrserver.com/v1/create-qr-code/?size=' + fallbackSize + 'x' + fallbackSize + '&data=' + encodeURIComponent(data) + '&qzone=4';
-};
+// --- QR ---
+// El generador de QR vive en albaran_render.js (window.npGenerateQrUrl), que
+// se carga antes que este fichero. El que había aquí llamaba a qrcode(0,'M'),
+// una librería que la app no carga: todos los QR acababan pidiéndose a
+// internet y en algunos clientes las etiquetas salían sin QR.
 
 // ENLACE, NO CLON.
 // Antes, al entrar, la app copiaba la FICHA ENTERA del cliente a users/{uid}.
@@ -2667,6 +2646,10 @@ async function handleFormSubmit(e) {
 
     showLoading();
     isSubmittingTicket = true;
+    // A partir de que el albaran esta en la base de datos, NINGUN fallo
+    // posterior puede decir "Error al guardar": el usuario lo volveria a
+    // guardar y saldria un albaran repetido con otro numero.
+    let albaranGuardado = false;
 
     try {
         let targetDriverPhone = '';
@@ -2725,17 +2708,37 @@ async function handleFormSubmit(e) {
 
             const docId = `${myIdNum}_${currentCompanyId}_${businessId}`;
             await db.collection('tickets').doc(docId).set(data);
-            
-        }
 
+        }
+        albaranGuardado = true;
+
+        // La agenda va APARTE: si falla, el albaran sigue guardado y se dice asi
+        let falloAgenda = null;
         if (document.getElementById('save-destination-check').checked) {
-            await saveClientToAgenda(data);
+            try {
+                await saveClientToAgenda(data);
+            } catch (eAgenda) {
+                console.error('Agenda (el albarán SÍ se guardó):', eAgenda);
+                falloAgenda = eAgenda;
+            }
         }
 
         await resetEditor();
+        if (falloAgenda) {
+            alert("✅ El albarán se ha guardado correctamente.\n\n"
+                + "⚠️ Pero no se pudo guardar el destinatario en tu agenda. "
+                + "Puedes añadirlo después desde la agenda.\n\n"
+                + "(Detalle: " + (falloAgenda.message || falloAgenda) + ")");
+        }
     } catch (err) {
         console.error(err);
-        alert("Error al guardar: " + err.message);
+        if (albaranGuardado) {
+            try { await resetEditor(); } catch (_) {}
+            alert("✅ El albarán se ha guardado correctamente y ya está en tu lista: NO lo vuelvas a guardar.\n\n"
+                + "(Aviso técnico al preparar el siguiente: " + err.message + ")");
+        } else {
+            alert("Error al guardar: " + err.message);
+        }
     } finally {
         isSubmittingTicket = false;
         hideLoading();
@@ -2793,7 +2796,7 @@ function getAddressSignature(a) {
 // hacer un albaran lo sacaba del nombre sin acentos ("luis_moleon_granada"),
 // el formulario manual lo sacaba del nombre CON acentos y espacios dobles, y
 // las importaciones usaban "cli_1771411732620". Resultado: el mismo cliente
-// dos veces (MOLEON 3 repetidos, SCO/[\u0300-\u036f]/g 12, AUTOCRISTAL 7). Borrabas uno y el
+// dos veces (MOLEON 3 repetidos, SCORA 12, AUTOCRISTAL 7). Borrabas uno y el
 // otro seguia ahi ("no me deja eliminar"), y el siguiente albaran lo volvia a
 // crear ("vuelve a aparecer").
 function agendaClave(nombre) {
@@ -2826,7 +2829,7 @@ function agendaFusionar(fichas, idCanonico) {
     return fusion;
 }
 
-// Destinatarios BOR/[\u0300-\u036f]/gDOS a proposito. El guardado automatico de un albaran no
+// Destinatarios BORRADOS a proposito. El guardado automatico de un albaran no
 // los resucita; solo vuelven si se dan de alta a mano en el formulario.
 function agendaBorrados() {
     return db.collection('users').doc(agendaRootUid || effectiveStorageUid || currentUser.uid).collection('destinations_borrados');
@@ -2893,7 +2896,7 @@ async function saveClientToAgenda(t) {
             canon.data = Object.assign({}, canon.data, fusion);
         }
 
-        // El contador sube SIEMP/\s+/g, aunque la direccion ya estuviera
+        // El contador sube SIEMPRE, aunque la direccion ya estuviera
         const firmaNueva = getAddressSignature(newAddr);
         const yaEsta = (canon.data.addresses || []).some(a => getAddressSignature(a) === firmaNueva);
         const upd = { useCount: _usoInc, lastUsedAt: _ahora };
@@ -4990,7 +4993,10 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
         if (typeof w === 'string' && !w.includes('kg')) w = w + " kg";
         weightStr = w;
     }
-    const inlineStyle = isA4 ? "height: 100%; padding: 10px; box-sizing: border-box; font-family: sans-serif; position: relative; overflow: hidden; margin: 0; display: flex; flex-direction: column; background:white; print-color-adjust: exact; -webkit-print-color-adjust: exact;" : "width: 100%; height: 100%; max-width: 4in; max-height: 6in; border: 3px solid #000; padding: 10px; box-sizing: border-box; font-family: sans-serif; position: relative; overflow: hidden; margin: 0 auto; display: flex; flex-direction: column; background:white; print-color-adjust: exact; -webkit-print-color-adjust: exact;";
+    // Etiquetadora (6 × 9 cm): maquetación propia, ver generateLabel69HTML
+    if (!isA4) return generateLabel69HTML(t, index, total, weightStr);
+
+    const inlineStyle = "height: 100%; padding: 10px; box-sizing: border-box; font-family: sans-serif; position: relative; overflow: hidden; margin: 0; display: flex; flex-direction: column; background:white; print-color-adjust: exact; -webkit-print-color-adjust: exact;";
 
     const contentBox = `
         <div class="label-item" style="${inlineStyle}">
@@ -5024,7 +5030,7 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
                 
                 <!-- Label QR (local) -->
                 <div style="position: absolute; bottom: 0; right: 0;">
-                     <img src="${window.npGenerateQrUrl(`ID:${npQrField(t.id)}|DEST:${npQrField(t.receiver)}|ADDR:${npQrField(t.address)}|PROV:${npQrField(t.province)}|TEL:${npQrField(t.phone)}|COD:${t.cod || 0}|BULTOS:${total}|PESO:${npBultosExpandidos(t).reduce((a, b) => a + b.weight, 0).toFixed(0)}|CLI:${npQrField(t.clientIdNum)}|NIF:${npQrField(t.receiverNif)}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}|PKG:${index+1}/${total}`, 250)}"
+                     <img src="${window.npGenerateQrUrl(datosQrEtiqueta(t, index, total), 250)}"
                          style="width: 100px !important; height: 100px !important; display: block; background: white; padding: 4px; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; max-width: none !important; max-height: none !important; min-width: 100px !important; min-height: 100px !important;">
                 </div>
             </div>
@@ -5056,9 +5062,96 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
         </div>
     `;
 
-    if (isA4) return contentBox;
+    return contentBox;
+}
 
-    return `<div class="label-page-4x6">${contentBox}</div>`;
+// Contenido del QR de la etiqueta. UNO para los dos formatos: la oficina lo
+// lee con el escáner (parseTicketQR) y no puede depender del papel.
+function datosQrEtiqueta(t, index, total) {
+    return `ID:${npQrField(t.id)}|DEST:${npQrField(t.receiver)}|ADDR:${npQrField(t.address)}|PROV:${npQrField(t.province)}|TEL:${npQrField(t.phone)}|COD:${t.cod || 0}|BULTOS:${total}|PESO:${npBultosExpandidos(t).reduce((a, b) => a + b.weight, 0).toFixed(0)}|CLI:${npQrField(t.clientIdNum)}|NIF:${npQrField(t.receiverNif)}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}|PKG:${index+1}/${total}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ETIQUETA DE ETIQUETADORA — 60 × 90 mm
+// ─────────────────────────────────────────────────────────────────────────
+// La etiqueta de A4 está dibujada para una celda de 10 × 15 cm. Metida en un
+// rollo de 6 × 9 se cortaba: el nombre partido y sin dirección, provincia, QR,
+// número de albarán, bultos ni peso. Esta lleva la MISMA información maquetada
+// para 6 × 9:
+//  · todo en negro: las etiquetadoras son térmicas y el naranja sale gris
+//    punteado;
+//  · alturas fijas para el QR y el número de albarán: un nombre, una dirección
+//    o unas observaciones largas se recortan en su hueco, nunca empujan fuera
+//    lo que el repartidor y la oficina necesitan leer.
+function generateLabel69HTML(t, index, total, weightStr) {
+    const e = (v) => escapeHtml(String(v == null ? '' : v));
+    const fecha = parseSafeDate(t.createdAt);
+    const fechaOk = !isNaN(fecha.getTime());
+    const dia = fechaOk ? fecha.toLocaleDateString('es-ES') : '';
+    const hora = fechaOk ? fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
+
+    // Tamaño de letra según largo: que quepa sin partir palabras a la fuerza
+    const nombre = String(t.receiver || '');
+    const tamNombre = nombre.length <= 14 ? 13 : nombre.length <= 24 ? 11.5 : nombre.length <= 36 ? 10 : 8.5;
+    const prov = String(t.province || '');
+    const tamProv = prov.length <= 9 ? 16 : prov.length <= 14 ? 12 : 9.5;
+    const idAlb = String(t.id || '');
+    const tamId = idAlb.length <= 12 ? 14 : idAlb.length <= 16 ? 11 : 9;
+    const reembolso = parseFloat(String(t.cod == null ? '' : t.cod).replace(',', '.')) || 0;
+
+    // Recorte a n líneas. En el nombre (letra muy gruesa) además se limita el
+    // alto a 2.2em: las tildes de la línea que queda oculta asomaban por
+    // debajo de la última visible.
+    const lineas = (n) => `display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${n};overflow:hidden;word-break:break-word;`;
+    const unaLinea = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    const qr = window.npGenerateQrUrl(datosQrEtiqueta(t, index, total), 250, 2);
+
+    return `
+        <div class="label-item label-69" style="width:100%; height:100%; box-sizing:border-box; padding:2.5mm 2.5mm 2mm; display:flex; flex-direction:column; overflow:hidden; background:#fff; color:#000; font-family:Arial, Helvetica, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+
+            <div style="flex:none; display:flex; justify-content:space-between; align-items:flex-end; gap:1mm; padding-bottom:0.8mm; border-bottom:0.5mm solid #000;">
+                <div style="min-width:0;">
+                    <div style="font-family:'Xenotron', Arial, sans-serif; font-size:11pt; line-height:1; white-space:nowrap;">NOVAPACK<span style="font-family:Arial, sans-serif; font-weight:900;">&#10148;</span></div>
+                    <div style="font-size:4.8pt; line-height:1.1; margin-top:0.4mm; white-space:nowrap;">${e(NOVAPACK_CARRIER.email)}</div>
+                </div>
+                <div style="flex:none; text-align:right; font-size:6pt; line-height:1.15; white-space:nowrap;">${e(dia)}<br>${e(hora)}</div>
+            </div>
+
+            <div style="flex:none; padding:0.7mm 0; border-bottom:0.25mm solid #000; font-size:6pt; line-height:1.2;">
+                <div style="${unaLinea}"><span style="font-size:5pt;">REMITENTE:</span> <b>${e(t.sender)}</b></div>
+                ${t.senderAddress ? `<div style="${unaLinea}">${e(t.senderAddress)}</div>` : ''}
+            </div>
+
+            <div style="flex:1 1 auto; min-height:0; overflow:hidden; padding-top:0.8mm;">
+                <div style="font-size:5pt; line-height:1.1;">DESTINATARIO:</div>
+                <div style="font-size:${tamNombre}pt; font-weight:900; line-height:1.2; max-height:2.2em; text-transform:uppercase; ${lineas(2)}">${e(nombre)}</div>
+                <div style="font-size:7.5pt; line-height:1.2; margin-top:0.8mm; ${lineas(t.notes ? 2 : 3)}">${e(t.address)}</div>
+                ${prov ? `<div style="font-size:${tamProv}pt; font-weight:900; line-height:1.05; text-transform:uppercase; margin-top:0.6mm; white-space:nowrap; overflow:hidden;">${e(prov)}</div>` : ''}
+                ${t.notes ? `<div style="font-size:6.5pt; font-weight:700; line-height:1.25; margin-top:0.5mm; ${lineas(2)}">OBS: ${e(t.notes)}</div>` : ''}
+            </div>
+
+            <div style="flex:none; height:30mm; box-sizing:border-box; display:flex; gap:1.5mm; align-items:center; border-top:0.25mm solid #000; padding-top:0.8mm;">
+                <div style="flex:1; min-width:0; height:100%; display:flex; flex-direction:column; justify-content:space-around;">
+                    <div>
+                        <div style="font-size:5pt; line-height:1;">BULTO</div>
+                        <div style="font-size:16pt; font-weight:900; line-height:1; white-space:nowrap;">${index + 1}/${total}</div>
+                    </div>
+                    <div>
+                        <div style="font-size:5pt; line-height:1;">PESO</div>
+                        <div style="font-size:9.5pt; font-weight:900; line-height:1.05; ${unaLinea}">${e(weightStr)}</div>
+                    </div>
+                    ${t.timeSlot ? `<div style="font-size:6.5pt; font-weight:900; line-height:1; ${unaLinea}">TURNO: ${e(t.timeSlot)}</div>` : ''}
+                    ${reembolso > 0 ? `<div style="background:#000; color:#fff; text-align:center; padding:0.4mm 0.5mm; line-height:1.05;">
+                        <div style="font-size:5pt; font-weight:700;">REEMBOLSO</div>
+                        <div style="font-size:9pt; font-weight:900; white-space:nowrap;">${e(t.cod)} €</div>
+                    </div>` : ''}
+                </div>
+                <img src="${qr}" alt="QR" style="flex:none; display:block; width:28.5mm; height:28.5mm;">
+            </div>
+
+            <div style="flex:none; margin-top:0.8mm; padding-top:0.7mm; border-top:0.5mm solid #000; text-align:center; font-size:${tamId}pt; font-weight:900; line-height:1; white-space:nowrap; overflow:hidden;">${e(idAlb)}</div>
+        </div>
+    `;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -5080,6 +5173,9 @@ function documentoEtiquetas(hojaHtml, isA4) {
     const tam = isA4 ? 'A4 portrait' : '60mm 90mm';
     const pagina = isA4 ? '.print-a4-page' : '.print-label-page';
     return '<!doctype html><html><head><meta charset="utf-8"><title>Etiquetas NOVAPACK</title><style>'
+        // El logo va en Xenotron: este documento no hereda las fuentes de la app.
+        // swap: si la fuente tardase, sale en Arial, nunca en blanco.
+        + "@font-face{font-family:'Xenotron';src:local('Xenotron'),url('/fonts/xenotron.woff2') format('woff2');font-display:swap}"
         + '@page{size:' + tam + ';margin:0}'
         + 'html,body{margin:0;padding:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
         + '*{box-sizing:border-box}'
@@ -5139,10 +5235,14 @@ async function imprimirEtiquetas(tickets, paperMode, nombrePdf) {
     doc.write(documentoEtiquetas(hoja.innerHTML, isA4));
     doc.close();
 
-    // Esperar a que carguen los QR (por si alguno viene de red), con tope
+    // Esperar a la fuente del logo y a los QR (se generan en local y cargan al
+    // instante; el tope es por si alguna vez hubiera que tirar del servicio externo)
     const imgs = Array.from(doc.images || []);
     await Promise.race([
-        Promise.all(imgs.map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r; }))),
+        Promise.all([
+            (doc.fonts && doc.fonts.load) ? doc.fonts.load("16px 'Xenotron'").catch(() => null) : null,
+            ...imgs.map(img => img.complete ? null : new Promise(r => { img.onload = r; img.onerror = r; }))
+        ]),
         new Promise(r => setTimeout(r, 4000))
     ]);
 
@@ -5206,15 +5306,18 @@ function renderLabelsInA4Grid(container, labelsHtml, paperMode) {
             container.appendChild(page);
         }
     } else {
-        // LABEL PRINTER MODE: One label per page (6x9cm with generous margins)
+        // ETIQUETADORA: una etiqueta por página de 60 × 90 mm. Los márgenes
+        // los pone la propia etiqueta. Alto 89.5 y no 90: medio milímetro de
+        // holgura para que un redondeo no parta la etiqueta en dos páginas
+        // (saldría una etiqueta en blanco entre cada dos).
         labelsHtml.forEach((html) => {
             const page = document.createElement('div');
             page.className = "print-label-page";
             page.style = `
-                width: 60mm; min-height: 90mm; max-height: 90mm;
-                page-break-after: always; page-break-inside: avoid; 
-                overflow: hidden; background: white; 
-                padding: 3mm; box-sizing: border-box;
+                width: 60mm; height: 89.5mm;
+                page-break-after: always; page-break-inside: avoid;
+                overflow: hidden; background: white;
+                padding: 0; box-sizing: border-box;
             `;
             page.innerHTML = html;
             container.appendChild(page);
