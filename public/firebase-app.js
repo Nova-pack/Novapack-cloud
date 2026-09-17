@@ -4976,15 +4976,12 @@ async function printShiftBatch(slot, reprint = false) {
 document.getElementById('btn-print-labels-morning').onclick = () => printLabelShiftBatch('MAÑANA');
 document.getElementById('btn-print-labels-afternoon').onclick = () => printLabelShiftBatch('TARDE');
 
+// Etiqueta de un bulto. Dos formatos con la MISMA información y la misma
+// estructura (cabecera · destinatario · QR · pie):
+//   · A4 (4 por hoja) y PDF → generateLabelA4HTML
+//   · etiquetadora 6 × 9 cm → generateLabel69HTML
+// Los textos largos se encogen al imprimir: ver ajustarTextosEtiquetas.
 function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
-    // Cabecera de la etiqueta: el email es el del TRANSPORTISTA (NOVAPACK), no el
-    // del cliente — que ya sale a la derecha, en su bloque REMITENTE.
-    const companyEmail = NOVAPACK_CARRIER.email;
-
-    // createdAt viene de Firestore como Timestamp: new Date(Timestamp) da
-    // "Invalid Date" y eso es lo que se imprimía en cada etiqueta.
-    const _lblFecha = parseSafeDate(t.createdAt);
-
     if (!weightStr) {
         const _bultos = npBultosExpandidos(t);
         const _b = _bultos[index] || _bultos[0] || { weight: 0 };
@@ -4993,82 +4990,196 @@ function generateLabelHTML(t, index, total, weightStr, isA4 = false) {
         if (typeof w === 'string' && !w.includes('kg')) w = w + " kg";
         weightStr = w;
     }
-    // Etiquetadora (6 × 9 cm): maquetación propia, ver generateLabel69HTML
-    if (!isA4) return generateLabel69HTML(t, index, total, weightStr);
+    return isA4
+        ? generateLabelA4HTML(t, index, total, weightStr)
+        : generateLabel69HTML(t, index, total, weightStr);
+}
 
-    const inlineStyle = "height: 100%; padding: 10px; box-sizing: border-box; font-family: sans-serif; position: relative; overflow: hidden; margin: 0; display: flex; flex-direction: column; background:white; print-color-adjust: exact; -webkit-print-color-adjust: exact;";
+// Fecha y hora de la etiqueta. createdAt llega de Firestore como Timestamp:
+// new Date(Timestamp) daba "Invalid Date" impreso en cada etiqueta.
+function fechaEtiqueta(t) {
+    const f = parseSafeDate(t.createdAt);
+    if (isNaN(f.getTime())) return { dia: '', hora: '' };
+    return {
+        dia: f.toLocaleDateString('es-ES'),
+        hora: f.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    };
+}
 
-    const contentBox = `
-        <div class="label-item" style="${inlineStyle}">
-            
-            
-            <!-- Header: Logo & Sender -->
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #FF6600; padding-bottom: 8px; margin-bottom: 8px; z-index:1;">
-                <div style="width: 40%;">
-                    <div style="font-family: 'Xenotron', sans-serif; font-size: 16pt; color: #FF6600; line-height: 0.9;">NOVAPACK<span style="color:#FF3B30; font-weight:900; font-family:sans-serif;">&#10148;</span></div>
-                    <div style="font-size: 0.5rem; letter-spacing: 0.5px; color:#333;">${companyEmail}</div>
-                    <div style="font-size: 0.65rem; color:#666; margin-top: 4px;">${_lblFecha.toLocaleDateString('es-ES')} ${_lblFecha.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                </div>
-                <div style="width: 60%; text-align: right; font-size: 0.7rem; color: #000; line-height: 1.1;">
-                    <strong style="font-size:0.6rem; color:#666;">REMITENTE:</strong><br>
-                    <strong style="font-size:0.8rem; text-transform:uppercase;">${t.sender}</strong><br>
-                    ${t.senderAddress || ''}
-                </div>
-            </div>
+// ─────────────────────────────────────────────────────────────────────────
+// TEXTOS QUE ENCOGEN HASTA CABER
+// ─────────────────────────────────────────────────────────────────────────
+// Un nombre o una dirección larga no pueden romper la etiqueta. Antes el
+// tamaño era fijo: un nombre largo partía palabras, se montaba sobre otras
+// cosas o empujaba fuera el QR y el número de albarán. Ahora se MIDE lo que
+// ocupa cada texto en el mismo documento que se va a imprimir y se baja la
+// letra medio punto cada vez hasta que todo cabe en su hueco:
+//   data-fit-zona       hueco de alto fijo
+//   data-fit-contenido  lo que hay dentro (se mide su alto)
+//   data-fit-min        tamaño mínimo en pt
+//   data-fit-lineas     máximo de líneas de ese texto
+//   data-fit-peso       >1 encoge antes, <1 aguanta más (la provincia)
+// Primero encoge lo que incumple por sí mismo (una palabra más ancha que el
+// hueco o más líneas de las permitidas); después, si el conjunto aún no cabe,
+// lo que esté proporcionalmente más grande — así el nombre sigue siendo lo que
+// más destaca. Una sola palabra que ni al mínimo cabe a lo ancho se deja partir
+// y se vuelve a empezar (mejor partida y grande que entera e ilegible). Y si
+// con todo al mínimo no cabe (textos absurdos), se acorta el TEXTO con "…"
+// hasta sus líneas — no con CSS: las tildes de una línea oculta asomaban y el
+// recorte por alto se comía el pie de las letras. Nunca se sale de su hueco.
+function ajustarTextosEtiquetas(raiz) {
+    const doc = raiz.ownerDocument || raiz;
+    const ventana = doc.defaultView || window;
+    raiz.querySelectorAll('[data-fit-zona]').forEach(zona => {
+        const contenido = zona.querySelector('[data-fit-contenido]') || zona;
+        const piezas = Array.from(zona.querySelectorAll('[data-fit-min]'));
+        if (!piezas.length) return;
+        const tam = (p) => parseFloat(p.style.fontSize) || 10;
+        const base = new Map(piezas.map(p => [p, tam(p)]));
+        const lineasMax = new Map(piezas.map(p => [p, parseInt(p.dataset.fitLineas, 10) || 3]));
+        const puedeBajar = (p) => tam(p) - 0.5 >= parseFloat(p.dataset.fitMin) - 0.001;
+        const altoLinea = (p) => parseFloat(ventana.getComputedStyle(p).fontSize) * (parseFloat(p.style.lineHeight) || 1.2);
+        const demasiadoAncho = (p) => p.scrollWidth > p.clientWidth + 1;
+        const incumple = (p) => demasiadoAncho(p) || p.offsetHeight > lineasMax.get(p) * altoLinea(p) + 1;
+        const cabeZona = () => contenido.offsetHeight <= zona.clientHeight + 1;
+        const prioridad = (p) => (tam(p) / base.get(p)) * (parseFloat(p.dataset.fitPeso) || 1);
 
-            <!-- Receiver -->
-            <div style="flex:1; display:flex; flex-direction:column; justify-content:center; text-align: center; z-index:1; padding-bottom: 20px; padding-right: 110px; padding-left: 20mm; position:relative;">
-                <div style="font-size:0.8rem; color:#666; text-align:left; width:100%; margin-bottom:5px;">DESTINATARIO:</div>
-                <div style="font-size: 20pt; font-weight: 900; line-height: 1; text-transform: uppercase; margin-bottom: 10px; color: #000;">
-                    ${t.receiver}
-                </div>
-                <div style="font-size: 10pt; line-height: 1.2; overflow: hidden;">
-                    ${t.address}
-                </div>
-                ${t.province ? `<div style="font-size: 22pt; font-weight:900; text-transform:uppercase; color: #FF6600; margin-top: 4px;">${t.province}</div>` : ''}
-                ${t.notes ? `<div style="font-size: 0.8rem; font-weight: bold; color: #333; margin-top: 10px; border-top: 1px dotted #ccc; padding-top: 5px; white-space: pre-wrap; word-break: break-word; overflow: hidden; line-height: 1.2;">OBS: ${t.notes}</div>` : ''}
-                
-                <!-- Label QR (local) -->
-                <div style="position: absolute; bottom: 0; right: 0;">
-                     <img src="${window.npGenerateQrUrl(datosQrEtiqueta(t, index, total), 250)}"
-                         style="width: 100px !important; height: 100px !important; display: block; background: white; padding: 4px; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; max-width: none !important; max-height: none !important; min-width: 100px !important; min-height: 100px !important;">
-                </div>
-            </div>
+        const encoger = () => {
+            for (let vuelta = 0; vuelta < 150; vuelta++) {
+                let candidatas = piezas.filter(p => puedeBajar(p) && incumple(p));
+                if (!candidatas.length) {
+                    if (cabeZona()) return;
+                    candidatas = piezas.filter(puedeBajar);
+                    if (!candidatas.length) return;
+                }
+                const elegida = candidatas.reduce((a, b) => (prioridad(b) > prioridad(a) ? b : a));
+                elegida.style.fontSize = (tam(elegida) - 0.5) + 'pt';
+            }
+        };
 
+        encoger();
 
-            <!-- Footer Info -->
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; border-top: 1px solid #ccc; padding-top: 8px; margin-top: 8px; z-index:1; background: transparent;">
-                <div style="text-align: center; flex: 1;">
-                    <div style="font-size: 7pt; color:#666;">Bulto</div>
-                    <div style="font-size: 16pt; font-weight: bold;">${index + 1} / ${total}</div>
-                </div>
+        // Palabras imposibles de encajar enteras: se dejan partir y otra vuelta
+        const anchas = piezas.filter(demasiadoAncho);
+        if (anchas.length) {
+            // break-word y no anywhere: el PDF (html2canvas) solo entiende break-word
+            anchas.forEach(p => { p.style.overflowWrap = 'break-word'; });
+            piezas.forEach(p => { p.style.fontSize = base.get(p) + 'pt'; });
+            encoger();
+        }
 
-                <div style="text-align: center; flex: 2; border-left: 1px solid #ccc; border-right: 1px solid #ccc; padding: 0 5px;">
-                    <strong style="font-size: 12pt; display: block;">${t.id}</strong>
-                    ${t.timeSlot ? `<div style="font-size: 0.75rem; font-weight: 800; color: #333; margin-top: 2px; text-transform: uppercase;">TURNO: ${t.timeSlot}</div>` : ''}
-                </div>
-
-                <div style="text-align: center; flex: 1;">
-                    <div style="font-size: 7pt; color:#666;">Peso</div>
-                    <div style="font-size: 12pt; font-weight:bold;">${weightStr}</div>
-                </div>
-            </div>
-
-            ${(t.cod && parseFloat(t.cod) > 0) ? `
-            <div style="position: absolute; top: 120px; right: -5px; transform: rotate(15deg); background: white; color: black; padding: 4px 10px; font-weight: 900; border-radius: 4px; font-size: 0.8rem; border: 3px solid black; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); text-align: center; line-height: 1.1; z-index: 10;">
-                ATENCIÓN<br>REEMBOLSO<br>
-                <span style="font-size: 1.2rem; color: black;">${t.cod} €</span>
-            </div>` : ''}
-        </div>
-    `;
-
-    return contentBox;
+        let ok = cabeZona() && !piezas.some(incumple);
+        if (!ok) {
+            const originales = new Map(piezas.map(p => [p, p.textContent]));
+            const acortar = (p) => {
+                const texto = originales.get(p);
+                p.style.overflowWrap = 'break-word';
+                p.textContent = texto;
+                if (!incumple(p)) return;
+                let lo = 0, hi = texto.length;
+                while (lo < hi) {
+                    const mitad = Math.ceil((lo + hi) / 2);
+                    p.textContent = texto.slice(0, mitad).trimEnd() + '…';
+                    if (incumple(p)) hi = mitad - 1; else lo = mitad;
+                }
+                p.textContent = texto.slice(0, lo).trimEnd() + '…';
+            };
+            piezas.forEach(acortar);
+            // Si aun asi no cabe el conjunto, se quitan lineas empezando por lo
+            // menos importante (observaciones, luego direccion...)
+            const orden = piezas.slice().sort((a, b) =>
+                (parseFloat(b.dataset.fitPeso) || 1) - (parseFloat(a.dataset.fitPeso) || 1)
+                || piezas.indexOf(b) - piezas.indexOf(a));
+            for (let vuelta = 0; vuelta < 30 && !cabeZona(); vuelta++) {
+                const p = orden.find(x => lineasMax.get(x) > 1);
+                if (!p) break;
+                lineasMax.set(p, lineasMax.get(p) - 1);
+                acortar(p);
+            }
+            ok = cabeZona() && !piezas.some(incumple);
+        }
+        zona.setAttribute('data-fit-ok', ok ? '1' : '0');
+    });
 }
 
 // Contenido del QR de la etiqueta. UNO para los dos formatos: la oficina lo
 // lee con el escáner (parseTicketQR) y no puede depender del papel.
 function datosQrEtiqueta(t, index, total) {
     return `ID:${npQrField(t.id)}|DEST:${npQrField(t.receiver)}|ADDR:${npQrField(t.address)}|PROV:${npQrField(t.province)}|TEL:${npQrField(t.phone)}|COD:${t.cod || 0}|BULTOS:${total}|PESO:${npBultosExpandidos(t).reduce((a, b) => a + b.weight, 0).toFixed(0)}|CLI:${npQrField(t.clientIdNum)}|NIF:${npQrField(t.receiverNif)}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}|PKG:${index+1}/${total}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ETIQUETA A4 — celda de 4 por hoja (unos 95 × 136 mm)
+// ─────────────────────────────────────────────────────────────────────────
+// Mismo aspecto de siempre (logo y provincia en naranja, pie con bulto,
+// albarán y peso), pero ordenada en huecos que no se pisan. Antes el QR iba
+// flotando dentro del bloque del destinatario (que para dejarle sitio perdía
+// 5 cm de ancho), el sello de reembolso tapaba el nombre y el logo se montaba
+// sobre el remitente; un nombre largo partía palabras y empujaba fuera el QR
+// y el pie. Ahora: cabecera · destinatario (encoge para caber) · QR con el
+// reembolso al lado · pie.
+function generateLabelA4HTML(t, index, total, weightStr) {
+    const e = (v) => escapeHtml(String(v == null ? '' : v));
+    const { dia, hora } = fechaEtiqueta(t);
+    const idAlb = String(t.id || '');
+    const tamId = idAlb.length <= 14 ? 13 : idAlb.length <= 18 ? 11 : 9;
+    const reembolso = parseFloat(String(t.cod == null ? '' : t.cod).replace(',', '.')) || 0;
+    const qr = window.npGenerateQrUrl(datosQrEtiqueta(t, index, total), 250);
+
+    return `
+        <div class="label-item label-a4" style="height:100%; box-sizing:border-box; padding:3.5mm 4mm 2.5mm; display:flex; flex-direction:column; overflow:hidden; background:#fff; color:#000; font-family:Arial, Helvetica, sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact;">
+
+            <div style="flex:none; display:flex; justify-content:space-between; align-items:flex-start; gap:3mm; padding-bottom:2mm; border-bottom:0.8mm solid #FF6600;">
+                <div style="flex:none;">
+                    <div style="font-family:'Xenotron', Arial, sans-serif; font-size:14pt; color:#FF6600; line-height:1; white-space:nowrap;">NOVAPACK<span style="color:#FF3B30; font-family:Arial, sans-serif; font-weight:900;">&#10148;</span></div>
+                    <div style="font-size:5.5pt; color:#333; margin-top:0.8mm; white-space:nowrap;">${e(NOVAPACK_CARRIER.email)}</div>
+                    <div style="font-size:7pt; color:#666; margin-top:0.8mm; white-space:nowrap;">${e(dia)} ${e(hora)}</div>
+                </div>
+                <div data-fit-zona style="flex:1; min-width:0; text-align:right;">
+                    <div data-fit-contenido>
+                        <div style="font-size:6pt; font-weight:700; color:#666; line-height:1.2;">REMITENTE:</div>
+                        <div data-fit-min="7" data-fit-lineas="2" style="font-size:8.5pt; font-weight:700; line-height:1.2; text-transform:uppercase;">${e(t.sender)}</div>
+                        ${t.senderAddress ? `<div data-fit-min="6.5" data-fit-lineas="2" style="font-size:7pt; line-height:1.2;">${e(t.senderAddress)}</div>` : ''}
+                    </div>
+                </div>
+            </div>
+
+            <div data-fit-zona style="flex:1 1 0; min-height:0; overflow:hidden; display:flex; flex-direction:column; justify-content:center;">
+                <div data-fit-contenido style="text-align:center; padding:1.5mm 0 1.5mm;">
+                    <div style="font-size:7pt; color:#666; text-align:left;">DESTINATARIO:</div>
+                    <div data-fit-min="9" data-fit-lineas="3" style="font-size:20pt; font-weight:900; line-height:1.15; text-transform:uppercase; margin-top:1mm;">${e(t.receiver)}</div>
+                    <div data-fit-min="7" data-fit-lineas="3" style="font-size:10pt; line-height:1.25; margin-top:1.5mm;">${e(t.address)}</div>
+                    ${t.province ? `<div data-fit-min="12" data-fit-lineas="1" data-fit-peso="0.8" style="font-size:22pt; font-weight:900; line-height:1.1; text-transform:uppercase; color:#FF6600; margin-top:1mm;">${e(t.province)}</div>` : ''}
+                    ${t.notes ? `<div data-fit-min="6.5" data-fit-lineas="3" data-fit-peso="1.2" style="font-size:8.5pt; font-weight:700; color:#333; line-height:1.25; margin-top:1.5mm; padding-top:1.2mm; border-top:1px dotted #bbb;">OBS: ${e(t.notes)}</div>` : ''}
+                </div>
+            </div>
+
+            <div style="flex:none; height:30mm; display:flex; align-items:center; gap:3mm;">
+                <div style="flex:1; min-width:0; display:flex; justify-content:center;">
+                    ${reembolso > 0 ? `<div style="transform:rotate(-4deg); background:#fff; border:0.8mm solid #000; border-radius:1.5mm; padding:1mm 3mm; text-align:center; line-height:1.1; font-weight:900; max-width:100%;">
+                        <div style="font-size:7.5pt;">ATENCIÓN · REEMBOLSO</div>
+                        <div style="font-size:15pt; white-space:nowrap;">${e(t.cod)} €</div>
+                    </div>` : ''}
+                </div>
+                <img src="${qr}" alt="QR" style="flex:none; display:block; width:29mm; height:29mm;">
+            </div>
+
+            <div style="flex:none; display:flex; align-items:center; border-top:1px solid #ccc; padding-top:1.8mm; margin-top:1mm;">
+                <div style="flex:1; min-width:0; text-align:center;">
+                    <div style="font-size:6.5pt; color:#666;">Bulto</div>
+                    <div style="font-size:15pt; font-weight:700; line-height:1.1; white-space:nowrap;">${index + 1} / ${total}</div>
+                </div>
+                <div style="flex:2; min-width:0; text-align:center; border-left:1px solid #ccc; border-right:1px solid #ccc; padding:0 1.5mm;">
+                    <div style="font-size:${tamId}pt; font-weight:700; line-height:1.1; white-space:nowrap; overflow:hidden;">${e(idAlb)}</div>
+                    ${t.timeSlot ? `<div style="font-size:8pt; font-weight:800; color:#333; margin-top:0.5mm; text-transform:uppercase; white-space:nowrap;">TURNO: ${e(t.timeSlot)}</div>` : ''}
+                </div>
+                <div style="flex:1; min-width:0; text-align:center;">
+                    <div style="font-size:6.5pt; color:#666;">Peso</div>
+                    <div style="font-size:11pt; font-weight:700; line-height:1.1; white-space:nowrap;">${e(weightStr)}</div>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -5081,28 +5192,17 @@ function datosQrEtiqueta(t, index, total) {
 //  · todo en negro: las etiquetadoras son térmicas y el naranja sale gris
 //    punteado;
 //  · alturas fijas para el QR y el número de albarán: un nombre, una dirección
-//    o unas observaciones largas se recortan en su hueco, nunca empujan fuera
-//    lo que el repartidor y la oficina necesitan leer.
+//    o unas observaciones largas encogen dentro de su hueco
+//    (ajustarTextosEtiquetas), nunca empujan fuera lo que el repartidor y la
+//    oficina necesitan leer.
 function generateLabel69HTML(t, index, total, weightStr) {
     const e = (v) => escapeHtml(String(v == null ? '' : v));
-    const fecha = parseSafeDate(t.createdAt);
-    const fechaOk = !isNaN(fecha.getTime());
-    const dia = fechaOk ? fecha.toLocaleDateString('es-ES') : '';
-    const hora = fechaOk ? fecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '';
-
-    // Tamaño de letra según largo: que quepa sin partir palabras a la fuerza
+    const { dia, hora } = fechaEtiqueta(t);
     const nombre = String(t.receiver || '');
-    const tamNombre = nombre.length <= 14 ? 13 : nombre.length <= 24 ? 11.5 : nombre.length <= 36 ? 10 : 8.5;
     const prov = String(t.province || '');
-    const tamProv = prov.length <= 9 ? 16 : prov.length <= 14 ? 12 : 9.5;
     const idAlb = String(t.id || '');
     const tamId = idAlb.length <= 12 ? 14 : idAlb.length <= 16 ? 11 : 9;
     const reembolso = parseFloat(String(t.cod == null ? '' : t.cod).replace(',', '.')) || 0;
-
-    // Recorte a n líneas. En el nombre (letra muy gruesa) además se limita el
-    // alto a 2.2em: las tildes de la línea que queda oculta asomaban por
-    // debajo de la última visible.
-    const lineas = (n) => `display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${n};overflow:hidden;word-break:break-word;`;
     const unaLinea = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     const qr = window.npGenerateQrUrl(datosQrEtiqueta(t, index, total), 250, 2);
 
@@ -5122,12 +5222,14 @@ function generateLabel69HTML(t, index, total, weightStr) {
                 ${t.senderAddress ? `<div style="${unaLinea}">${e(t.senderAddress)}</div>` : ''}
             </div>
 
-            <div style="flex:1 1 auto; min-height:0; overflow:hidden; padding-top:0.8mm;">
-                <div style="font-size:5pt; line-height:1.1;">DESTINATARIO:</div>
-                <div style="font-size:${tamNombre}pt; font-weight:900; line-height:1.2; max-height:2.2em; text-transform:uppercase; ${lineas(2)}">${e(nombre)}</div>
-                <div style="font-size:7.5pt; line-height:1.2; margin-top:0.8mm; ${lineas(t.notes ? 2 : 3)}">${e(t.address)}</div>
-                ${prov ? `<div style="font-size:${tamProv}pt; font-weight:900; line-height:1.05; text-transform:uppercase; margin-top:0.6mm; white-space:nowrap; overflow:hidden;">${e(prov)}</div>` : ''}
-                ${t.notes ? `<div style="font-size:6.5pt; font-weight:700; line-height:1.25; margin-top:0.5mm; ${lineas(2)}">OBS: ${e(t.notes)}</div>` : ''}
+            <div data-fit-zona style="flex:1 1 0; min-height:0; overflow:hidden;">
+                <div data-fit-contenido style="padding:0.8mm 0 0.8mm;">
+                    <div style="font-size:5pt; line-height:1.1;">DESTINATARIO:</div>
+                    <div data-fit-min="6.5" data-fit-lineas="3" style="font-size:13pt; font-weight:900; line-height:1.2; text-transform:uppercase;">${e(nombre)}</div>
+                    <div data-fit-min="5.5" data-fit-lineas="3" style="font-size:7.5pt; line-height:1.2; margin-top:0.6mm;">${e(t.address)}</div>
+                    ${prov ? `<div data-fit-min="9" data-fit-lineas="1" data-fit-peso="0.8" style="font-size:16pt; font-weight:900; line-height:1.1; text-transform:uppercase; margin-top:0.4mm;">${e(prov)}</div>` : ''}
+                    ${t.notes ? `<div data-fit-min="5" data-fit-lineas="3" data-fit-peso="1.2" style="font-size:6.5pt; font-weight:700; line-height:1.25; margin-top:0.4mm;">OBS: ${e(t.notes)}</div>` : ''}
+                </div>
             </div>
 
             <div style="flex:none; height:30mm; box-sizing:border-box; display:flex; gap:1.5mm; align-items:center; border-top:0.25mm solid #000; padding-top:0.8mm;">
@@ -5209,19 +5311,37 @@ async function imprimirEtiquetas(tickets, paperMode, nombrePdf) {
     renderTicketsList();
 
     if (paperMode === 'pdf' && typeof html2pdf === 'function') {
-        hoja.style.position = 'fixed'; hoja.style.left = '-10000px'; hoja.style.top = '0';
-        document.body.appendChild(hoja);
+        // Fuera de la vista pero DENTRO del documento, para poder medir. OJO: la
+        // hoja en sí no puede llevar position:fixed — html2pdf la copia con su
+        // estilo, un elemento fixed no ocupa alto y el PDF salía EN BLANCO.
+        // Por eso lo fijo es un envoltorio y la hoja va normal dentro.
+        const fuera = document.createElement('div');
+        fuera.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;';
+        fuera.appendChild(hoja);
+        document.body.appendChild(fuera);
         try {
-            await html2pdf().from(hoja).set({
+            // Una hoja A4 cada vez, de 296.5 mm: en una sola pasada html2pdf
+            // parte el lienzo por alturas redondeadas y añadía una página en
+            // blanco al final. (Alto antes de ajustar textos: se mide lo real.)
+            const paginas = Array.from(hoja.querySelectorAll('.print-a4-page'));
+            paginas.forEach(p => { p.style.height = '296.5mm'; });
+            ajustarTextosEtiquetas(hoja);   // ya maquetada: se puede medir
+            const opciones = {
                 margin: 0, filename: nombrePdf,
                 image: { type: 'jpeg', quality: 0.95 },
                 html2canvas: { scale: 2, useCORS: true, allowTaint: true },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-            }).save();
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                pagebreak: { mode: 'legacy' }
+            };
+            let trabajo = html2pdf().set(opciones).from(paginas[0]).toPdf();
+            paginas.slice(1).forEach(p => {
+                trabajo = trabajo.get('pdf').then(pdf => { pdf.addPage(); }).from(p).toContainer().toCanvas().toPdf();
+            });
+            await trabajo.save();
         } catch (e) {
             alert('Error generando PDF: ' + e.message);
         } finally {
-            hoja.remove();
+            fuera.remove();
         }
         return;
     }
@@ -5245,6 +5365,10 @@ async function imprimirEtiquetas(tickets, paperMode, nombrePdf) {
         ]),
         new Promise(r => setTimeout(r, 4000))
     ]);
+
+    // Encoger los textos largos midiendo en ESTE documento, que es el que se
+    // imprime (mismo ancho y mismas fuentes que el papel)
+    try { ajustarTextosEtiquetas(doc); } catch (e) { console.warn('[ETIQUETAS] ajuste de textos:', e.message); }
 
     const quitar = () => { try { iframe.remove(); } catch (_) {} };
     iframe.contentWindow.addEventListener('afterprint', () => setTimeout(quitar, 500));
