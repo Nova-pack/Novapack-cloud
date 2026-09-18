@@ -4,13 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>novapaack.login</title>
+    <title>NOVAPACK · Acceso de clientes</title>
     <meta name="description"
-        content="Sistema profesional de gestión de albaranes y logística Novapack. Acceso inteligente para clientes y administración.">
+        content="Acceso de clientes de NOVAPACK SERVI INMEDIATO DE PAQUETERIA S.L. (NIF B93587194), empresa de transporte y paquetería en Andalucía. Gestión de albaranes, etiquetas y seguimiento de envíos.">
     <meta name="theme-color" content="#FF4D00">
-    <meta property="og:title" content="novapaack.login">
-    <meta property="og:description" content="Gestión eficiente de albaranes y etiquetas en la nube.">
-    <meta property="og:image" content="https://novapaack-68f05.web.app/icon.png">
+    <meta property="og:site_name" content="NOVAPACK">
+    <meta property="og:title" content="NOVAPACK · Acceso de clientes">
+    <meta property="og:description" content="Área privada de clientes de NOVAPACK SERVI INMEDIATO DE PAQUETERIA S.L.: albaranes, etiquetas y seguimiento de envíos.">
+    <meta property="og:url" content="https://novapaack.com/">
+    <meta property="og:image" content="https://novapaack.com/icon.png">
+    <link rel="canonical" href="https://novapaack.com/">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
@@ -35,8 +38,40 @@
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
             background-color: var(--bg-dark);
+        }
+
+        /* Identidad de la empresa. Además de ser obligatoria (LSSI art. 10),
+           es la señal que evita que los filtros de contenido de los clientes
+           (SonicWall y compañía) clasifiquen esta página como fraude: una
+           pantalla que solo pide usuario y contraseña, sin decir de quién es,
+           tiene la misma pinta que una página de phishing. */
+        .identidad {
+            margin-top: 26px;
+            padding-top: 18px;
+            border-top: 1px solid var(--border-glass);
+            text-align: center;
+            font-size: 0.72rem;
+            line-height: 1.6;
+            color: #8a8a8a;
+        }
+
+        .identidad strong {
+            color: #bdbdbd;
+            font-weight: 600;
+        }
+
+        .identidad a {
+            color: var(--brand-primary);
+            text-decoration: none;
+        }
+
+        .identidad .privado {
+            margin-top: 10px;
+            font-size: 0.68rem;
+            color: #6a6a6a;
         }
 
         body {
@@ -128,6 +163,27 @@
             /* Balancea el centrado del letter-spacing */
             font-weight: 300;
             display: block;
+        }
+
+        /* En móvil el logo (Xenotron, muy ancho) se salía de la tarjeta */
+        @media (max-width: 420px) {
+            .login-card {
+                padding: 28px 22px;
+            }
+
+            .logo {
+                font-size: 2rem;
+            }
+
+            .logo-text {
+                letter-spacing: 6px;
+                margin-right: -6px;
+            }
+
+            .subtext {
+                letter-spacing: 4px;
+                margin-bottom: 28px;
+            }
         }
 
         .form-group {
@@ -233,7 +289,7 @@
         <form id="login-form">
             <div class="form-group">
                 <label for="email">Username / Email</label>
-                <input type="email" id="email" placeholder="admin@novapack.com" required>
+                <input type="email" id="email" placeholder="tu correo de acceso" required>
             </div>
             <div class="form-group">
                 <label for="password">Clave de Acceso</label>
@@ -250,6 +306,13 @@
                 <div class="loader-dots"></div>
             </div>
         </form>
+
+        <div class="identidad">
+            <div><strong>NOVAPACK SERVI INMEDIATO DE PAQUETERIA S.L.</strong></div>
+            <div>NIF B93587194 &middot; Transporte y paqueter&iacute;a en Andaluc&iacute;a</div>
+            <div><a href="mailto:administracion@novapack.info">administracion@novapack.info</a></div>
+            <div class="privado">&Aacute;rea privada para clientes de NOVAPACK. Si has llegado aqu&iacute; por error, cierra esta p&aacute;gina.</div>
+        </div>
     </div>
 
     <script src="firebase-config.js"></script>
