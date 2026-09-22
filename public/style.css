@@ -230,6 +230,15 @@ select option {
     padding: 10px;
 }
 
+/* Cabeceras de grupo del desplegable (MIS ARTÍCULOS / CATÁLOGO): sin esto,
+   en Chrome y Edge de PC salían como bandas blancas sin texto */
+select optgroup {
+    background-color: #1A1A1A;
+    color: var(--brand-primary, #FF6600);
+    font-weight: 700;
+    font-style: normal;
+}
+
 #company-selector option {
     background: #0D0D0D;
     color: #FF6600;

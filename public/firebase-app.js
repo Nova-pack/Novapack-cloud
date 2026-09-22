@@ -114,6 +114,10 @@ let activeTariffArticles = [];
 // Catálogo base de SERVICIOS (tarifa 50): disponible para todos los clientes
 // como carta de servicios — sin precios en la app; la valoración es del admin.
 let baseCatalogArticles = [];
+// Artículos que crea el propio CLIENTE con "+ CREAR NUEVO..." (ver
+// loadClientCustomArticles). Van aparte del catálogo: ni filtro de rutas ni
+// exclusiones del admin.
+let clientCustomArticles = [];
 let cachedProvinces = []; // Global cache to avoid UI race conditions and over-fetching
 
 // NEW: Robust Global Logout
@@ -245,6 +249,132 @@ async function saveCustomData(key, value) {
     } catch (e) {
         console.error("Error saving custom data:", e);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ARTÍCULOS PROPIOS DEL CLIENTE
+// ─────────────────────────────────────────────────────────────────────────
+// "La app no guarda los artículos que creo": sí se guardaban, pero el
+// desplegable solo los leía si el cliente NO tenía tarifa NI catálogo, y desde
+// el catálogo base (tarifa 50) lo tienen todos (los que tenían tarifa propia no
+// los habían visto nunca). Salían en la fila donde se creaban y desaparecían en
+// la siguiente. Ahora se cargan al entrar y salen siempre, en su propio grupo.
+//
+// Viven en la FICHA del cliente (users/{effectiveStorageUid}/config/settings,
+// campo custom_sizes), junto a su sede y sus contadores. Se leen también los
+// sitios antiguos para no perder nada: el uid del acceso (donde guardaban los
+// accesos por puntero) y customPackageSizes (el importador de copias antiguas).
+function _npArticlesHome() {
+    return effectiveStorageUid || (currentUser && currentUser.uid) || null;
+}
+
+function _npCleanArticle(s) {
+    return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+// ¿Son EL MISMO artículo? Sin tildes, sin mayúsculas y sin espacios de más,
+// pero conservando los signos: "PAQUETE +20KG" y "PAQUETE -20KG", o "CAJA <5KG"
+// y "CAJA >5KG", son artículos distintos. (_npNormGeo, la de las rutas, borra
+// los signos y los daba por iguales: se elegía el contrario sin avisar.)
+function _npArticleKey(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+async function loadClientCustomArticles() {
+    const vistos = new Set();
+    const lista = [];
+    const sumar = (arr) => (Array.isArray(arr) ? arr : []).forEach(a => {
+        const n = _npCleanArticle(a);
+        const k = _npArticleKey(n);
+        if (n && _npNormGeo(n) && !vistos.has(k)) { vistos.add(k); lista.push(n); }
+    });
+    const leer = async (uid) => {
+        try {
+            const d = await db.collection('users').doc(uid).collection('config').doc('settings').get();
+            return d.exists ? (d.data().custom_sizes || []) : [];
+        } catch (e) {
+            console.warn('[ARTÍCULOS] no se pudo leer users/' + uid + '/config/settings:', e.message);
+            return [];
+        }
+    };
+    const casa = _npArticlesHome();
+    if (casa) sumar(await leer(casa));
+    // Sitio antiguo: el uid del ACCESO del cliente. En modo super-admin es el
+    // authUid de la ficha, nunca currentUser (ahí es el ADMIN, y lo que haya en
+    // su config no es de este cliente): así el admin ve lo mismo que el cliente.
+    const acceso = window._adminImpersonating ? (userData && userData.authUid) : (currentUser && currentUser.uid);
+    if (acceso && acceso !== casa) sumar(await leer(acceso));
+    if (userData && userData.customPackageSizes) sumar(userData.customPackageSizes);
+    clientCustomArticles = lista.sort((a, b) => a.localeCompare(b, 'es'));
+    console.log('Artículos propios del cliente:', clientCustomArticles.length);
+}
+
+// Guarda un artículo nuevo SIN pisar los demás: arrayUnion es atómico. Antes
+// se leía la lista, se añadía y se reescribía entera — si la lectura fallaba,
+// se guardaba solo el nuevo y se perdían todos los anteriores. true/false.
+async function saveClientCustomArticle(nombre) {
+    const valor = { custom_sizes: firebase.firestore.FieldValue.arrayUnion(nombre) };
+    const casa = _npArticlesHome();
+    try {
+        await db.collection('users').doc(casa).collection('config').doc('settings').set(valor, { merge: true });
+        return true;
+    } catch (e) {
+        console.error('[ARTÍCULOS] no se pudo guardar en la ficha:', e.message);
+    }
+    // Respaldo: el uid del propio acceso siempre se puede escribir, y
+    // loadClientCustomArticles también lo lee
+    if (currentUser && currentUser.uid !== casa && !window._adminImpersonating) {
+        try {
+            await db.collection('users').doc(currentUser.uid).collection('config').doc('settings').set(valor, { merge: true });
+            return true;
+        } catch (e) { console.error('[ARTÍCULOS] tampoco en el acceso:', e.message); }
+    }
+    return false;
+}
+
+// Opciones del desplegable de artículos (pura: se prueba aparte).
+//   · MIS ARTÍCULOS: los que ha creado el cliente. Siempre, sin filtro de
+//     rutas (leía "FARO IZQ-DCHO" como una ruta y lo descartaba) ni
+//     exclusiones (el admin no los ve en su gestor, y ocultarlos era justo el
+//     fallo). Si uno equivale a un artículo del catálogo que ya sale, se deja
+//     solo el del catálogo.
+//   · CATÁLOGO: tarifa + catálogo base, en el orden por destino de siempre.
+//   · En edición, el artículo del albarán aunque ya no esté en ninguna lista.
+// Todo escapado: un nombre con comillas (LLANTA 17") se cortaba y, al reabrir
+// el albarán, el desplegable salía vacío; y un nombre con < > inyectaba HTML.
+function _npBuildArticleOptions(ordered, propios, actual) {
+    const e = (s) => escapeHtml(String(s));
+    const enCatalogo = new Set(ordered.map(_npArticleKey));
+    const mios = (propios || []).filter(n => !enCatalogo.has(_npArticleKey(n)));
+    const cur = actual ? String(actual).trim() : '';
+    const todos = new Set(ordered.concat(mios));
+    let html = '<option value="" disabled' + (cur ? '' : ' selected') + '>-- Seleccionar Artículo --</option>';
+    if (cur && !todos.has(cur)) html += `<option value="${e(cur)}">${e(cur)}</option>`;
+    if (mios.length) {
+        html += '<optgroup label="MIS ARTÍCULOS" class="pkg-mine">'
+            + mios.map(n => `<option value="${e(n)}">${e(n)}</option>`).join('') + '</optgroup>';
+    }
+    html += '<optgroup label="CATÁLOGO" class="pkg-cat">'
+        + ordered.map(n => `<option value="${e(n)}">${e(n)}</option>`).join('') + '</optgroup>';
+    html += '<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>';
+    return html;
+}
+
+// Añade un artículo propio al grupo "MIS ARTÍCULOS" de un desplegable ya
+// pintado (lo crea si aún no existe), en orden alfabético y sin duplicar.
+function _npAddMineOption(sel, nombre) {
+    const k = _npArticleKey(nombre);
+    if (Array.from(sel.options).some(o => o.value && o.value !== 'create_new_size' && _npArticleKey(o.value) === k)) return;
+    let grupo = sel.querySelector('optgroup.pkg-mine');
+    if (!grupo) {
+        grupo = document.createElement('optgroup');
+        grupo.label = 'MIS ARTÍCULOS';
+        grupo.className = 'pkg-mine';
+        sel.insertBefore(grupo, sel.querySelector('optgroup.pkg-cat') || sel.lastElementChild);
+    }
+    const despues = Array.from(grupo.children).find(o => o.value.localeCompare(nombre, 'es') > 0);
+    grupo.insertBefore(new Option(nombre, nombre), despues || null);
 }
 
 // --- INITIALIZATION ---
@@ -433,13 +563,26 @@ auth.onAuthStateChanged(async (user) => {
                         alert('Cliente no encontrado: ' + _urlAA);
                     } else {
                         userData = { id: _targetDoc.id, ..._targetDoc.data() };
+                        // El MISMO sitio que usa el propio cliente al entrar: si su
+                        // acceso es un puntero a esta ficha, la ficha (ver arriba);
+                        // si no, su uid de acceso. Antes el admin miraba el puntero
+                        // y veía otra sede, otros contadores y otros artículos.
                         effectiveStorageUid = userData.authUid || _targetDoc.id;
+                        if (userData.authUid && userData.authUid !== _targetDoc.id) {
+                            try {
+                                const _acc = await db.collection('users').doc(userData.authUid).get();
+                                const _ad = _acc.exists ? _acc.data() : null;
+                                if (_ad && _ad.isLinkDoc && _ad.masterDocId === _targetDoc.id) effectiveStorageUid = _targetDoc.id;
+                            } catch (e) { console.warn('[SUPER-ADMIN] acceso del cliente:', e.message); }
+                        }
                         window._adminImpersonating = userData.id;
                         // Banner naranja persistente
                         const _bnr = document.createElement('div');
                         _bnr.id = 'admin-impersonate-banner';
                         _bnr.style.cssText = 'position:fixed; top:0; left:0; right:0; background:linear-gradient(90deg,#FF9F0A,#FF6B00); color:#000; text-align:center; padding:8px 16px; z-index:99999; font-weight:800; font-size:0.85rem; letter-spacing:0.5px; box-shadow:0 2px 8px rgba(0,0,0,0.3);';
-                        _bnr.innerHTML = '👁️ SUPER-ADMIN — actuando como <strong>' + (userData.name || userData.id) + '</strong> (#' + (userData.idNum || '?') + ') · <a href="#" onclick="window.close();return false;" style="color:#000;text-decoration:underline;">Cerrar pestaña</a>';
+                        // Escapado: el nombre lo puede escribir el propio cliente en su
+                        // ficha, y este banner se pinta con la sesión del ADMIN
+                        _bnr.innerHTML = '👁️ SUPER-ADMIN — actuando como <strong>' + escapeHtml(userData.name || userData.id) + '</strong> (#' + escapeHtml(userData.idNum || '?') + ') · <a href="#" onclick="window.close();return false;" style="color:#000;text-decoration:underline;">Cerrar pestaña</a>';
                         document.body.appendChild(_bnr);
                         // Empuja el cuerpo hacia abajo para no tapar contenido
                         document.body.style.paddingTop = (document.body.style.paddingTop || '0px');
@@ -517,7 +660,8 @@ auth.onAuthStateChanged(async (user) => {
             loadCompanies(),
             loadActiveTariff(),
             loadProvinces(),
-            loadPredefinedPhones()
+            loadPredefinedPhones(),
+            loadClientCustomArticles()
         ]);
 
         // --- DYNAMIC WELCOME ANIMATION ---
@@ -712,42 +856,57 @@ function getTodayLocal() {
 // --- DATA ACCESS: COMPANIES ---
 async function loadCompanies() {
     companies = [];
-    // Check all possible user document IDs for companies subcollection
-    const uidsToCheck = [currentUser.uid];
-    if (effectiveStorageUid && effectiveStorageUid !== currentUser.uid) {
-        uidsToCheck.push(effectiveStorageUid);
-    }
-    // CRITICAL FIX: Also check the master document ID (admin-created profile) for companies
-    if (userData && userData.id && !uidsToCheck.includes(userData.id)) {
-        uidsToCheck.push(userData.id);
-    }
-    // Also check by authUid if different
-    if (userData && userData.authUid && !uidsToCheck.includes(userData.authUid)) {
-        uidsToCheck.push(userData.authUid);
-    }
+    // DÓNDE VIVEN LAS SEDES: primero la CANÓNICA (effectiveStorageUid: la ficha
+    // si se entra por puntero o en modo admin; si no, el uid del acceso), que es
+    // donde se guardan los cambios (saveCompany, reparación del prefijo,
+    // sincronización). Aquí "el primero gana", y antes iba primero el uid del
+    // acceso: en los accesos por puntero una copia vieja tapaba a la ficha (un
+    // cambio de prefijo del admin no se veía hasta el login siguiente), y en
+    // modo admin iba primero la cuenta del ADMIN, donde además se clonaban las
+    // sedes de cada cliente suplantado (el albarán de B podía numerarse con el
+    // prefijo de A).
+    //
+    // Los sitios antiguos (el uid del acceso, el authUid) solo se miran si la
+    // canónica NO tiene ninguna sede, y entonces se migran a ella. Si ya tiene,
+    // lo antiguo se ignora: en los accesos por puntero son restos de la "sede
+    // partida" (la copia del padre de MOLEON tenía el prefijo viejo 106 y una
+    // sede vacía "NP" sin ningún albarán).
+    const base = effectiveStorageUid || currentUser.uid;
+    const uidsToCheck = [base];
+    const sumarUid = (u) => { if (u && !uidsToCheck.includes(u)) uidsToCheck.push(u); };
+    if (!window._adminImpersonating) sumarUid(currentUser.uid);   // nunca la cuenta del admin
+    if (userData) { sumarUid(userData.id); sumarUid(userData.authUid); }
 
     console.log('[SYNC] loadCompanies checking UIDs:', uidsToCheck);
 
+    let baseLeida = false;
     try {
-        for (const targetId of uidsToCheck) {
-            let snap = await db.collection('users').doc(targetId).collection('companies').get();
-            snap.forEach(doc => {
-                if (!companies.find(c => c.id === doc.id)) {
-                    companies.push({ id: doc.id, ...doc.data() });
-                }
-            });
-            // If we found companies, also clone them to the current UID for future fast access
-            if (snap.size > 0 && targetId !== currentUser.uid) {
-                console.log(`[SYNC] Cloning ${snap.size} companies from ${targetId} to ${currentUser.uid}`);
+        const snapBase = await db.collection('users').doc(base).collection('companies').get();
+        baseLeida = true;
+        snapBase.forEach(doc => companies.push({ id: doc.id, ...doc.data() }));
+    } catch (e) {
+        console.error("Error loading companies (" + base + "):", e);
+    }
+    if (companies.length === 0) {
+        for (const targetId of uidsToCheck.slice(1)) {
+            try {
+                const snap = await db.collection('users').doc(targetId).collection('companies').get();
                 for (const doc of snap.docs) {
-                    try {
-                        await db.collection('users').doc(currentUser.uid).collection('companies').doc(doc.id).set(doc.data(), { merge: true });
-                    } catch(cloneErr) { console.warn('Company clone error:', cloneErr); }
+                    if (companies.find(c => c.id === doc.id)) continue;
+                    companies.push({ id: doc.id, ...doc.data() });
+                    // Migrar a la canónica (solo si se pudo leer: si no, no se
+                    // sabe si ya la tiene y no se arriesga a pisarla)
+                    if (baseLeida) {
+                        try {
+                            await db.collection('users').doc(base).collection('companies').doc(doc.id).set(doc.data(), { merge: true });
+                            console.log('[SYNC] sede ' + doc.id + ' migrada de ' + targetId + ' a ' + base);
+                        } catch (cloneErr) { console.warn('Company clone error:', cloneErr); }
+                    }
                 }
+            } catch (e) {
+                console.warn("Error loading companies (" + targetId + "):", e);
             }
         }
-    } catch (e) {
-        console.error("Error loading companies:", e);
     }
 
     if (companies.length === 0) {
@@ -2117,8 +2276,14 @@ window.deleteCompanyCloud = async (id) => {
 
     showLoading();
     try {
-        const targetUid = currentUser.uid;
+        // Donde vive la sede (como al leerla y guardarla), y también sus copias
+        // antiguas: si no, loadCompanies la volvería a copiar a la ficha
+        const targetUid = effectiveStorageUid || currentUser.uid;
         await db.collection('users').doc(targetUid).collection('companies').doc(id).delete();
+        const _copias = [window._adminImpersonating ? null : currentUser.uid, userData && userData.id, userData && userData.authUid];
+        for (const u of new Set(_copias.filter(x => x && x !== targetUid))) {
+            await db.collection('users').doc(u).collection('companies').doc(id).delete().catch(() => {});
+        }
         if (currentCompanyId === id) {
             const next = companies.find(x => x.id !== id);
             currentCompanyId = next.id;
@@ -2234,16 +2399,15 @@ async function addPackageRow(data = null) {
     // 50), deduplicado. El cliente no ve precios: es una carta de servicios;
     // la valoracion la hace el admin al facturar (los de cuota plana van a 0
     // salvo sus sueltos, que estan en su propia tarifa).
-    let optionsHtml = '<option value="" disabled selected>-- Seleccionar Art\u00edculo --</option>';
+    // Los art\u00edculos que crea el cliente van aparte (clientCustomArticles):
+    // ver _npBuildArticleOptions.
     let availableSet = new Set();
 
     if (activeTariffArticles.length > 0) {
         activeTariffArticles.forEach(s => availableSet.add(s.trim()));
     } else if (!baseCatalogArticles.length) {
-        // Sin tarifa NI catalogo (offline sin cache): tamanos por defecto
-        const customSizes = await getCustomData('custom_sizes') || [];
+        // Sin tarifa NI catalogo: tamanos por defecto
         DEFAULT_SIZES.split(',').forEach(s => availableSet.add(s.trim()));
-        customSizes.forEach(s => availableSet.add(s.trim()));
     }
     baseCatalogArticles.forEach(s => availableSet.add(String(s).trim()));
 
@@ -2267,16 +2431,8 @@ async function addPackageRow(data = null) {
         const _exclSet = new Set(_exclList.map(_npNormGeo));
         ordered = ordered.filter(n => !_exclSet.has(_npNormGeo(n)));
     }
-    // En edicion: conservar el articulo del albaran aunque el filtro lo excluya
-    if (data && data.size && ordered.indexOf(data.size.trim()) < 0) {
-        ordered.unshift(data.size.trim());
-    }
-
-    ordered.forEach(s => {
-        optionsHtml += `<option value="${s}">${s}</option>`;
-    });
-
-    optionsHtml += `<option value="create_new_size" style="color:var(--brand-primary); font-weight:bold;">+ CREAR NUEVO...</option>`;
+    // Mis artículos + catálogo + (en edición) el del albarán, todo escapado
+    const optionsHtml = _npBuildArticleOptions(ordered, clientCustomArticles, data && data.size);
 
     row.innerHTML = `
         <div style="width: 60px;">
@@ -2305,27 +2461,35 @@ async function addPackageRow(data = null) {
     if (weightIn) weightIn.oninput = updateContext;
     if (removeBtn) removeBtn.onclick = () => { row.remove(); updateContext(); };
 
-    // Create new size logic
-    sizeSel.onchange = async () => {
+    // Crear un artículo propio. Todo lo visible es inmediato (el valor queda
+    // puesto ANTES de guardar: si no, el bulto podía guardarse con el valor
+    // interno "create_new_size"); el guardado va detrás y avisa si falla.
+    sizeSel.onchange = () => {
         if (sizeSel.value === 'create_new_size') {
-            const newSize = prompt("Nombre del nuevo tamaño/tipo:");
-            if (newSize && newSize.trim()) {
-                const current = await getCustomData('custom_sizes') || [];
-                current.push(newSize.trim());
-                await saveCustomData('custom_sizes', [...new Set(current)]);
-
-                // Add to all selects in UI
-                document.querySelectorAll('.pkg-size').forEach(sel => {
-                    const opt = document.createElement('option');
-                    opt.value = newSize.trim();
-                    opt.textContent = newSize.trim();
-                    sel.add(opt, sel.options[sel.options.length - 1]);
-                });
-                sizeSel.value = newSize.trim();
+            const previo = sizeSel.dataset.prev || '';
+            const nombre = _npCleanArticle(prompt("Nombre del nuevo artículo:") || '').toUpperCase();
+            if (!nombre || !_npNormGeo(nombre)) {
+                sizeSel.value = previo;   // cancelado: se queda como estaba (antes "Mediano", que ya no existe)
             } else {
-                sizeSel.value = "Mediano";
+                const k = _npArticleKey(nombre);
+                const existente = Array.from(sizeSel.options)
+                    .find(o => o.value && o.value !== 'create_new_size' && _npArticleKey(o.value) === k);
+                if (existente) {
+                    sizeSel.value = existente.value;   // ya estaba ("caja  pequeña" = "CAJA PEQUEÑA"): no se duplica
+                } else {
+                    if (!clientCustomArticles.some(n => _npArticleKey(n) === k)) {
+                        clientCustomArticles.push(nombre);
+                        clientCustomArticles.sort((a, b) => a.localeCompare(b, 'es'));
+                    }
+                    document.querySelectorAll('.pkg-size').forEach(sel => _npAddMineOption(sel, nombre));
+                    sizeSel.value = nombre;
+                    saveClientCustomArticle(nombre).then(ok => {
+                        if (!ok) alert('⚠️ No se ha podido guardar "' + nombre + '" en tu cuenta.\n\nPuedes usarlo en este albarán, pero la próxima vez tendrás que crearlo de nuevo. Revisa tu conexión.');
+                    });
+                }
             }
         }
+        sizeSel.dataset.prev = sizeSel.value;
 
         // Auto-weight logic
         const val = sizeSel.value;
@@ -2339,8 +2503,11 @@ async function addPackageRow(data = null) {
     if (data) {
         qtyIn.value = data.qty || 1;
         weightIn.value = data.weight || 0;
-        sizeSel.value = data.size || 'Pequeño';
+        // El del albarán, recortado igual que al montar las opciones (antes
+        // 'Pequeño' por defecto, que ya no existe: el desplegable salía vacío)
+        sizeSel.value = data.size ? String(data.size).trim() : '';
     }
+    sizeSel.dataset.prev = sizeSel.value;
     updateContext();
 }
 
@@ -2365,11 +2532,14 @@ function updateContext() {
 }
 
 function getPackagesData() {
-    return Array.from(document.querySelectorAll('.package-row')).map(row => ({
-        qty: parseInt(row.querySelector('.pkg-qty').value) || 1,
-        weight: parseFloat(row.querySelector('.pkg-weight').value) || 0,
-        size: row.querySelector('.pkg-size').value
-    }));
+    return Array.from(document.querySelectorAll('.package-row')).map(row => {
+        const v = row.querySelector('.pkg-size').value;
+        return {
+            qty: parseInt(row.querySelector('.pkg-qty').value) || 1,
+            weight: parseFloat(row.querySelector('.pkg-weight').value) || 0,
+            size: v === 'create_new_size' ? '' : v   // valor interno, nunca un artículo
+        };
+    });
 }
 
 // --- TERMS ACCEPTANCE ---
@@ -2614,8 +2784,13 @@ async function handleFormSubmit(e) {
         alert("Debe añadir al menos un bulto mercancia pulsando el botón '+'.");
         return;
     }
-    if (!pkgs[0].size) {
-        alert("Debe seleccionar un artículo para el bulto.");
+    // TODAS las filas (antes solo la primera: las demás se guardaban sin
+    // artículo y salían impresas y valoradas como "Bulto")
+    const _sinArticulo = pkgs.findIndex(p => !p.size);
+    if (_sinArticulo >= 0) {
+        alert(pkgs.length > 1
+            ? "El bulto " + (_sinArticulo + 1) + " no tiene artículo: selecciónalo o quita esa fila."
+            : "Debe seleccionar un artículo para el bulto.");
         return;
     }
 
@@ -3734,8 +3909,8 @@ async function importOfflineBackup(event) {
                 }
             });
 
-            if (allTickets.length === 0 && allDestinations.length === 0) {
-                alert("No se encontraron albaranes válidos ni agenda en el archivo.");
+            if (allTickets.length === 0 && allDestinations.length === 0 && allSizes.length === 0) {
+                alert("No se encontraron albaranes válidos, agenda ni artículos en el archivo.");
                 return;
             }
 
@@ -3814,8 +3989,16 @@ async function importOfflineBackup(event) {
 
 
             // 3. ACTUALIZAR CONFIGURACIÓN DEL USUARIO (Tamaños y Provincias)
+            // Los artículos van donde la app los lee (config/settings.custom_sizes
+            // de la ficha). Antes iban a customPackageSizes, que nadie leía: el
+            // aviso decía que se migraban y se perdían.
+            const _articulosCopia = [...new Set(allSizes.map(_npCleanArticle).filter(Boolean))];
+            if (_articulosCopia.length > 0) {
+                batch.set(userRef.collection('config').doc('settings'),
+                    { custom_sizes: firebase.firestore.FieldValue.arrayUnion(..._articulosCopia) }, { merge: true });
+                count++;
+            }
             let userUpdates = {};
-            if (allSizes.length > 0) userUpdates.customPackageSizes = [...new Set(allSizes)];
             if (allProvinces.length > 0) userUpdates.customProvinces = [...new Set(allProvinces)];
             
             if (Object.keys(userUpdates).length > 0) {
@@ -3824,8 +4007,11 @@ async function importOfflineBackup(event) {
             }
 
             if (count > 0) await batch.commit();
+            if (_articulosCopia.length > 0) {
+                try { await loadClientCustomArticles(); } catch (_) {}
+            }
 
-            alert(`✅ MIGRACIÓN COMPLETADA.\n\nSe han restaurado:\n- ${totalTicketsImported} Albaranes.\n- ${totalDestImported} Direcciones de Destino.`);
+            alert(`✅ MIGRACIÓN COMPLETADA.\n\nSe han restaurado:\n- ${totalTicketsImported} Albaranes.\n- ${totalDestImported} Direcciones de Destino.\n- ${_articulosCopia.length} Artículos propios.`);
             
             // Invalidar cache de agenda para que se muestren los nuevos clientes
             agendaCache = null;
