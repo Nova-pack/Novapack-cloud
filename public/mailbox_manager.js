@@ -503,8 +503,8 @@ window.openMailboxModal = function(id) {
                         <div><strong>Recibido por:</strong> ${_esc(item.podInfo.receiverName || 'N/A')}</div>
                         <div><strong>Repartidor:</strong> ${_esc(item.podInfo.driverName || 'N/A')}</div>
                         <div style="margin-top:6px;">
-                            ${item.podInfo.signatureURL ? '<span style="color:#2196F3;">📝 Firma</span> ' : ''}
-                            ${item.podInfo.photoURL ? '<span style="color:#FF9800;">📷 Foto</span>' : ''}
+                            ${(item.podInfo.signatureURL || item.podInfo.signaturePath) ? '<span style="color:#2196F3;">📝 Firma</span> ' : ''}
+                            ${(item.podInfo.photoURL || item.podInfo.photoPath) ? '<span style="color:#FF9800;">📷 Foto</span>' : ''}
                         </div>
                     </div>
                     ${item.status === 'pod_autorizada' ?

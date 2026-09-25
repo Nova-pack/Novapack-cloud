@@ -673,6 +673,21 @@
 
             var sigImg = document.getElementById('pod-alb-sig-img');
             var sigEmpty = document.getElementById('pod-alb-sig-empty');
+            // Firma subida pero sin URL (red lenta del repartidor): se resuelve
+            // desde su ruta en Storage. Comprobando que sigue en pantalla ESTE
+            // albarán: si no, se pintaba la firma del anterior (y salía impresa).
+            var _podRef = data;
+            var _resolverPorRuta = function(ruta, img, vacio) {
+                if (!ruta || data.podCleaned) return;
+                firebase.storage().ref(ruta).getDownloadURL().then(function(u) {
+                    if (_podData !== _podRef) return;   // ya se está viendo otro albarán
+                    if (img === sigImg) { _podRef.signatureURL = u; } else { _podRef.photoURL = u; }
+                    img.src = u;
+                    img.style.display = 'block';
+                    if (vacio) vacio.style.display = 'none';
+                }).catch(function(e) { console.warn('[POD] no se pudo resolver', ruta, e.message); });
+            };
+            if (!data.signatureURL && data.signaturePath) _resolverPorRuta(data.signaturePath, sigImg, sigEmpty);
             if (data.signatureURL) {
                 if (data.podCleaned) {
                     sigEmpty.style.display = 'block';
@@ -690,6 +705,7 @@
 
             var photoImg = document.getElementById('pod-alb-photo-img');
             var photoEmpty = document.getElementById('pod-alb-photo-empty');
+            if (!data.photoURL && data.photoPath) _resolverPorRuta(data.photoPath, photoImg, photoEmpty);
             if (data.photoURL) {
                 if (data.podCleaned) {
                     photoEmpty.style.display = 'block';

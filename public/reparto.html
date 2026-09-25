@@ -204,7 +204,7 @@
     </style>
 
     <!-- App Logic -->
-    <script src="reparto.js?v=20260719_robusto" defer></script>
+    <script src="reparto.js?v=20260925_pod" defer></script>
     <script src="copiloto.js?v=20260515_copiloto_v2" defer></script>
     <script src="ocr.js?v=20260715_series" defer></script>
 </head>
@@ -393,6 +393,10 @@
     <header class="app-header">
         <div class="header-left">
             <span id="connection-dot" class="conn-dot online" title="Conectado"></span>
+            <!-- Lo que falta por sincronizar: hasta ahora la cola era invisible
+                 y una entrega pudo quedarse meses sin registrar sin que nadie
+                 lo viera (ver _offlineQueue.refrescarContador en reparto.js) -->
+            <span id="cola-pendiente" style="display:none; background:#FF9800; color:#000; font-weight:800; font-size:0.68rem; padding:2px 8px; border-radius:10px; margin-left:6px; white-space:nowrap;"></span>
             <span id="gps-status-indicator" class="gps-indicator" style="display:none;" title="Estado GPS">
                 <span class="gps-dot"></span>
                 <span class="gps-label"></span>

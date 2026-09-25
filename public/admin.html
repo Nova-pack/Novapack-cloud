@@ -1045,6 +1045,23 @@
 
                 const sigImg = document.getElementById('pod-res-sig-img');
                 const sigEmpty = document.getElementById('pod-res-sig-empty');
+                // Si el repartidor no pudo traer la URL (red lenta), la firma y
+                // la foto están igualmente subidas: se resuelven desde su ruta.
+                // OJO: es asíncrono y el admin puede haber abierto OTRO albarán
+                // mientras tanto — sin esta comprobación se pintaba (y se
+                // imprimía en el certificado) la firma del albarán anterior.
+                const _podRef = data;
+                const _resolverPorRuta = (ruta, img, vacio) => {
+                    if (!ruta || data.podCleaned) return;
+                    firebase.storage().ref(ruta).getDownloadURL().then(u => {
+                        if (window._currentPODData !== _podRef) return;   // ya se está viendo otro albarán
+                        if (img === sigImg) _podRef.signatureURL = u; else _podRef.photoURL = u;
+                        img.src = u;
+                        img.style.display = 'block';
+                        if (vacio) vacio.style.display = 'none';
+                    }).catch(e => console.warn('[POD] no se pudo resolver', ruta, e.message));
+                };
+                if (!data.signatureURL && data.signaturePath) _resolverPorRuta(data.signaturePath, sigImg, sigEmpty);
                 if (data.signatureURL) {
                     if (data.podCleaned) {
                          sigEmpty.style.display = 'block';
@@ -1065,6 +1082,7 @@
 
                 const photoImg = document.getElementById('pod-res-photo-img');
                 const photoEmpty = document.getElementById('pod-res-photo-empty');
+                if (!data.photoURL && data.photoPath) _resolverPorRuta(data.photoPath, photoImg, photoEmpty);
                 if (data.photoURL) {
                     if (data.podCleaned) {
                          photoEmpty.style.display = 'block';

@@ -248,7 +248,10 @@ async function lookupTicketPOD(db, ticketRef) {
             return { ready: false, reason: 'pendiente_entrega' };
         }
 
-        const hasSignature = !!t.signatureURL;
+        // La firma cuenta aunque no tengamos su URL: si el repartidor no pudo
+        // traerla (red lenta), el fichero está subido y queda su ruta. Antes
+        // esto escondía el botón AUTORIZAR ENVÍO POD del buzón.
+        const hasSignature = !!(t.signatureURL || t.signaturePath);
         const hasPhoto = !!t.photoURL;
 
         if (!hasSignature && !hasPhoto) {
@@ -260,7 +263,9 @@ async function lookupTicketPOD(db, ticketRef) {
             reason: 'pod_disponible',
             ticketDocId: ticketDoc.id,
             signatureURL: t.signatureURL || null,
+            signaturePath: t.signaturePath || null,
             photoURL: t.photoURL || null,
+            photoPath: t.photoPath || null,
             deliveredAt: t.deliveredAt || null,
             receiverName: t.deliveryReceiverName || t.receiverName || 'N/A',
             driverName: t.deliveredByDriver || 'N/A'

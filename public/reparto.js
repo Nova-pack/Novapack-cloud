@@ -605,6 +605,7 @@ var _offlineQueue = {
                 store.add(operation);
                 tx.oncomplete = function() {
                     console.log('[OFFLINE] Operación encolada:', operation.type);
+                    self.refrescarContador();
                     resolve();
                 };
                 tx.onerror = function() { reject(tx.error); };
@@ -637,51 +638,124 @@ var _offlineQueue = {
         });
     },
 
+    // Reescribe una operación (contador de intentos, espera, error). SOLO si
+    // sigue en la cola: put() inserta si no existe, así que una operación ya
+    // sincronizada y borrada por otra pasada RESUCITARÍA y se repetiría entera.
+    _bump: function(op) {
+        var self = this;
+        return self.open().then(function(db) {
+            return new Promise(function(resolve) {
+                var tx = db.transaction(self.STORE, 'readwrite');
+                var store = tx.objectStore(self.STORE);
+                var req = store.get(op.id);
+                req.onsuccess = function() { if (req.result) store.put(op); };
+                tx.oncomplete = function() { resolve(); };
+                tx.onerror = function() { resolve(); };
+            });
+        }).catch(function() {});
+    },
+
+    // Contador visible de lo que falta por sincronizar. Hasta ahora la cola era
+    // INVISIBLE: una entrega firmada se quedó 3 meses sin registrar y el
+    // sistema acabó avisando al cliente de un extravío que no existía.
+    refrescarContador: function() {
+        var self = this;
+        return self.getAll().then(function(ops) {
+            var el = document.getElementById('cola-pendiente');
+            if (el) {
+                if (!ops.length) {
+                    el.style.display = 'none';
+                } else {
+                    var atascadas = ops.filter(function(o) { return o.stuck; }).length;
+                    el.style.display = 'inline-block';
+                    el.textContent = ops.length + ' sin sincronizar' + (atascadas ? ' · ' + atascadas + ' con error' : '');
+                    el.style.background = atascadas ? '#F44336' : '#FF9800';
+                    el.title = atascadas ? 'Avisa a la oficina: hay operaciones que no consiguen guardarse.' : 'Se guardarán solas al mejorar la conexión.';
+                }
+            }
+            return ops.length;
+        }).catch(function() { return 0; });
+    },
+
     processQueue: function() {
         var self = this;
-        if (self._processing || !navigator.onLine) return;
+        // Candado CON vigilante: si un _executeOp se queda colgado, la cola no
+        // puede quedarse bloqueada para siempre.
+        if (self._processing) {
+            if (!self._processingSince || (Date.now() - self._processingSince) < 180000) return;
+            console.warn('[OFFLINE] candado liberado por el vigilante');
+            self._gen = (self._gen || 0) + 1;   // la pasada colgada deja de mandar
+        }
+        if (!navigator.onLine) return;
+        var miGen = self._gen || 0;
+        self._enCurso = self._enCurso || {};
         self._processing = true;
+        self._processingSince = Date.now();
 
         self.getAll().then(function(ops) {
-            if (ops.length === 0) { self._processing = false; return; }
-            console.log('[OFFLINE] Procesando ' + ops.length + ' operaciones pendientes...');
-            if (typeof showToast === 'function') showToast('Sincronizando ' + ops.length + ' operación(es) pendiente(s)...', 'info');
+            if (ops.length === 0) { self._processing = false; self.refrescarContador(); return; }
+            var ahora = Date.now();
+            var listas = ops.filter(function(op) {
+                if (self._enCurso[op.id]) return false;                                // otra pasada sigue con ella
+                if (op.stuck) return false;                                            // necesita mirarla una persona
+                if (op.nextTryAt && Date.parse(op.nextTryAt) > ahora) return false;    // esperando su turno
+                return true;
+            });
+            if (!listas.length) { self._processing = false; self.refrescarContador(); return; }
+            console.log('[OFFLINE] Procesando ' + listas.length + '/' + ops.length + ' operaciones pendientes...');
+            if (typeof showToast === 'function') showToast('Sincronizando ' + listas.length + ' operación(es) pendiente(s)...', 'info');
 
             var chain = Promise.resolve();
-            ops.forEach(function(op) {
+            listas.forEach(function(op) {
                 chain = chain.then(function() {
+                    self._enCurso[op.id] = true;
                     return self._executeOp(op).then(function() {
+                        delete self._enCurso[op.id];
                         return self.remove(op.id);
                     }).catch(function(err) {
+                        delete self._enCurso[op.id];
                         console.warn('[OFFLINE] Reintento fallido para op ' + op.id + ':', err.message);
-                        // Keep in queue for next retry, max 5 retries
+                        // El contador AHORA se guarda de verdad: antes se
+                        // quedaba en 0 y la misma operación se reintentaba para
+                        // siempre. Y nada se borra en silencio: a los 5 intentos
+                        // se marca y se le enseña al repartidor.
+                        op.retries = (op.retries || 0) + 1;
+                        var espera = [5000, 15000, 60000, 300000, 1800000][Math.min(op.retries - 1, 4)];
+                        op.nextTryAt = new Date(Date.now() + espera).toISOString();
+                        op.lastError = String((err && err.message) || err).slice(0, 300);
                         if (op.retries >= 5) {
-                            console.error('[OFFLINE] Operación descartada tras 5 reintentos:', op);
-                            return self.remove(op.id);
+                            op.stuck = true;
+                            console.error('[OFFLINE] Operación atascada tras 5 intentos (NO se borra):', op);
                         }
+                        return self._bump(op);
                     });
                 });
             });
 
             chain.then(function() {
-                self._processing = false;
-                self.getAll().then(function(remaining) {
-                    if (remaining.length === 0 && typeof showToast === 'function') {
-                        showToast('Todas las operaciones sincronizadas.', 'success');
+                // Solo si el candado sigue siendo el nuestro: una pasada vieja
+                // no puede soltar el candado de la que la relevó
+                if ((self._gen || 0) === miGen) self._processing = false;
+                self.refrescarContador().then(function(quedan) {
+                    if (quedan === 0 && typeof showToast === 'function') {
+                        showToast('Todo sincronizado.', 'success');
                     }
                 });
             });
         }).catch(function(err) {
             console.error('[OFFLINE] Error procesando cola:', err);
-            self._processing = false;
+            if ((self._gen || 0) === miGen) self._processing = false;
         });
     },
 
     _executeOp: function(op) {
+        var self = this;   // sin esto, `self` era window: TypeError en todos los casos genéricos
         var db = window.db || firebase.firestore();
         var storage = firebase.storage();
         switch (op.type) {
             case 'delivery_confirm':
+                var _intentos = op.retries || 0;
+                var _firmaPendiente = null;
                 // Upload offline signature if present
                 var sigPromise = Promise.resolve();
                 if (op.deliveryData._offlineSignatureB64) {
@@ -695,11 +769,25 @@ var _offlineQueue = {
                         }).then(function(url) {
                             op.deliveryData.signatureURL = url;
                             op.archiveData.signatureURL = url;
-                            op.deliveryData.billingReady = true;
-                            op.archiveData.billingReady = true;
+                            op.deliveryData.signaturePending = false;
+                            if (op.archiveData) op.archiveData.signaturePending = false;
                             delete op.deliveryData._offlineSignatureB64;
                         }).catch(function(e) {
                             console.warn('[OFFLINE] Firma upload fallido:', e.message);
+                            // La firma NUNCA se tira: antes se borraba al primer
+                            // fallo y la prueba de entrega desaparecía (y encima
+                            // se guardaba como facturable). Los dos primeros
+                            // intentos se reintenta el op entero; a partir del
+                            // tercero la entrega no espera más: se registra y la
+                            // firma se sube en una operación aparte.
+                            if (_intentos < 2) throw e;
+                            // La firma se guarda DENTRO de la operación, no en una
+                            // variable suelta: si el guardado en la base de datos
+                            // falla justo después, _bump la persiste y no se pierde.
+                            op.firmaPendienteB64 = op.deliveryData._offlineSignatureB64;
+                            _firmaPendiente = op.firmaPendienteB64;
+                            op.deliveryData.signaturePending = true;
+                            if (op.archiveData) op.archiveData.signaturePending = true;
                             delete op.deliveryData._offlineSignatureB64;
                         });
                 }
@@ -716,6 +804,9 @@ var _offlineQueue = {
                             delete op.deliveryData._offlinePhotoB64;
                         }).catch(function(e) {
                             console.warn('[OFFLINE] Foto entrega upload fallido:', e.message);
+                            // La foto es opcional: se reintenta dos veces con el
+                            // op y después se deja ir, para no retener la entrega
+                            if (_intentos < 2) throw e;
                             delete op.deliveryData._offlinePhotoB64;
                         });
                     });
@@ -729,19 +820,48 @@ var _offlineQueue = {
                     op.archiveData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
                     op.archiveData.archivedAt = firebase.firestore.FieldValue.serverTimestamp();
 
-                    var batch = db.batch();
-                    var ticketRef = db.collection('tickets').doc(op.ticketId);
-                    var archiveRef = db.collection('delivery_archive').doc(op.ticketId);
-                    batch.update(ticketRef, op.deliveryData);
-                    batch.set(archiveRef, op.archiveData);
-                    return batch.commit();
+                    // El ALBARÁN primero y el archivo APARTE: las reglas solo
+                    // dejan CREAR delivery_archive (actualizarlo es de admin),
+                    // así que en un reintento sobre una entrega ya registrada el
+                    // lote entero moría con permission-denied y la operación se
+                    // quedaba atascada para siempre.
+                    return db.collection('tickets').doc(op.ticketId).update(op.deliveryData).then(function() {
+                        return db.collection('delivery_archive').doc(op.ticketId).set(op.archiveData)
+                            .catch(function(e) { console.warn('[OFFLINE] archivo de entrega:', e.message); });
+                    });
                 }).then(function() {
                     console.log('[OFFLINE] Entrega sincronizada:', op.ticketId);
+                    // La firma que quedó pendiente se encola ANTES de dar por
+                    // buena la operación (si esto falla, el op se reintenta con
+                    // la firma todavía dentro)
+                    if (_firmaPendiente || op.firmaPendienteB64) {
+                        return self.enqueue({ type: 'delivery_signature', ticketId: op.ticketId, sigB64: _firmaPendiente || op.firmaPendienteB64 })
+                            .then(function() { delete op.firmaPendienteB64; });
+                    }
+                }).then(function() {
                     if (op.notification) {
                         op.notification.createdAt = firebase.firestore.FieldValue.serverTimestamp();
                         db.collection('user_notifications').add(op.notification).catch(function() {});
                     }
                 });
+            // Firma de una entrega YA registrada (ver delivery_confirm): la
+            // entrega no espera a que la firma consiga subir.
+            case 'delivery_signature':
+                return fetch(op.sigB64).then(function(r) { return r.blob(); }).then(function(blob) {
+                    var ref = storage.ref('deliveries/' + op.ticketId + '/signature.png');
+                    return ref.put(blob, { contentType: 'image/png' }).then(function() { return ref.getDownloadURL(); });
+                }).then(function(url) {
+                    return db.collection('tickets').doc(op.ticketId).update({
+                        signatureURL: url,
+                        signaturePath: 'deliveries/' + op.ticketId + '/signature.png',
+                        signaturePending: false
+                    }).then(function() {
+                        return db.collection('delivery_archive').doc(op.ticketId)
+                            .update({ signatureURL: url, signaturePending: false })
+                            .catch(function() {});   // el archivo solo lo puede actualizar el admin
+                    });
+                });
+
             case 'incident_report':
                 return db.collection('tickets').doc(op.ticketId).update(op.data).then(function() {
                     console.log('[OFFLINE] Incidencia sincronizada:', op.ticketId);
@@ -1089,6 +1209,15 @@ function initApp() {
         // Process offline queue on reconnection
         setTimeout(function() { _offlineQueue.processQueue(); }, 1500);
     });
+    // La cola NO puede depender solo del evento 'online': si el repartidor cierra
+    // la app sin cobertura y la reabre ya con cobertura, ese evento no llega
+    // nunca y lo encolado se queda ahí para siempre (invisible).
+    setTimeout(function() { _offlineQueue.processQueue(); }, 3000);          // al arrancar
+    setInterval(function() { _offlineQueue.processQueue(); }, 60000);        // cada minuto
+    document.addEventListener('visibilitychange', function() {              // al volver a la app
+        if (document.visibilityState === 'visible') _offlineQueue.processQueue();
+    });
+    _offlineQueue.refrescarContador();
     window.addEventListener('offline', function() {
         updateConnectionDot(false);
         showToast('Sin conexión a Internet.', 'warning', 5000);
@@ -3026,6 +3155,7 @@ function initApp() {
         }
     }
 
+    var _ultimoAlbaranConfirmacion = null;   // ver más abajo: no borrar la firma al reescanear el mismo
     async function loadTicketForConfirmation(d, totalPkgs) {
         currentScanDoc = d;
         var panel = document.getElementById('scan-result');
@@ -3104,11 +3234,18 @@ function initApp() {
                 btnConfirm.style.display = 'flex';
                 btnConfirm.innerHTML = '<span class="material-symbols-outlined" style="font-size:1rem; vertical-align:middle;">schedule</span> FALTAN ' + (totalPkgs - scannedCount) + ' BULTOS';
             }
-            document.getElementById('confirm-receiver').value = '';
-            clearSignature();
-            document.getElementById('photo-preview').style.display = 'none';
-            document.getElementById('confirm-photo').value = '';
-            document.getElementById('photo-status').textContent = 'Sin foto';
+            // Solo se limpia al cambiar de albarán. Si se reescanea el MISMO
+            // (lo natural tras un aviso), se conservan receptor y firma: antes
+            // se borraba la firma ya recogida y había que molestar al cliente.
+            var _idAlbaran = d._id || d.id;
+            if (_ultimoAlbaranConfirmacion !== _idAlbaran) {
+                _ultimoAlbaranConfirmacion = _idAlbaran;
+                document.getElementById('confirm-receiver').value = '';
+                clearSignature();
+                document.getElementById('photo-preview').style.display = 'none';
+                document.getElementById('confirm-photo').value = '';
+                document.getElementById('photo-status').textContent = 'Sin foto';
+            }
         }
     }
 
@@ -3162,14 +3299,96 @@ function initApp() {
         showLoading();
         confirmInProgress = true; // Block snapshot re-renders
 
-        // Helper: wrap a promise with a timeout
-        function withTimeout(promise, ms, label) {
+        // Tope de tiempo. Limpia su temporizador cuando gana la promesa buena
+        // (antes quedaban colgando) y avisa para poder cancelar la subida: si
+        // no, al reintentar había DOS subidas compitiendo por la misma red mala.
+        function withTimeout(promise, ms, label, alExpirar) {
+            var t = null;
             return Promise.race([
-                promise,
+                promise.then(function(v) { if (t) clearTimeout(t); return v; },
+                             function(e) { if (t) clearTimeout(t); throw e; }),
                 new Promise(function(_, reject) {
-                    setTimeout(function() { reject(new Error(label + ' timeout (' + ms + 'ms)')); }, ms);
+                    t = setTimeout(function() {
+                        if (typeof alExpirar === 'function') { try { alExpirar(); } catch (_) {} }
+                        reject(new Error(label + ' timeout (' + ms + 'ms)'));
+                    }, ms);
                 })
             ]);
+        }
+
+        // ¿El fallo es "la red va mal" (se puede reintentar solo) o "esto no va
+        // a funcionar nunca" (hay que enseñárselo al repartidor)?
+        function esFalloDeRed(e) {
+            var msg = String((e && e.message) || e || '');
+            var code = String((e && e.code) || '');
+            if (/timeout \(\d+ms\)/.test(msg)) return true;
+            if (/unavailable|deadline-exceeded|resource-exhausted|aborted|internal/.test(code)) return true;
+            if (/^storage\/(retry-limit-exceeded|canceled|server-file-wrong-size|unknown)/.test(code)) return true;
+            if (/network|offline|failed to fetch|load failed/i.test(msg)) return true;
+            return false;
+        }
+
+        // --- LA ENTREGA NO SE PIERDE NUNCA ---
+        // Se encola y se sincroniza sola. Se usa sin conexión y TAMBIÉN
+        // cuando hay red pero va tan lenta que algo expira: antes eso
+        // cancelaba la entrega entera (la firma quedaba suelta en Storage y
+        // el albarán seguía "Pendiente"; un envío llegó a generar una alerta
+        // de extravío al cliente 3 meses después de entregarse y firmarse).
+        var _yaEncolada = false;
+        async function encolarEntrega(motivo) {
+            if (_yaEncolada) return;
+            _yaEncolada = true;
+            // Foto de entrega: capturarla también aquí (antes se perdía)
+            var photoB64Off = null;
+            try {
+                var offPhotoFile = document.getElementById('confirm-photo').files[0];
+                if (offPhotoFile) photoB64Off = await _fileToB64(await compressImage(offPhotoFile));
+            } catch (ep) { console.warn('[POD cola] foto no capturada:', ep.message); }
+            // Remove serverTimestamp (not serializable) — will be set on sync
+            var offlineDeliveryData = Object.assign({}, deliveryData);
+            offlineDeliveryData.deliveredAt = new Date().toISOString();
+            offlineDeliveryData.distributedAt = new Date().toISOString();
+            offlineDeliveryData._offlineSignatureB64 = sigB64 || null;
+            offlineDeliveryData._offlinePhotoB64 = photoB64Off || null;
+
+            var offlineArchiveData = Object.assign({}, archiveData);
+            offlineArchiveData.deliveredAt = new Date().toISOString();
+            offlineArchiveData.archivedAt = new Date().toISOString();
+
+            await _offlineQueue.enqueue({
+                type: 'delivery_confirm',
+                ticketId: docId,
+                motivo: motivo || 'sin conexión',
+                deliveryData: offlineDeliveryData,
+                archiveData: offlineArchiveData
+                // El aviso al cliente + email POD los crea el trigger de
+                // servidor cuando esta entrega se sincroniza (no aquí).
+            });
+
+            document.getElementById('scan-ticket-details').innerHTML =
+                '<div style="text-align:center; padding:20px;">' +
+                    '<div style="font-size:3rem;"><span class="material-symbols-outlined icon-filled" style="font-size:3rem; color:#FF9800;">cloud_off</span></div>' +
+                    '<div style="font-size:1.1rem; font-weight:900; color:#FF9800; margin:8px 0;">ENTREGA GUARDADA</div>' +
+                    '<div style="color:var(--text-dim); font-size:0.85rem;">Se registra sola en cuanto haya buena conexión.<br><b>No hace falta repetirla</b> ni volver a escanear el albarán.</div>' +
+                    '<div style="color:var(--text-dim); font-size:0.8rem; margin-top:5px;">Receptor: <b>' + escapeHtml(receiverName) + '</b></div>' +
+                '</div>';
+            document.getElementById('confirm-panel').style.display = 'none';
+            btn.style.display = 'none';
+            showToast('Entrega guardada (' + (motivo || 'sin conexión') + '). Se sincronizará sola.', 'warning', 6000);
+
+            var doneKey = currentScanDoc.id || currentScanDoc._id;
+            delete scannedPackages[doneKey];
+            currentPkgTotal = 0;
+            setTimeout(function() {
+                document.getElementById('scan-result').style.display = 'none';
+                confirmInProgress = false;
+                switchView('view-deliveries');
+                renderDeliveries();
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
+                btn.style.display = 'flex';
+            }, 2500);
+            hideLoading();
         }
 
         try {
@@ -3178,6 +3397,10 @@ function initApp() {
             // Capture signature audit trail BEFORE async work — ensures the
             // timestamp/GPS reflect the moment of physical delivery.
             var sigMeta = signatureRefused ? null : getSignatureMeta();
+            // La FIRMA también se captura ya: si luego hay que encolar la
+            // entrega, el lienzo puede haberse redimensionado (el teclado de
+            // Android lo provoca) y se leería vacío.
+            var sigB64 = signatureRefused ? null : getSignatureDataURL();
 
             var deliveryData = {
                 status: 'Entregado',
@@ -3189,7 +3412,12 @@ function initApp() {
                 deliveredByPhone: currentDriverPhone,
                 signatureRefused: signatureRefused,
                 signatureRefusedReason: signatureRefusedReason || null,
-                signatureMeta: sigMeta
+                signatureMeta: sigMeta,
+                // Facturable = el cliente ha firmado. Decisión de negocio, ya
+                // tomada arriba al validar la firma: antes dependía de que
+                // llegara una URL, así que una red lenta dejaba como NO
+                // facturable una entrega firmada (y la cola lo hacía al revés).
+                billingReady: !signatureRefused
             };
 
             // Auto-asignación de cargo según tipo de porte
@@ -3221,70 +3449,36 @@ function initApp() {
 
             // --- OFFLINE PATH: queue everything for later sync ---
             if (!navigator.onLine) {
-                var sigB64 = signatureRefused ? null : getSignatureDataURL();
-                // Foto de entrega: capturarla también offline (antes se perdía)
-                var photoB64Off = null;
-                try {
-                    var offPhotoFile = document.getElementById('confirm-photo').files[0];
-                    if (offPhotoFile) photoB64Off = await _fileToB64(await compressImage(offPhotoFile));
-                } catch (ep) { console.warn('[POD offline] foto no capturada:', ep.message); }
-                // Remove serverTimestamp (not serializable) — will be set on sync
-                var offlineDeliveryData = Object.assign({}, deliveryData);
-                offlineDeliveryData.deliveredAt = new Date().toISOString();
-                offlineDeliveryData.distributedAt = new Date().toISOString();
-                offlineDeliveryData.billingReady = !!sigB64;
-                offlineDeliveryData._offlineSignatureB64 = sigB64 || null;
-                offlineDeliveryData._offlinePhotoB64 = photoB64Off || null;
-
-                var offlineArchiveData = Object.assign({}, archiveData);
-                offlineArchiveData.deliveredAt = new Date().toISOString();
-                offlineArchiveData.archivedAt = new Date().toISOString();
-
-                await _offlineQueue.enqueue({
-                    type: 'delivery_confirm',
-                    ticketId: docId,
-                    deliveryData: offlineDeliveryData,
-                    archiveData: offlineArchiveData
-                    // El aviso al cliente + email POD los crea el trigger de
-                    // servidor cuando esta entrega se sincroniza (no aquí).
-                });
-
-                // Show success to driver — will sync when online
-                document.getElementById('scan-ticket-details').innerHTML =
-                    '<div style="text-align:center; padding:20px;">' +
-                        '<div style="font-size:3rem;"><span class="material-symbols-outlined icon-filled" style="font-size:3rem; color:#FF9800;">cloud_off</span></div>' +
-                        '<div style="font-size:1.1rem; font-weight:900; color:#FF9800; margin:8px 0;">ENTREGA GUARDADA OFFLINE</div>' +
-                        '<div style="color:var(--text-dim); font-size:0.85rem;">Se sincronizará automáticamente al recuperar conexión</div>' +
-                        '<div style="color:var(--text-dim); font-size:0.8rem; margin-top:5px;">Receptor: <b>' + escapeHtml(receiverName) + '</b></div>' +
-                    '</div>';
-                document.getElementById('confirm-panel').style.display = 'none';
-                btn.style.display = 'none';
-                showToast('Entrega guardada offline. Se sincronizará al conectar.', 'warning', 6000);
-
-                var doneKey = currentScanDoc.id || currentScanDoc._id;
-                delete scannedPackages[doneKey];
-                currentPkgTotal = 0;
-                setTimeout(function() {
-                    document.getElementById('scan-result').style.display = 'none';
-                    confirmInProgress = false;
-                    switchView('view-deliveries');
-                    renderDeliveries();
-                    btn.disabled = false;
-                    btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
-                }, 2500);
-                hideLoading();
+                await encolarEntrega('sin conexión');
                 return; // Exit early — queued for later
             }
 
             // --- ONLINE PATH: upload + save normally ---
             // Upload signature only if the receiver actually signed.
-            if (!signatureRefused) {
-                var sigData = getSignatureDataURL();
-                if (sigData) {
-                    var sigBlob = await (await fetch(sigData)).blob();
-                    var sigRef = storage.ref('deliveries/' + docId + '/signature.png');
-                    await withTimeout(sigRef.put(sigBlob, { contentType: 'image/png' }), 15000, 'Firma');
-                    deliveryData.signatureURL = await withTimeout(sigRef.getDownloadURL(), 5000, 'Firma URL');
+            if (!signatureRefused && sigB64) {
+                var sigBlob = await (await fetch(sigB64)).blob();
+                var sigRef = storage.ref('deliveries/' + docId + '/signature.png');
+                // La RUTA se guarda siempre: si la URL no llega, el fichero
+                // sigue localizable (antes quedaba huérfano, sin nada que
+                // apuntara a él desde el albarán).
+                deliveryData.signaturePath = 'deliveries/' + docId + '/signature.png';
+                var _subida = sigRef.put(sigBlob, { contentType: 'image/png' });
+                await withTimeout(_subida, 20000, 'Firma', function() { try { _subida.cancel(); } catch (_) {} });
+                // La URL es solo una comodidad: que no llegue NO puede tumbar la
+                // entrega (esto es lo que disparaba el error de Sentry). Un
+                // reintento corto y, si no, se sigue sin ella.
+                try {
+                    deliveryData.signatureURL = await withTimeout(sigRef.getDownloadURL(), 15000, 'Firma URL');
+                } catch (eUrl) {
+                    console.warn('[POD] URL de la firma no disponible, se reintenta:', eUrl.message);
+                    try {
+                        await new Promise(function(r) { setTimeout(r, 1500); });
+                        deliveryData.signatureURL = await withTimeout(sigRef.getDownloadURL(), 15000, 'Firma URL');
+                    } catch (eUrl2) {
+                        console.warn('[POD] se guarda sin URL de firma (queda la ruta):', eUrl2.message);
+                        deliveryData.signatureURL = null;
+                        deliveryData.signaturePending = true;
+                    }
                 }
             }
 
@@ -3294,19 +3488,23 @@ function initApp() {
                 if (photoFile) {
                     photoFile = await compressImage(photoFile);
                     var photoRef = storage.ref('deliveries/' + docId + '/photo.jpg');
-                    await withTimeout(photoRef.put(photoFile, { contentType: photoFile.type }), 20000, 'Foto');
-                    deliveryData.photoURL = await withTimeout(photoRef.getDownloadURL(), 5000, 'Foto URL');
+                    var _subidaFoto = photoRef.put(photoFile, { contentType: photoFile.type });
+                    await withTimeout(_subidaFoto, 25000, 'Foto', function() { try { _subidaFoto.cancel(); } catch (_) {} });
+                    // La ruta, solo cuando la foto está ARRIBA: si no, el buzón
+                    // anunciaba una foto que no existía
+                    deliveryData.photoPath = 'deliveries/' + docId + '/photo.jpg';
+                    deliveryData.photoURL = await withTimeout(photoRef.getDownloadURL(), 15000, 'Foto URL');
                 }
             } catch (photoErr) {
                 console.warn('Photo upload failed (will save delivery anyway):', photoErr);
             }
 
-            // billingReady only if signature was uploaded
-            deliveryData.billingReady = !!deliveryData.signatureURL;
-
             // Update archive with URLs
             archiveData.signatureURL = deliveryData.signatureURL || null;
+            archiveData.signaturePath = deliveryData.signaturePath || null;
+            archiveData.signaturePending = deliveryData.signaturePending || false;
             archiveData.photoURL = deliveryData.photoURL || null;
+            archiveData.photoPath = deliveryData.photoPath || null;
             archiveData.billingTarget = deliveryData.billingTarget || null;
             archiveData.billingName = deliveryData.billingName || null;
             archiveData.billingReady = deliveryData.billingReady || false;
@@ -3316,10 +3514,17 @@ function initApp() {
             archiveData.deliveredAt = firebase.firestore.FieldValue.serverTimestamp();
             archiveData.archivedAt = firebase.firestore.FieldValue.serverTimestamp();
 
-            var deliveryBatch = db.batch();
-            deliveryBatch.update(docRef, deliveryData);
-            deliveryBatch.set(db.collection('delivery_archive').doc(docId), archiveData);
-            await withTimeout(deliveryBatch.commit(), 15000, 'Firestore batch');
+            // El ALBARÁN primero, y el archivo APARTE (las reglas solo dejan
+            // CREAR delivery_archive: en un reintento el lote entero moría con
+            // permission-denied). Si la escritura tarda demasiado se encola: con
+            // la caché local la escritura acabaría llegando, pero el repartidor
+            // no puede quedarse mirando una pantalla bloqueada.
+            await withTimeout(docRef.update(deliveryData), 20000, 'Guardar entrega');
+            try {
+                await db.collection('delivery_archive').doc(docId).set(archiveData);
+            } catch (eArch) {
+                console.warn('[REPARTO] archivo de entrega no guardado (la entrega SÍ):', eArch.message);
+            }
             console.log('[REPARTO] Entrega confirmada + archivada:', docId);
 
             // --- POD: aviso al cliente + email de seguimiento ---
@@ -3356,6 +3561,16 @@ function initApp() {
         } catch (e) {
             console.error('Delivery confirmation error:', e);
             if (typeof Sentry !== 'undefined') { try { Sentry.captureException(e, { tags: { flow: 'pod_delivery' } }); } catch(_) {} }
+            // Si el fallo es de RED, la entrega se guarda en la cola en vez de
+            // perderse; si es un fallo de verdad (permisos, datos), se enseña.
+            if (esFalloDeRed(e) && docId && deliveryData && archiveData) {
+                try {
+                    await encolarEntrega('conexión lenta');
+                    return;
+                } catch (eCola) {
+                    console.error('[POD] no se pudo encolar:', eCola);
+                }
+            }
             showToast('Error: ' + e.message, 'error');
             btn.disabled = false;
             btn.innerHTML = '<span class="material-symbols-outlined icon-filled" style="font-size:1rem; vertical-align:middle;">check_circle</span> REGISTRAR ENTREGA';
