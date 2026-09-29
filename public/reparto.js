@@ -348,7 +348,7 @@ function sendNotification(title, body, onTapCallback) {
     if ('Notification' in window && Notification.permission === 'granted') {
         try {
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistration().then(function(reg) {
+                navigator.serviceWorker.getRegistration().catch(function () { return null; }).then(function(reg) {
                     if (reg) {
                         reg.showNotification(title, {
                             body: body,

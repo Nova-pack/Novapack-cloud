@@ -42,13 +42,29 @@
     <script src="https://browser.sentry-cdn.com/8.49.0/bundle.min.js" crossorigin="anonymous"></script>
     <script>
         window.NOVAPACK_SENTRY_READY = false;
+        // Un equipo de PRUEBAS no debe mandar nada a Sentry. La guarda de antes
+        // solo reconocia el nombre literal "localhost", asi que abrir la app por
+        // 127.0.0.1, por file:// o por la IP de la red de la oficina la daba por
+        // produccion: cada prueba avisaba al equipo por correo como si fuera un
+        // fallo de un cliente real.
+        (function () {
+            var h = location.hostname || '';
+            window.NOVAPACK_ES_LOCAL =
+                location.protocol === 'file:' ||
+                h === '' || h === 'localhost' || h === '127.0.0.1' ||
+                h === '::1' || h === '[::1]' ||
+                /(^|\.)localhost$/i.test(h) ||
+                /\.(local|test|internal)$/i.test(h) ||
+                /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) ||
+                /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h);
+        })();
         if (typeof Sentry !== 'undefined') {
             Sentry.init({
                 dsn: window.NOVAPACK_SENTRY_DSN || "",
-                environment: location.hostname === 'localhost' ? 'development' : 'production',
+                environment: window.NOVAPACK_ES_LOCAL ? 'development' : 'production',
                 release: 'novapack-cloud@2.0',
-                // Only send errors in production
-                enabled: location.hostname !== 'localhost',
+                // Solo fallos de produccion; nunca los de un equipo de pruebas
+                enabled: !window.NOVAPACK_ES_LOCAL,
                 // Sample 100% of errors (free tier allows 5000/month)
                 sampleRate: 1.0,
                 // Ignore common non-critical errors
@@ -70,7 +86,7 @@
                 }
             });
             window.NOVAPACK_SENTRY_READY = true;
-            console.log("Sentry monitoring active (env: " + (location.hostname === 'localhost' ? 'dev' : 'prod') + ")");
+            console.log("Sentry monitoring active (env: " + (window.NOVAPACK_ES_LOCAL ? 'dev' : 'prod') + ")");
         }
     </script>
 
@@ -92,8 +108,20 @@
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js').then(function(reg) {
                     console.log('[SW] Registered, scope:', reg.scope);
-                    // Check for updates every 30 min
-                    setInterval(function() { reg.update(); }, 1800000);
+                    // Comprobar si hay version nueva cada 30 min.
+                    // OJO al .catch(): sin el, un simple "ahora no hay cobertura"
+                    // dejaba una promesa rechazada sin recoger y Sentry lo
+                    // reportaba como una caida de la app. Que falle la
+                    // comprobacion no rompe nada: sigue mandando el service
+                    // worker ya instalado y se reintenta a la media hora.
+                    setInterval(function() {
+                        try {
+                            var p = reg.update();
+                            if (p && typeof p.catch === 'function') {
+                                p.catch(function (e) { console.warn('[SW] update:', e && e.message); });
+                            }
+                        } catch (e) { console.warn('[SW] update:', e && e.message); }
+                    }, 1800000);
                     // When a new SW is found, tell it to activate immediately
                     reg.addEventListener('updatefound', function() {
                         var newWorker = reg.installing;
@@ -204,7 +232,7 @@
     </style>
 
     <!-- App Logic -->
-    <script src="reparto.js?v=20260925_pod" defer></script>
+    <script src="reparto.js?v=20260929_sentry" defer></script>
     <script src="copiloto.js?v=20260515_copiloto_v2" defer></script>
     <script src="ocr.js?v=20260715_series" defer></script>
 </head>
