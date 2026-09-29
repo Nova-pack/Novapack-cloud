@@ -3030,6 +3030,7 @@ function initApp() {
     async function handleScan(rawText) {
         showLoading();
         var searchId = rawText.trim();
+        var cliQr = '';   // nº de cliente que viene en el QR (CLI:1754)
         var pkgNum = 0; // 0 = old format (no individual tracking)
         var pkgTotal = 0;
 
@@ -3042,6 +3043,7 @@ function initApp() {
                     var key = p.substring(0, idx).trim().toUpperCase();
                     var val = p.substring(idx + 1).trim();
                     if (key === 'ID') searchId = val;
+                    if (key === 'CLI') cliQr = val.replace(/[^0-9A-Za-z_-]/g, '');
                     if (key === 'PKG') {
                         var pkgParts = val.split('/');
                         if (pkgParts.length === 2) {
@@ -3060,38 +3062,115 @@ function initApp() {
             }
         } catch (e) {}
 
+        // ─── BÚSQUEDA DEL ALBARÁN ────────────────────────────────────────
+        // Antes las tres búsquedas iban dentro del MISMO try. La primera
+        // (pedir el documento que se llame como el número del albarán) NO
+        // ACIERTA NUNCA: el nombre interno real es "1754_comp_main_175-26-7",
+        // y de los ~4.500 albaranes del sistema no coincide en ninguno. Así
+        // que en cuanto esa primera fallaba por falta de datos, se llevaba por
+        // delante a las otras dos, que ni se intentaban. Y el error se tragaba
+        // en silencio: "no he podido preguntar" acababa en pantalla como
+        // "este albarán no existe, puede haberlo borrado administración".
+        //
+        // Esto le pasa sobre todo al escanear bultos que NO son de la ruta del
+        // repartidor (una recogida en la nave de un cliente): esos no están
+        // descargados en el móvil, así que hay que preguntar sí o sí, y dentro
+        // de una nave la cobertura va y viene.
         var d = null;
-        try {
-            var doc = await db.collection('tickets').doc(searchId).get();
-            if (doc.exists) { d = doc.data(); d._id = doc.id; d._ref = doc.ref; }
-            else {
-                var snap = await db.collection('tickets').where('id', '==', searchId).get();
-                if (!snap.empty) { d = snap.docs[0].data(); d._id = snap.docs[0].id; d._ref = snap.docs[0].ref; }
-                else {
-                    var snap2 = await db.collection('tickets').where('id', '==', searchId.replace(/^0+/, '')).get();
-                    if (!snap2.empty) { d = snap2.docs[0].data(); d._id = snap2.docs[0].id; d._ref = snap2.docs[0].ref; }
-                }
+        var falloRed = false, falloPermiso = false;
+
+        var _esFalloDeRed = function (e) {
+            var c = String((e && e.code) || '');
+            var m = String((e && e.message) || '').toLowerCase();
+            return c === 'unavailable' || c === 'deadline-exceeded' || c === 'aborted' ||
+                   c === 'resource-exhausted' || c === 'cancelled' ||
+                   m.indexOf('offline') > -1 || m.indexOf('network') > -1 ||
+                   m.indexOf('timeout') > -1 || m.indexOf('backend') > -1;
+        };
+        var _deDoc = function (doc) {
+            if (!doc || !doc.exists) return null;
+            var x = doc.data(); x._id = doc.id; x._ref = doc.ref; return x;
+        };
+        var _deSnap = function (snap) {
+            if (!snap || snap.empty) return null;
+            var x = snap.docs[0].data(); x._id = snap.docs[0].id; x._ref = snap.docs[0].ref; return x;
+        };
+        // Cada intento con su propia red: si uno falla, se apunta el motivo y
+        // se sigue con el siguiente en vez de abandonar los tres.
+        var _intentar = async function (fn) {
+            if (d) return;
+            try { var r = await fn(); if (r) d = r; }
+            catch (e) {
+                if (e && e.code === 'permission-denied') falloPermiso = true;
+                else if (_esFalloDeRed(e)) falloRed = true;
+                console.warn('[scan] intento fallido:', (e && e.code) || '', e && e.message);
             }
-        } catch (fireErr) {
-            // Sin red / Firestore no responde → caeremos a la memoria local
-            console.warn('[scan] Firestore no disponible, busco en memoria:', fireErr.message);
+        };
+        var _idLimpio = String(searchId || '').trim();
+        var _docIdValido = function (s) { return !!s && s.indexOf('/') < 0 && s.length < 1500; };
+
+        // Hasta 3 rondas: dentro de una nave la cobertura va y viene, y hoy
+        // bastaba un único instante malo -justo al pitar el escáner- para
+        // dejar tirado al repartidor.
+        for (var _ronda = 0; _ronda < 3 && !d; _ronda++) {
+            if (_ronda > 0) {
+                falloRed = false; falloPermiso = false;
+                await new Promise(function (r) { setTimeout(r, 1500); });
+            }
+            // 1) El nombre interno REAL, que el propio QR permite montar: trae
+            //    el nº de cliente en CLI. Es la lectura más rápida y la única
+            //    que el móvil puede resolver de su memoria si ya la tuvo.
+            if (cliQr && _docIdValido(cliQr + '_comp_main_' + _idLimpio)) {
+                await _intentar(async function () {
+                    return _deDoc(await db.collection('tickets').doc(cliQr + '_comp_main_' + _idLimpio).get());
+                });
+            }
+            // 2) Por el número de albarán tal cual
+            await _intentar(async function () {
+                return _deSnap(await db.collection('tickets').where('id', '==', _idLimpio).get());
+            });
+            // 3) Por el número sin ceros a la izquierda
+            var _sinCeros = _idLimpio.replace(/^0+/, '');
+            if (_sinCeros && _sinCeros !== _idLimpio) {
+                await _intentar(async function () {
+                    return _deSnap(await db.collection('tickets').where('id', '==', _sinCeros).get());
+                });
+            }
+            // 4) Por si el QR trajera directamente el nombre interno
+            if (_docIdValido(_idLimpio)) {
+                await _intentar(async function () {
+                    return _deDoc(await db.collection('tickets').doc(_idLimpio).get());
+                });
+            }
+            // Solo se reintenta si fue la RED. Un permiso denegado no se
+            // arregla esperando 1,5 segundos: hay que volver a entrar.
+            if (d || falloPermiso || !falloRed) break;
         }
 
         // Fallback OFFLINE: usar el albarán ya cargado en la lista de la ruta
         // (antes el get() en vivo fallaba sin red y no se podía ni entregar).
         if (!d) {
-            var localT = _findTicketLocal(searchId);
+            var localT = _findTicketLocal(_idLimpio);
             if (localT) {
                 d = Object.assign({}, localT);
                 d._id = localT._id;
                 d._ref = db.collection('tickets').doc(d._id);
-                if (!navigator.onLine) showToast('Sin conexión — usando datos ya cargados de la ruta', 'info', 3000);
+                if (falloRed || !navigator.onLine) showToast('Sin conexión — usando datos ya cargados de la ruta', 'info', 3000);
             }
         }
         if (!d) {
-            showToast('ALBARÁN NO ENCONTRADO: ' + searchId + (navigator.onLine
-                ? '. Puede haber sido eliminado por administración.'
-                : '. Sin conexión: solo se pueden escanear albaranes ya cargados en tu ruta.'), 'error', 6000);
+            // Cuatro situaciones muy distintas que antes salían con el MISMO
+            // texto, y encima acusando a administración de haberlo borrado.
+            // Nota: navigator.onLine miente (el móvil dice "conectado" pegado
+            // a una antena que no da salida), así que manda el error real.
+            if (falloPermiso) {
+                showToast('SESIÓN CADUCADA. Cierra la app del todo y vuelve a entrar con tu PIN.', 'error', 9000);
+            } else if (falloRed || !navigator.onLine) {
+                showToast('SIN CONEXIÓN AHORA MISMO — no he podido consultar el albarán ' + _idLimpio +
+                    '. Si el bulto no es de tu ruta no lo llevas descargado: sal a una zona con cobertura y vuelve a escanear.', 'error', 9000);
+            } else {
+                showToast('ALBARÁN NO ENCONTRADO: ' + _idLimpio + '. Puede haber sido eliminado por administración.', 'error', 6000);
+            }
             hideLoading();
             return;
         }
