@@ -96,15 +96,50 @@
         // --- Service Worker Registration with auto-update ---
         if ('serviceWorker' in navigator) {
             var _swReloading = false;
+            var _recargaPendiente = false;
             // Track if there was already a controller (= this is an UPDATE, not first install)
             var _hadController = !!navigator.serviceWorker.controller;
+
+            // ¿El repartidor está a media faena? La recarga automática NO puede
+            // caer encima de una entrega: la firma se dibuja en un lienzo que
+            // vive solo en la memoria del navegador y no se guarda en ningún
+            // sitio hasta que se pulsa REGISTRAR ENTREGA. Una recarga en ese
+            // momento la borra sin dejar rastro.
+            function _npTrabajoEnCurso() {
+                try {
+                    if (document.querySelector('.modal-overlay.active')) return true;
+                    var c = document.getElementById('sig-canvas');
+                    if (c && c.width && c.height) {
+                        var d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+                        for (var i = 3; i < d.length; i += 4) { if (d[i] > 0) return true; }
+                    }
+                } catch (_e) { return true; }   // ante la duda, NO recargar
+                return false;
+            }
+
+            function _npRecargarSiEsSeguro() {
+                if (_swReloading) return;
+                if (_npTrabajoEnCurso()) { _recargaPendiente = true; return; }
+                _swReloading = true;
+                // Sin esto, el candado anti-cierre (reparto.js, aviso de
+                // "vas a salir") salta en mitad del reparto con un cartel del
+                // sistema SIN TEXTO que el repartidor no sabe qué contestar.
+                window._npAllowExit = true;
+                console.log('[SW] Updated, reloading...');
+                window.location.reload();
+            }
+
             // Only reload on UPDATE (controller change after existing controller)
             navigator.serviceWorker.addEventListener('controllerchange', function() {
                 if (_swReloading || !_hadController) return; // Skip first activation
-                _swReloading = true;
-                console.log('[SW] Updated, reloading...');
-                window.location.reload();
+                _npRecargarSiEsSeguro();
             });
+            // Si había faena en marcha, se reintenta cuando el repartidor deja
+            // la app en segundo plano o cuando termina lo que estaba haciendo.
+            document.addEventListener('visibilitychange', function() {
+                if (_recargaPendiente && document.visibilityState === 'hidden') _npRecargarSiEsSeguro();
+            });
+            setInterval(function() { if (_recargaPendiente) _npRecargarSiEsSeguro(); }, 20000);
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('/sw.js').then(function(reg) {
                     console.log('[SW] Registered, scope:', reg.scope);

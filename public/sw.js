@@ -1,10 +1,18 @@
-const CACHE_NAME = 'novapack-repartidor-v16';
+// OJO AL SUBIR ESTE NÚMERO: dentro de una caché no se borra nada nunca; en
+// `activate` solo se borran las caché que se LLAMEN distinto. Como cada
+// despliegue entra con su etiqueta ?v= nueva, las versiones viejas se quedaban
+// ahí para siempre. Súbelo cada vez que cambie la etiqueta de reparto.js.
+const CACHE_NAME = 'novapack-repartidor-v17';
 // App-shell propio (mismo origen): debe cachearse entero o falla el install.
+// ocr.js (lee los albaranes con la cámara) y sentry-config.js los carga
+// reparto.html pero no estaban en esta lista: sin cobertura, faltaban.
 const urlsToCache = [
     '/reparto.html',
     '/reparto.css',
     '/reparto.js',
     '/copiloto.js',
+    '/ocr.js',
+    '/sentry-config.js',
     '/manifest-repartidor.json',
     '/firebase-config.js',
     '/libs/html5-qrcode.min.js',
@@ -78,8 +86,19 @@ self.addEventListener('fetch', event => {
             }
             return response;
         }).catch(() => {
-            return caches.match(event.request).then(function(hit) {
-                return hit || caches.match('/reparto.html');
+            // ignoreSearch: la página pide "reparto.js?v=20260929_scan" y en la
+            // memoria del móvil está guardado "/reparto.js" a secas. Sin esta
+            // opción el buscador los trata como dos cosas distintas, no encontraba
+            // NADA y se acababa devolviendo la página HTML donde se esperaba
+            // programa: el navegador soltaba «Unexpected token '<'» y, sin
+            // cobertura y arrancando de cero, la app se quedaba en pantalla muerta.
+            return caches.match(event.request, { ignoreSearch: true }).then(function(hit) {
+                if (hit) return hit;
+                // La página de la app solo vale como respuesta cuando lo que se
+                // pedía ERA una página. Para un .js, una fuente o una imagen,
+                // devolver HTML es peor que fallar: mejor un error limpio.
+                if (event.request.mode === 'navigate') return caches.match('/reparto.html');
+                return new Response('', { status: 504, statusText: 'Sin conexion y sin copia guardada' });
             });
         })
     );
