@@ -302,21 +302,30 @@ function generateTicketHTML(t, footerLabel) {
     const portePagadoBy = t.portePagadoBy || (paymentType === 'DEBIDO' ? 'receiver' : 'sender');
 
     // QR enriquecido — incluye PAY/PAYBY/COMP para auto-completar el formulario de facturación al escanear en oficina
+    //
+    // OJO: los campos van por npQrField, igual que en la ETIQUETA. Antes iban en
+    // crudo: los trozos del QR se separan con barras verticales, así que una sola
+    // barra dentro del destinatario, la dirección o las observaciones partía el QR
+    // por donde no era y el escáner leía basura. Y no es hipotético: la propia app
+    // junta las observaciones de varios envíos con " | " al agrupar
+    // (firebase-app.js, groupedTickets[...].notes += " | " + notes), así que el
+    // sistema se lo hacía a sí mismo. npQrField cambia la barra por "/" y aplana
+    // los saltos de línea.
     const qrData =
-        `ID:${t.id || ''}` +
-        `|DEST:${t.receiver || ''}` +
-        `|ADDR:${t.address || ''}` +
-        `|PROV:${t.province || ''}` +
-        `|TEL:${t.phone || ''}` +
+        `ID:${npQrField(t.id)}` +
+        `|DEST:${npQrField(t.receiver)}` +
+        `|ADDR:${npQrField(t.address)}` +
+        `|PROV:${npQrField(t.province)}` +
+        `|TEL:${npQrField(t.phone)}` +
         `|COD:${t.cod || 0}` +
         `|BULTOS:${totalBultos}` +
         `|PESO:${anyWeight ? totalPeso.toFixed(0) : 0}` +
-        `|OBS:${(t.notes || '').substring(0, 80)}` +
-        `|CLI:${t.clientIdNum || ''}` +
-        `|NIF:${t.receiverNif || ''}` +
-        `|PAY:${paymentType}` +
-        `|PAYBY:${portePagadoBy}` +
-        `|COMP:${t.compId || ''}`;
+        `|OBS:${npQrField(t.notes).substring(0, 80)}` +
+        `|CLI:${npQrField(t.clientIdNum)}` +
+        `|NIF:${npQrField(t.receiverNif)}` +
+        `|PAY:${npQrField(paymentType)}` +
+        `|PAYBY:${npQrField(portePagadoBy)}` +
+        `|COMP:${npQrField(t.compId)}`;
 
     // QR local (sin dependencia externa) vía helper compartido
     const qrUrl = npGenerateQrUrl(qrData, 400);

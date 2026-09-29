@@ -36,7 +36,7 @@
     <script src="libs/qrious.min.js?v=20260310_BETA"></script>
     <script src="libs/html5-qrcode.min.js?v=20260310_BETA"></script>
     <script src="verifactu.js?v=20260717_fiscal"></script>
-    <script src="albaran_render.js?v=20260917_eti69"></script>
+    <script src="albaran_render.js?v=20260929_qr"></script>
     <script src="billing_series.js?v=20260724_gestoria"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js?v=20260305c"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
@@ -16904,8 +16904,20 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         const idx = parseInt(checkbox.dataset.index);
                         const t = adminCompanyTickets[idx];
                         const docId = t.docId;
-                        const qrData = `ALBARAN:${docId}`;
-                        const qrImage = await QRCode.toDataURL(qrData, { margin: 1, width: 250 });
+                        // Este botón llevaba roto: QRCode.toDataURL NO EXISTE en la
+                        // librería que carga la página (es QRCode.js de davidshimjs,
+                        // que no tiene esa API), así que reventaba con un TypeError y
+                        // no salía ninguna etiqueta. Y el contenido tampoco valía:
+                        // "ALBARAN:<documento>" no lo entiende ni el parser de la
+                        // oficina ni el móvil del repartidor. Ahora usa el generador
+                        // único (albaran_render.js) y el MISMO formato que la etiqueta
+                        // de la app de cliente, que los dos escáneres sí entienden.
+                        const _q = (v) => (typeof window.npQrField === 'function' ? window.npQrField(v) : String(v == null ? '' : v));
+                        const pkgsQr = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (t.packages || 1);
+                        const qrData = `ID:${_q(t.id)}|DEST:${_q(t.receiver)}|ADDR:${_q(t.address)}|PROV:${_q(t.province)}`
+                            + `|TEL:${_q(t.phone)}|COD:${t.cod || 0}|BULTOS:${pkgsQr}|CLI:${_q(t.clientIdNum)}`
+                            + `|NIF:${_q(t.receiverNif)}|TIPO:${t.shippingType === 'Debidos' ? 'D' : 'P'}`;
+                        const qrImage = window.npGenerateQrUrl(qrData, 250);
                         const pkgs = t.packagesList ? t.packagesList.reduce((s, p) => s + (parseInt(p.qty) || 1), 0) : (t.packages || 1);
 
                         labelsHTML.push(`
@@ -17125,8 +17137,15 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                 if (e.target.tagName === "TEXTAREA") return;
 
                 const t = Date.now();
-                // Aumentamos a 150ms porque el explorador a veces pausa los eventos y parte el JSON por la mitad
-                if (t - adminScannerStamp > 150) {
+                // Separador entre lecturas. Estaba en 150 ms y era MUY poco: el QR de
+                // una etiqueta son 150-350 pulsaciones seguidas, así que cualquier
+                // tirón del navegador de dos décimas —un guardado, una foto cargando—
+                // borraba lo leído hasta ahí y la oficina recibía MEDIA cadena, que el
+                // parser ya no entiende ("no se ha podido separar automáticamente").
+                // Con 1,2 s no se parte ninguna ráfaga de pistola y se siguen
+                // separando lecturas distintas: nadie tarda más de un segundo entre
+                // dos disparos del escáner.
+                if (t - adminScannerStamp > 1200) {
                     adminScannerBuffer = "";
                     adminScannerStart = t;
                 }
@@ -17140,18 +17159,41 @@ window.printTicketFromAdmin = async (uid, compId, docId) => {
                         // en un input y pulsar Enter se interpretaba como escaneo.
                         const elapsed = t - adminScannerStart;
                         const avgMs = elapsed / adminScannerBuffer.length;
-                        if (avgMs < 45) {
+                        const val = adminScannerBuffer.trim();
+                        // Si lo leído ES un QR de albarán, da igual a qué velocidad
+                        // haya entrado: se procesa. El filtro de velocidad solo decide
+                        // sobre lo que NO se reconoce.
+                        // Antes mandaba solo el cronómetro: por encima de 45 ms por
+                        // carácter la lectura se tiraba EN SILENCIO (únicamente una
+                        // línea en una consola que nadie mira). Una pistola por
+                        // Bluetooth, una con retardo entre caracteres configurado, o
+                        // un ordenador cargado se pasan de 45 con facilidad; y las
+                        // teclas de Mayúsculas que muchas pistolas mandan antes de
+                        // cada letra suman tiempo pero no suman caracteres, así que el
+                        // promedio salía casi al doble del real. Para quien está
+                        // delante: el escáner pita y no pasa nada.
+                        let esQrDeAlbaran = false;
+                        try {
+                            esQrDeAlbaran = (typeof window.parseTicketQR === 'function') && !!window.parseTicketQR(val);
+                        } catch (_e) { esQrDeAlbaran = false; }
+
+                        if (esQrDeAlbaran || avgMs < 45) {
                             e.preventDefault();
-                            const val = adminScannerBuffer.trim();
                             adminScannerBuffer = "";
 
-                            console.log("Scanner Físico Capturado (" + Math.round(avgMs) + " ms/tecla):", val);
+                            console.log("Scanner Físico Capturado (" + Math.round(avgMs) + " ms/tecla, "
+                                + (esQrDeAlbaran ? "QR reconocido" : "por cadencia") + "):", val);
                             processAdminScannedCode(val);
 
                             // Limpiamos el focus de cualquier otro input si captura el QR globalmente
                             if (document.activeElement) document.activeElement.blur();
                         } else {
+                            // Se descarta, pero que se VEA: antes desaparecía sin dejar rastro.
                             console.log("[Scanner] ráfaga descartada por cadencia humana (" + Math.round(avgMs) + " ms/tecla)");
+                            if (typeof showToast === 'function') {
+                                showToast('Lectura descartada (' + Math.round(avgMs) + ' ms/tecla): no parece un QR de albarán. '
+                                    + 'Si ha sido la pistola, vuelve a disparar sobre la etiqueta.', 'warning', 5000);
+                            }
                         }
                     }
                     adminScannerBuffer = "";
@@ -22026,6 +22068,19 @@ window.importTarifas50 = async () => {
                 document.getElementById('mt-debidos-warning').style.display = 'block';
             } else {
                 document.getElementById('mt-cod-warning').style.display = 'none';
+                // El QR SIEMPRE dice quién paga el porte (TIPO:D/P en la etiqueta,
+                // PAY:DEBIDO/PAGADO en el albarán), pero aquí no se leía NUNCA: el
+                // formulario se queda en "Pagados" salvo que haya reembolso. Un envío
+                // a DEBIDOS sin reembolso se grababa como PAGADOS y se le cobraba al
+                // remitente en vez de al destinatario.
+                const _tipoQr = String(parsed.TIPO || parsed.PAY || '').trim().toUpperCase();
+                if (_tipoQr === 'D' || _tipoQr === 'DEBIDO' || _tipoQr === 'DEBIDOS') {
+                    document.getElementById('mt-shipping-type').value = 'Debidos';
+                    const _wDeb = document.getElementById('mt-debidos-warning');
+                    if (_wDeb) _wDeb.style.display = 'block';
+                } else if (_tipoQr === 'P' || _tipoQr === 'PAGADO' || _tipoQr === 'PAGADOS') {
+                    document.getElementById('mt-shipping-type').value = 'Pagados';
+                }
             }
 
             // ====== AUTOMATIC DEBIDOS NIF MAPPING ======
