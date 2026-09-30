@@ -1182,6 +1182,10 @@ document.getElementById('ticket-search').oninput = () => {
     }, 300); // 300ms debounce
 };
 
+// Interruptor del pie de la lista: permite ver los albaranes antiguos sin
+// cambiar la regla que los oculta por defecto.
+let mostrarAntiguos = false;
+
 function renderTicketsList() {
     const list = document.getElementById('tickets-list');
     const searchQuery = document.getElementById('ticket-search').value.toLowerCase().trim();
@@ -1211,7 +1215,13 @@ function renderTicketsList() {
     // 3. AUTO-LIMPIEZA: Ocultar albaranes impresos/entregados de días anteriores
     //    Solo se muestran: albaranes de HOY + albaranes de días anteriores que NO estén impresos ni entregados
     const todayStr = getTodayLocal();
-    if (!searchQuery) { // Solo aplicar auto-limpieza si NO hay búsqueda activa
+    // La limpieza NO se aplica si el cliente ha pedido una fecha concreta en el
+    // calendario: si elige el día 28 es que quiere ver ESE día entero. Antes la
+    // limpieza se comía igualmente los ya impresos y la pantalla contestaba "No
+    // hay albaranes para esta fecha" teniendo seis guardados de ese día. Ese era
+    // el momento exacto en que el cliente concluía que el sistema no guardaba.
+    let ocultos = 0;
+    if (!searchQuery && !dateFilter && !mostrarAntiguos) {
         const beforeClean = filtered.length;
         filtered = filtered.filter(t => {
             const ticketDate = formatDateLocal(parseSafeDate(t.createdAt));
@@ -1221,17 +1231,32 @@ function renderTicketsList() {
             const isDone = t.printed || t.labelsPrinted || t.delivered || t.status === 'Entregado';
             return !isDone;
         });
-        const hiddenCount = beforeClean - filtered.length;
-        if (hiddenCount > 0) {
-            console.log(`[DASHBOARD] Auto-limpieza: ${hiddenCount} albaranes impresos/entregados de días anteriores ocultados.`);
+        ocultos = beforeClean - filtered.length;
+        if (ocultos > 0) {
+            console.log(`[DASHBOARD] Auto-limpieza: ${ocultos} albaranes impresos/entregados de días anteriores ocultados.`);
         }
     }
 
     // Optimización: Limpiar contenedor antes de renderizar
     list.innerHTML = '';
 
+    // Lo que desaparece sin avisar parece perdido. Este pie dice cuántos hay
+    // guardados de días anteriores y deja verlos de un clic.
+    const pintarPieAntiguos = () => {
+        if (ocultos <= 0 && !mostrarAntiguos) return;
+        const pie = document.createElement('button');
+        pie.className = 'btn btn-xs btn-outline';
+        pie.style = 'width:100%; margin-top:10px; font-size:0.6rem; opacity:0.85;';
+        pie.textContent = mostrarAntiguos
+            ? 'OCULTAR OTRA VEZ LOS ALBARANES ANTIGUOS'
+            : 'GUARDADOS: ' + ocultos + ' albaranes de días anteriores, ya impresos o entregados. VER TODOS';
+        pie.onclick = () => { mostrarAntiguos = !mostrarAntiguos; renderTicketsList(); };
+        list.appendChild(pie);
+    };
+
     if (filtered.length === 0) {
         list.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:0.8rem;">No hay albaranes para esta fecha.</div>';
+        pintarPieAntiguos();   // justo cuando la pantalla parece decir que no hay nada
         return;
     }
 
@@ -1250,6 +1275,8 @@ function renderTicketsList() {
         };
         list.appendChild(moreBtn);
     }
+
+    pintarPieAntiguos();
 }
 
 // Mantenemos loadTickets para compatibilidad de eventos pero redirigimos al render
@@ -5081,26 +5108,49 @@ function handleExportCSV() {
     link.click();
 }
 
-async function printShiftBatch(slot, reprint = false) {
+// yaConfirmado: para que al aceptar "reimprimir el turno entero" desde el aviso
+// de abajo no salga una segunda ventana preguntando lo mismo.
+async function printShiftBatch(slot, reprint = false, yaConfirmado = false) {
     const today = getTodayLocal();
     cleanPrintArea();
     setPrintPageSize('A4');
     showLoading();
     try {
         let tickets = [];
+        const delTurno = [];   // TODOS los del turno de hoy, impresos o no
         (lastTicketsBatch || []).forEach(d => {
             const ts = parseSafeDate(d.createdAt);
             const dStr = formatDateLocal(ts);
 
-            // Los turnos sí deben ocultar los ya impresos (a menos que se ordene reimprimir explícitamente)
-            if (dStr === today && d.timeSlot === slot && (!d.printed || reprint)) {
-                tickets.push({ ...d });
+            // Los turnos sí deben ocultar los ya impresos (a menos que se ordene reimprimir explícitamente).
+            // Esa protección se queda INTACTA: 'tickets' es lo que de verdad se
+            // imprime. Lo que se añade es el recuento del turno completo, para
+            // poder explicarle al cliente por qué salen menos papeles de los que
+            // esperaba en vez de dejarlo adivinando.
+            if (dStr === today && d.timeSlot === slot) {
+                delTurno.push({ ...d });
+                if (!d.printed || reprint) tickets.push({ ...d });
             }
         });
         hideLoading();
 
-        if (tickets.length === 0) { alert(`No hay albaranes para el turno ${slot} hoy.`); return; }
-        if (!confirm(`¿Imprimir ${tickets.length} albaranes y Manifiesto ? `)) return;
+        if (tickets.length === 0) {
+            // Antes aquí salía siempre "No hay albaranes para el turno X hoy",
+            // incluso teniendo el turno entero guardado y ya impreso. Ese cartel
+            // es el que hacía pensar al cliente que el sistema no había guardado
+            // nada. Ahora se le dice la verdad y se le ofrece el taco completo.
+            if (delTurno.length === 0) { alert(`No hay ningún albarán del turno ${slot} con fecha de hoy.`); return; }
+            if (confirm(`Los ${delTurno.length} albaranes del turno ${slot} de hoy YA ESTÁN IMPRESOS: se imprimieron antes, de uno en uno o en otra tanda. No falta ninguno, están todos guardados.\n\n¿Quiere volver a imprimirlos todos juntos, con el manifiesto?\n\nAceptar = se imprimen otra vez los ${delTurno.length}.\nCancelar = no se imprime nada.`)) {
+                // Una sola vuelta: en la segunda pasada reprint es true, la lista
+                // ya no sale vacía y no se vuelve a entrar aquí.
+                return printShiftBatch(slot, true, true);
+            }
+            return;
+        }
+        const omitidos = delTurno.length - tickets.length;
+        if (!yaConfirmado && !confirm(omitidos > 0
+            ? `Se van a imprimir ${tickets.length} albaranes del turno ${slot}.\n\nOtros ${omitidos} de este mismo turno ya se imprimieron antes y no se repiten. Si los necesita otra vez, use "Reimpresiones > Reimprimir ${slot}".\n\nEl manifiesto saldrá completo, con los ${delTurno.length}.\n\n¿Continuar?`
+            : `¿Imprimir ${tickets.length} albaranes y Manifiesto?`)) return;
 
         const area = document.getElementById('print-area');
         window.printingTickets = tickets; // Prevent sidebar corruption
@@ -5139,7 +5189,11 @@ async function printShiftBatch(slot, reprint = false) {
         // Append manifest via appendChild to avoid innerHTML re-serialization (preserves QR images)
         const manifestWrapper = document.createElement('div');
         manifestWrapper.style.pageBreakBefore = 'always';
-        manifestWrapper.innerHTML = generateManifestHTML(tickets);
+        // El manifiesto es el papel que se lleva el conductor: tiene que llevar
+        // el TURNO ENTERO, no solo lo que se acaba de imprimir. Antes salía con
+        // 3 líneas cuando el turno tenía 8 bultos. El botón IMPRIMIR MANIFIESTO
+        // ya lo hacía bien; esto lo iguala.
+        manifestWrapper.innerHTML = generateManifestHTML(delTurno.length ? delTurno : tickets);
         area.appendChild(manifestWrapper);
 
         setTimeout(() => {
