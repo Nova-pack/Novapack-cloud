@@ -1081,19 +1081,28 @@ async function initTicketListener(retryCount = 0) {
                 .catch(e => { console.warn('[SYNC-LINEA] No pude cargar sucursales:', e.message); });
 
         let mergedTickets = new Map();
-        let q1Fired = false, q2Fired = false;
-        let unsub1 = () => {}, unsub2 = () => {};
+        let listenersListos = 0, totalListeners = 0;
+        const unsubs = [];
+        let avisoTechoDado = false;
 
         branchPromise.then(() => {
         // Unión de todas las identidades posibles para búsqueda universal, asegurando que TODO sea String
         const finalVariantsRaw = [...new Set([...idVariants, ...identityIds, ...branchIdentities])].filter(v => v !== null && v !== undefined && v !== "");
-        // Firestore "in" se limita a 10 valores. Si hay más, prima identidades propias.
-        const finalVariants = finalVariantsRaw.map(v => String(v).trim()).slice(0, 10);
-        if (finalVariantsRaw.length > 10) {
-            console.warn('[SYNC-LINEA] Más de 10 identidades (' + finalVariantsRaw.length + '). Truncando a las primeras 10. Las sucursales por encima de ese límite no se mostrarán en el consolidado.');
-        }
+        // Firestore solo admite 10 valores en un "in". ANTES se cortaba la lista
+        // a los 10 primeros y se seguía como si nada: LUIS MOLEÓN (el padre) junta
+        // 12 identidades, así que los ~250 albaranes de su sucursal de CÓRDOBA no
+        // aparecían NUNCA — ni en la lista, ni en el calendario, ni en la
+        // búsqueda. Y el cliente no veía ningún aviso: solo quedaba una línea en
+        // una consola que nadie mira. Ahora se parte en tandas de 10 y se escucha
+        // cada tanda, así que caben todas las sucursales que haga falta.
+        const finalVariants = finalVariantsRaw.map(v => String(v).trim());
+        const tandas = [];
+        for (let i = 0; i < finalVariants.length; i += 10) tandas.push(finalVariants.slice(i, i + 10));
+        // El techo por consulta era 3.000 y AUTOCRISTAL SEVILLA tiene 3.762
+        // albaranes: 691 no se cargaban nunca, también en silencio.
+        const LIMITE_POR_CONSULTA = 8000;
 
-        console.log(`[SYNC-LINEA] Escuchando Albaranes por UID/Alias:`, finalVariants);
+        console.log(`[SYNC-LINEA] Escuchando Albaranes por UID/Alias (${tandas.length} tanda/s):`, finalVariants);
 
         const processMapAndRender = () => {
             let raw = Array.from(mergedTickets.values());
@@ -1106,14 +1115,13 @@ async function initTicketListener(retryCount = 0) {
                 });
             }
             updateTicketsList(filtered);
-            if (isFirstLoad && q1Fired && q2Fired) { isFirstLoad = false; resolve(); }
+            if (isFirstLoad && totalListeners > 0 && listenersListos >= totalListeners) { isFirstLoad = false; resolve(); }
         };
 
         // EXTREMELY CRITICAL: We cannot use .orderBy('createdAt', 'desc') here because combined with 'in'
         // it requires a pre-built Firestore Composite Index, which will crash the entire app if missing.
         // Instead, we fetch a large limit of tickets and sort them descending locally in updateTicketsList.
-        const q1 = db.collection('tickets').where('uid', 'in', finalVariants).limit(3000);
-        const q2 = db.collection('tickets').where('clientIdNum', 'in', finalVariants).limit(3000);
+        // (las consultas se montan abajo, una pareja por tanda de 10 identidades)
 
         // Helper: mostrar UN solo toast no bloqueante por error de listener.
         // Antes hacíamos alert() que bloqueaba la UI repetidamente y dejaba al
@@ -1132,28 +1140,45 @@ async function initTicketListener(retryCount = 0) {
             } catch(_) {}
         }
 
-        unsub1 = q1.onSnapshot(snap => {
-            snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
-            q1Fired = true;
-            processMapAndRender();
-        }, err => {
-            _ticketsListenerErrorToast('Q1', err);
-            q1Fired = true; processMapAndRender();
-        });
+        // Si una consulta vuelve llena hasta el techo, es que hay más albaranes
+        // de los que caben y faltan en pantalla. Antes eso no se notaba de
+        // ninguna manera; ahora se avisa en vez de callarlo.
+        function _avisoTecho(n) {
+            if (avisoTechoDado) return;
+            avisoTechoDado = true;
+            try {
+                const banner = document.createElement('div');
+                banner.style.cssText = 'position:fixed; top:10px; right:10px; max-width:360px; background:#7a5a27; color:#fff; padding:10px 14px; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.4); font-size:0.82rem; z-index:99999;';
+                banner.innerHTML = '<strong>⚠️ Tienes muchos albaranes</strong><br>Se han cargado los ' + n + ' más recientes. Si buscas uno más antiguo y no lo encuentras, pídelo a la oficina: está guardado, solo que no cabe en esta pantalla.';
+                document.body.appendChild(banner);
+                setTimeout(() => { try { banner.remove(); } catch(e){} }, 12000);
+            } catch(_) {}
+        }
 
-        unsub2 = q2.onSnapshot(snap => {
-            snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
-            q2Fired = true;
-            processMapAndRender();
-        }, err => {
-            _ticketsListenerErrorToast('Q2', err);
-            q2Fired = true; processMapAndRender();
+        const campos = ['uid', 'clientIdNum'];
+        totalListeners = tandas.length * campos.length;
+        tandas.forEach((tanda, iT) => {
+            campos.forEach(campo => {
+                const etiqueta = campo + '#' + (iT + 1);
+                const q = db.collection('tickets').where(campo, 'in', tanda).limit(LIMITE_POR_CONSULTA);
+                let contada = false;
+                const sumarUnaVez = () => { if (!contada) { contada = true; listenersListos++; } };
+                unsubs.push(q.onSnapshot(snap => {
+                    snap.forEach(doc => mergedTickets.set(doc.id, { ...doc.data(), docId: doc.id, docRef: doc }));
+                    if (snap.size >= LIMITE_POR_CONSULTA) _avisoTecho(LIMITE_POR_CONSULTA);
+                    sumarUnaVez();
+                    processMapAndRender();
+                }, err => {
+                    _ticketsListenerErrorToast(etiqueta, err);
+                    sumarUnaVez(); processMapAndRender();
+                }));
+            });
         });
 
         // Backup safety resolve
         setTimeout(() => { if (isFirstLoad) { isFirstLoad = false; resolve(); } }, 3000);
 
-        ticketListener = () => { unsub1(); unsub2(); };
+        ticketListener = () => { unsubs.forEach(u => { try { u(); } catch (_) {} }); };
         }); // cierre de branchPromise.then
     });
 }
@@ -1198,6 +1223,21 @@ function _npPasoElTurnoDeManana() {
     if (corte.length === 4) corte = '0' + corte;
     return hhmm >= corte;
 }
+
+// La regla del turno cerrado se calcula al dibujar la lista. Si el cliente deja
+// la app abierta toda la jornada y dan las dos, no pasaría nada hasta que algo
+// la redibujase. Este reloj la redibuja UNA sola vez, justo al cruzar la hora.
+let _npTurnoCerradoPrevio = null;
+setInterval(function () {
+    try {
+        const cerrado = _npPasoElTurnoDeManana();
+        if (_npTurnoCerradoPrevio === null) { _npTurnoCerradoPrevio = cerrado; return; }
+        if (cerrado !== _npTurnoCerradoPrevio) {
+            _npTurnoCerradoPrevio = cerrado;
+            if (document.getElementById('tickets-list')) renderTicketsList();
+        }
+    } catch (_) {}
+}, 60000);
 
 function renderTicketsList() {
     const list = document.getElementById('tickets-list');
@@ -2923,7 +2963,56 @@ async function handleFormSubmit(e) {
                 return;
             }
             Object.assign(data, getOperatorStamp());
+
+            // Las reglas de seguridad prohíben al CLIENTE cambiar estos campos
+            // (firestore.rules:69-77). El formulario los reenviaba SIEMPRE, y
+            // bastaba una diferencia de TIPO para que Firestore lo contara como
+            // un cambio y rechazara el guardado entero: el reembolso está
+            // guardado como NÚMERO 0 en 3.762 albaranes, y al reabrirlos el
+            // formulario lo devuelve como TEXTO vacío (línea 1790, `t.cod || ''`).
+            // Resultado medido en producción: 3.763 albaranes que su propio
+            // cliente no podía corregir —AUTOCRISTAL SEVILLA 3.653 y JUAN
+            // ANTONIO ZAYAS 109—, siempre con el mismo "Error al guardar" y sin
+            // ninguna pista de por qué. Ahora no se reenvían: son campos que el
+            // cliente no puede tocar, así que mandarlos solo podía estropearlo.
+            const CAMPOS_SOLO_OFICINA = ['companyId', 'clientIdNum', 'uid', 'authUid',
+                'invoiceId', 'invoiceNum', 'invoiceRef',
+                'price', 'total', 'tariff', 'cod', 'shippingType',
+                'sender', 'senderAddress', 'senderPhone'];
+            const _txt = (v) => String(v == null ? '' : v).trim();
+            // Solo se avisa si el cliente lo ha cambiado DE VERDAD. Un importe
+            // guardado como número 0 y el mismo campo vacío en el formulario son
+            // LO MISMO: si no se compara así, Autocristal se comería el aviso en
+            // cada guardado sin haber tocado nada.
+            const _mismoValor = (a, b) => {
+                const ta = _txt(a), tb = _txt(b);
+                if (ta === tb) return true;
+                const na = parseFloat(ta.replace(',', '.')), nb = parseFloat(tb.replace(',', '.'));
+                const aEsNumero = ta === '' || !isNaN(na);
+                const bEsNumero = tb === '' || !isNaN(nb);
+                if (aEsNumero && bEsNumero) return (isNaN(na) ? 0 : na) === (isNaN(nb) ? 0 : nb);
+                return false;
+            };
+            const vetados = [];
+            CAMPOS_SOLO_OFICINA.forEach(k => {
+                if (!(k in data)) return;
+                if (cData && !_mismoValor(cData[k], data[k])) vetados.push(k);
+                delete data[k];
+            });
+
             await db.collection('tickets').doc(editingId).update(data);
+
+            if (vetados.length) {
+                const NOMBRES = {
+                    cod: 'el reembolso', shippingType: 'el tipo de porte (pagado o debido)',
+                    sender: 'el remitente', senderAddress: 'la dirección del remitente',
+                    senderPhone: 'el teléfono del remitente', price: 'el precio',
+                    total: 'el total', tariff: 'la tarifa'
+                };
+                alert('✅ El albarán se ha guardado.\n\nEso sí: desde la app no se puede cambiar '
+                    + vetados.map(k => NOMBRES[k] || k).join(', ')
+                    + '. Ese dato se ha quedado como estaba. Si hay que corregirlo, llama a la oficina.');
+            }
         } else {
             const businessId = await getNextId();
             data.id = businessId;
@@ -7193,18 +7282,17 @@ window.submitPickupRequest = async function() {
         var cutoffAM = userData ? (userData.pickupCutoffAM || '') : '';
         var cutoffPM = userData ? (userData.pickupCutoffPM || '') : '';
         var activeCutoff = '';
+        // La hora de corte se elige por el TURNO QUE HA PEDIDO el cliente, no
+        // por la hora que sea. Antes mandaba el reloj: a partir de las 14:00 se
+        // usaba siempre el corte de la tarde, así que quien pedía a las 15:00
+        // una recogida de MAÑANA se comparaba con el corte equivocado y recibía
+        // un "correcto" cuando le tocaba un "llama al repartidor" (y al
+        // contrario por la mañana pidiendo TARDE).
         if (cutoffAM || cutoffPM) {
             var now = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: false });
-            if (cutoffPM && now >= '14:00') {
-                activeCutoff = cutoffPM;
-                if (now > cutoffPM) outOfSchedule = true;
-            } else if (cutoffAM) {
-                activeCutoff = cutoffAM;
-                if (now > cutoffAM) outOfSchedule = true;
-            } else if (cutoffPM) {
-                activeCutoff = cutoffPM;
-                if (now > cutoffPM) outOfSchedule = true;
-            }
+            var esTurnoManana = String(turn || '').toUpperCase().indexOf('MA') === 0;
+            activeCutoff = esTurnoManana ? (cutoffAM || cutoffPM) : (cutoffPM || cutoffAM);
+            if (activeCutoff && now > activeCutoff) outOfSchedule = true;
         }
 
         var docData = {
