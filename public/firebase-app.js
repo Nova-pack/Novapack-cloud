@@ -1186,6 +1186,19 @@ document.getElementById('ticket-search').oninput = () => {
 // cambiar la regla que los oculta por defecto.
 let mostrarAntiguos = false;
 
+// ¿Ya ha pasado el turno de mañana? Se usa la hora de corte de recogida del
+// propio cliente (pickupCutoffAM) si la tiene configurada; si no, las 14:00,
+// que es la frontera que ya usa el resto de la app para decidir si una recogida
+// es de mañana o de tarde (ver la petición de recogida).
+function _npPasoElTurnoDeManana() {
+    const ahora = new Date();
+    const hhmm = ('0' + ahora.getHours()).slice(-2) + ':' + ('0' + ahora.getMinutes()).slice(-2);
+    let corte = (userData && userData.pickupCutoffAM) ? String(userData.pickupCutoffAM).trim() : '';
+    if (!/^\d{1,2}:\d{2}$/.test(corte)) corte = '14:00';
+    if (corte.length === 4) corte = '0' + corte;
+    return hhmm >= corte;
+}
+
 function renderTicketsList() {
     const list = document.getElementById('tickets-list');
     const searchQuery = document.getElementById('ticket-search').value.toLowerCase().trim();
@@ -1226,7 +1239,17 @@ function renderTicketsList() {
         filtered = filtered.filter(t => {
             const ticketDate = formatDateLocal(parseSafeDate(t.createdAt));
             const isToday = ticketDate === todayStr;
-            if (isToday) return true; // Siempre mostrar los de hoy
+            if (isToday) {
+                // TURNO CERRADO: un albarán del turno de MAÑANA que ya está
+                // impreso deja de mostrarse por la tarde. A esa hora el
+                // repartidor ya se ha llevado esos bultos, y tenerlos en la
+                // pantalla junto a los de la tarde es lo que lía al almacén.
+                // No se borra nada: siguen en el calendario, en la búsqueda y en
+                // el botón VER TODOS del pie.
+                const esDeManana = String(t.timeSlot || '').toUpperCase().indexOf('MA') === 0;
+                if (esDeManana && t.printed && _npPasoElTurnoDeManana()) return false;
+                return true;
+            }
             // De días anteriores: ocultar si ya están impresos O entregados
             const isDone = t.printed || t.labelsPrinted || t.delivered || t.status === 'Entregado';
             return !isDone;
@@ -1248,8 +1271,8 @@ function renderTicketsList() {
         pie.className = 'btn btn-xs btn-outline';
         pie.style = 'width:100%; margin-top:10px; font-size:0.6rem; opacity:0.85;';
         pie.textContent = mostrarAntiguos
-            ? 'OCULTAR OTRA VEZ LOS ALBARANES ANTIGUOS'
-            : 'GUARDADOS: ' + ocultos + ' albaranes de días anteriores, ya impresos o entregados. VER TODOS';
+            ? 'VOLVER A LA VISTA NORMAL (ocultar los ya impresos)'
+            : 'GUARDADOS: ' + ocultos + ' albaranes no se muestran ahora porque ya están impresos o entregados. VER TODOS';
         pie.onclick = () => { mostrarAntiguos = !mostrarAntiguos; renderTicketsList(); };
         list.appendChild(pie);
     };
@@ -4909,7 +4932,16 @@ async function printTicket(t) {
 
     try {
         const docId = t.docId || t.id;
-        await db.collection('tickets').doc(docId).update({ printed: true });
+        // REGISTRO DE IMPRESIONES: antes solo se guardaba una casilla de sí/no,
+        // así que era imposible saber cuándo ni desde dónde se imprimió un
+        // albarán — ni reconstruir una queja del tipo "hice ocho y salieron
+        // tres". Ahora queda la hora, el botón que lo imprimió y las veces.
+        await db.collection('tickets').doc(docId).update({
+            printed: true,
+            printedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            printedFrom: 'albaran_suelto',
+            printCount: firebase.firestore.FieldValue.increment(1)
+        });
         console.log("Ticket marked as printed in DB:", docId);
     } catch (e) {
         console.error("Error updating print status:", e);
@@ -5173,7 +5205,12 @@ async function printShiftBatch(slot, reprint = false, yaConfirmado = false) {
 
             t.printed = true;
             if (t.docId) {
-                updatePromises.push(db.collection('tickets').doc(t.docId).update({ printed: true }));
+                updatePromises.push(db.collection('tickets').doc(t.docId).update({
+                    printed: true,
+                    printedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    printedFrom: 'lote_' + slot + (reprint ? '_reimpresion' : ''),
+                    printCount: firebase.firestore.FieldValue.increment(1)
+                }));
             }
         });
 
@@ -5545,7 +5582,11 @@ async function imprimirEtiquetas(tickets, paperMode, nombrePdf) {
     await Promise.all(tickets.map(t => {
         t.labelsPrinted = true;
         const id = t.docId || t.id;
-        return id ? db.collection('tickets').doc(id).update({ labelsPrinted: true })
+        return id ? db.collection('tickets').doc(id).update({
+                            labelsPrinted: true,
+                            labelsPrintedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            labelsPrintCount: firebase.firestore.FieldValue.increment(1)
+                        })
                         .catch(e => console.error('labelsPrinted:', e.message)) : null;
     }));
     renderTicketsList();
