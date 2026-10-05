@@ -1187,6 +1187,22 @@ function parseSafeDate(val) {
     if (!val) return new Date();
     if (typeof val.toDate === 'function') return val.toDate();
     if (typeof val === 'string' || typeof val === 'number') return new Date(val);
+    // FECHA GUARDADA COMO OBJETO PELADO { seconds, nanoseconds }.
+    // La migración de marzo dejó 38 albaranes de AUTOCRISTAL SEVILLA así, sin
+    // el envoltorio de fecha de Firestore. Como no tienen .toDate(), caían en
+    // el "no sé qué es esto" de abajo y se les daba la fecha de AHORA: eran 38
+    // albaranes de marzo que aparecían como de HOY, TODOS LOS DÍAS. Se colaban
+    // en la lista del día, en el recuento del turno y en el manifiesto que se
+    // lleva el conductor. También se acepta la forma con guion bajo, que es
+    // como las serializan algunas herramientas.
+    const seg = (typeof val.seconds === 'number') ? val.seconds
+              : (typeof val._seconds === 'number') ? val._seconds : null;
+    if (seg !== null) {
+        const nanos = (typeof val.nanoseconds === 'number') ? val.nanoseconds
+                    : (typeof val._nanoseconds === 'number') ? val._nanoseconds : 0;
+        const d = new Date(seg * 1000 + Math.floor(nanos / 1e6));
+        if (isFinite(d.getTime())) return d;
+    }
     return new Date(); // Fallback to current time for pending serverTimestamps
 }
 
