@@ -1227,17 +1227,25 @@ document.getElementById('ticket-search').oninput = () => {
 // cambiar la regla que los oculta por defecto.
 let mostrarAntiguos = false;
 
-// ¿Ya ha pasado el turno de mañana? Se usa la hora de corte de recogida del
-// propio cliente (pickupCutoffAM) si la tiene configurada; si no, las 14:00,
-// que es la frontera que ya usa el resto de la app para decidir si una recogida
-// es de mañana o de tarde (ver la petición de recogida).
+// ¿Ya ha pasado el turno de mañana? Se usa para esconder de la lista los
+// albaranes de MAÑANA ya impresos, para que por la tarde no se mezclen con los
+// del turno de tarde y no se lie el almacen.
+//
+// LA FRONTERA SON LAS 15:00 Y NO SE TOCA POR CLIENTE. Antes se usaba su
+// `pickupCutoffAM`, y fue un error mio: ese campo significa OTRA COSA — es la
+// hora limite para PEDIR una recogida de manana (ver la peticion de recogida).
+// ECOALBORAN lo tiene en 12:30 y trabaja hasta las 12:47, asi que en el segundo
+// en que le daba a imprimir se le borraban de la pantalla los 9 albaranes del
+// dia y solo le quedaban 3 filas viejas de septiembre. Eso era exactamente su
+// queja: "solo me lista 3 o 4 y el resto es como que no estan".
+//
+// Las 15:00 son la frontera que la propia app ya usa para decidir el turno de un
+// albaran nuevo (resetEditor: hora >= 8 && hora < 15 -> MAÑANA). Asi la regla no
+// puede dispararse nunca mientras alguien esta trabajando por la manana: a las
+// 15:00 la app ya da por hecho que es tarde.
+const _NP_FIN_DE_LA_MANANA = 15;   // hora local
 function _npPasoElTurnoDeManana() {
-    const ahora = new Date();
-    const hhmm = ('0' + ahora.getHours()).slice(-2) + ':' + ('0' + ahora.getMinutes()).slice(-2);
-    let corte = (userData && userData.pickupCutoffAM) ? String(userData.pickupCutoffAM).trim() : '';
-    if (!/^\d{1,2}:\d{2}$/.test(corte)) corte = '14:00';
-    if (corte.length === 4) corte = '0' + corte;
-    return hhmm >= corte;
+    return new Date().getHours() >= _NP_FIN_DE_LA_MANANA;
 }
 
 // La regla del turno cerrado se calcula al dibujar la lista. Si el cliente deja
